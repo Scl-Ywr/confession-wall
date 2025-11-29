@@ -30,7 +30,9 @@ export const profileService = {
     }
     
     // Try to get existing profile
-    let { data, error } = await supabase
+    let result: Profile | null = null;
+    
+    const { data, error } = await supabase
       .from('profiles')
       .select('*')
       .eq('id', userId)
@@ -59,10 +61,12 @@ export const profileService = {
         throw createError;
       }
       
-      data = newProfile;
+      result = newProfile;
+    } else {
+      result = data;
     }
 
-    return data as Profile;
+    return result as Profile;
   },
 
   // Get a user's profile by ID

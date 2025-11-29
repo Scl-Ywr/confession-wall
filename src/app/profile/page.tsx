@@ -88,7 +88,7 @@ const ProfilePage: React.FC = () => {
     setFormSuccess(false);
 
     try {
-      let updatedData = { ...formData };
+      const updatedData = { ...formData };
 
       // Upload avatar if a new one is selected
       if (selectedAvatar) {

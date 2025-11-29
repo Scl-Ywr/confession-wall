@@ -1,4 +1,5 @@
 import { supabase } from '@/lib/supabase/client';
+import { Profile } from './profileService';
 import { Confession, ConfessionFormData, Comment, CommentFormData, ConfessionImage } from '@/types/confession';
 import { profileService } from './profileService';
 
@@ -33,7 +34,7 @@ export const confessionService = {
       .map(confession => confession.user_id)
       .filter((id): id is string => !!id);
     
-    const profilesMap: Record<string, any> = {};
+    const profilesMap: Record<string, Profile> = {};
     if (userIds.length > 0) {
       const { data: profiles, error: profilesError } = await supabase
         .from('profiles')
@@ -358,7 +359,7 @@ export const confessionService = {
       .map(comment => comment.user_id)
       .filter((id): id is string => !!id);
     
-    const profilesMap: Record<string, any> = {};
+    const profilesMap: Record<string, Profile> = {};
     if (userIds.length > 0) {
       const { data: profiles, error: profilesError } = await supabase
         .from('profiles')
@@ -478,7 +479,7 @@ export const confessionService = {
       .map(confession => confession.user_id)
       .filter((id): id is string => !!id);
     
-    const profilesMap: Record<string, any> = {};
+    const profilesMap: Record<string, Profile> = {};
     if (userIds.length > 0) {
       const { data: profiles, error: profilesError } = await supabase
         .from('profiles')

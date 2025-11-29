@@ -46,14 +46,44 @@ EXECUTE FUNCTION update_updated_at_column();
 -- Create a function to automatically create a profile when a user signs up
 CREATE OR REPLACE FUNCTION handle_new_user()
 RETURNS TRIGGER AS $$
+DECLARE
+  base_username TEXT;
+  unique_username TEXT;
+  counter INTEGER := 0;
 BEGIN
-  -- Extract username from email (before @ symbol)
-  INSERT INTO profiles (id, username, display_name)
-  VALUES (
-    NEW.id, 
-    SUBSTRING(NEW.email FROM 1 FOR POSITION('@' IN NEW.email) - 1),
-    SUBSTRING(NEW.email FROM 1 FOR POSITION('@' IN NEW.email) - 1)
-  );
+  -- Extract base username from email (before @ symbol)
+  base_username := SUBSTRING(NEW.email FROM 1 FOR POSITION('@' IN NEW.email) - 1);
+  
+  -- Ensure base_username is not empty
+  IF base_username = '' THEN
+    base_username := 'user';
+  END IF;
+  
+  -- Generate unique username by appending counter if needed
+  LOOP
+    IF counter = 0 THEN
+      unique_username := base_username;
+    ELSE
+      unique_username := base_username || '_' || counter;
+    END IF;
+    
+    BEGIN
+      -- Try to insert with the generated username
+      INSERT INTO profiles (id, username, display_name)
+      VALUES (
+        NEW.id, 
+        unique_username,
+        base_username
+      );
+      
+      -- If insert succeeded, break the loop
+      EXIT;
+    EXCEPTION WHEN unique_violation THEN
+      -- If username already exists, increment counter and try again
+      counter := counter + 1;
+    END;
+  END LOOP;
+  
   RETURN NEW;
 END;
 $$ LANGUAGE plpgsql;

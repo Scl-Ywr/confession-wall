@@ -30,6 +30,9 @@ export default function Home() {
   const [formError, setFormError] = useState<string | null>(null);
   const [formSuccess, setFormSuccess] = useState(false);
   const observerRef = useRef<HTMLDivElement>(null);
+  
+  // 图片放大状态
+  const [enlargedImageId, setEnlargedImageId] = useState<string | null>(null);
 
   // 获取表白列表
   const fetchConfessions = async (isLoadMore: boolean = false) => {
@@ -198,6 +201,17 @@ export default function Home() {
     });
   };
 
+  // 切换图片放大状态
+  const toggleImageEnlarge = (imageId: string) => {
+    if (enlargedImageId === imageId) {
+      // 如果已经放大，就恢复原状
+      setEnlargedImageId(null);
+    } else {
+      // 否则放大当前图片
+      setEnlargedImageId(imageId);
+    }
+  };
+
   // 处理点赞
   const handleLike = async (confessionId: string) => {
     if (!user) {
@@ -248,25 +262,25 @@ export default function Home() {
         </div>
         
         {/* 表白发布表单 */}
-        <div className="bg-white rounded-lg shadow-sm p-6 mb-8">
-          <h2 className="text-xl font-semibold text-gray-900 mb-4">
+        <div className="bg-white rounded-xl shadow-sm p-6 mb-8 transition-all duration-300 hover:shadow-md dark:bg-gray-800 dark:shadow-gray-700">
+          <h2 className="text-xl font-semibold text-gray-900 mb-4 dark:text-white">
             发布表白
           </h2>
           {formSuccess && (
-            <div className="mb-4 p-3 bg-green-50 border border-green-200 rounded-md">
-              <p className="text-sm text-green-600">表白发布成功！</p>
+            <div className="mb-4 p-3 bg-secondary-50 border border-secondary-200 rounded-lg transition-all duration-300 dark:bg-secondary-900/30 dark:border-secondary-800">
+              <p className="text-sm text-secondary-600 dark:text-secondary-400">表白发布成功！</p>
             </div>
           )}
           {formError && (
-            <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-md">
-              <p className="text-sm text-red-600">{formError}</p>
+            <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg transition-all duration-300 dark:bg-red-900/30 dark:border-red-800">
+              <p className="text-sm text-red-600 dark:text-red-400">{formError}</p>
             </div>
           )}
-          <form className="space-y-4" onSubmit={handleSubmit}>
+          <form className="space-y-5" onSubmit={handleSubmit}>
             <div>
               <textarea
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-blue-500 focus:border-blue-500"
-                rows={4}
+                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent transition-all duration-200 resize-none dark:bg-gray-700 dark:border-gray-600 dark:text-white dark:focus:border-transparent"
+                rows={5}
                 placeholder="写下你的表白..."
                 value={formData.content}
                 onChange={(e) => setFormData(prev => ({ ...prev, content: e.target.value }))}
@@ -275,12 +289,12 @@ export default function Home() {
             
             {/* 图片上传 */}
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
+              <label className="block text-sm font-medium text-gray-700 mb-3 dark:text-gray-300">
                 添加图片 (可选，支持多张)
               </label>
-              <div className="flex items-center space-x-4">
+              <div className="flex flex-wrap items-center gap-3">
                 <label className="cursor-pointer">
-                  <span className="inline-flex items-center px-4 py-2 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500">
+                  <span className="inline-flex items-center px-4 py-2 border border-gray-300 rounded-lg shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500 transition-all duration-200 transform hover:scale-105 dark:bg-gray-700 dark:border-gray-600 dark:text-gray-200 dark:hover:bg-gray-600">
                     <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
                     </svg>
@@ -295,7 +309,7 @@ export default function Home() {
                   />
                 </label>
                 {selectedImages.length > 0 && (
-                  <span className="text-sm text-gray-500">
+                  <span className="text-sm text-gray-500 dark:text-gray-400">
                     已选择 {selectedImages.length} 张图片
                   </span>
                 )}
@@ -306,17 +320,19 @@ export default function Home() {
                 <div className="mt-4 grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
                   {previewUrls.map((url, index) => (
                     <div key={index} className="relative group">
-                      <Image
-                        src={url}
-                        alt={`Preview ${index + 1}`}
-                        width={150}
-                        height={100}
-                        className="w-full h-24 object-cover rounded-md border border-gray-200"
-                      />
+                      <div className="w-full aspect-video rounded-lg border border-gray-200 overflow-hidden dark:border-gray-700">
+                        <Image
+                          src={url}
+                          alt={`Preview ${index + 1}`}
+                          width={150}
+                          height={100}
+                          className="w-full h-full object-cover transition-all duration-300 transform group-hover:scale-105"
+                        />
+                      </div>
                       <button
                         type="button"
                         onClick={() => removeImage(index)}
-                        className="absolute top-1 right-1 bg-red-500 text-white rounded-full w-6 h-6 flex items-center justify-center text-xs opacity-0 group-hover:opacity-100 transition-opacity"
+                        className="absolute top-1 right-1 bg-red-500 text-white rounded-full w-7 h-7 flex items-center justify-center text-sm opacity-0 group-hover:opacity-100 transition-all duration-200 transform hover:scale-110 dark:bg-red-600"
                       >
                         ×
                       </button>
@@ -330,11 +346,11 @@ export default function Home() {
               <input
                 type="checkbox"
                 id="anonymous"
-                className="mr-2"
+                className="mr-2 rounded text-primary-600 focus:ring-primary-500 dark:text-primary-400 dark:focus:ring-primary-600"
                 checked={formData.is_anonymous}
                 onChange={(e) => setFormData(prev => ({ ...prev, is_anonymous: e.target.checked }))}
               />
-              <label htmlFor="anonymous" className="text-gray-700">
+              <label htmlFor="anonymous" className="text-gray-700 dark:text-gray-300">
                 匿名发布
               </label>
             </div>
@@ -342,9 +358,19 @@ export default function Home() {
               <button
                 type="submit"
                 disabled={formLoading}
-                className={`bg-blue-600 hover:bg-blue-700 text-white font-medium py-2 px-6 rounded-md transition-colors ${formLoading ? 'opacity-50 cursor-not-allowed' : ''}`}
+                className={`flex items-center gap-2 bg-primary-600 hover:bg-primary-700 text-white font-medium py-3 px-8 rounded-lg transition-all duration-200 transform hover:scale-105 ${formLoading ? 'opacity-50 cursor-not-allowed' : ''} dark:bg-primary-500 dark:hover:bg-primary-400`}
               >
-                {formLoading ? '发布中...' : '发布'}
+                {formLoading ? (
+                  <>
+                    <svg className="animate-spin -ml-1 mr-2 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                    </svg>
+                    发布中...
+                  </>
+                ) : (
+                  '发布'
+                )}
               </button>
             </div>
           </form>
@@ -419,71 +445,87 @@ export default function Home() {
               {confessions.map((confession) => (
                 <div 
                   key={confession.id} 
-                  className="bg-white rounded-lg shadow-sm p-6 transition-all duration-300 hover:shadow-md"
+                  className="bg-white rounded-xl shadow-sm p-6 transition-all duration-300 hover:shadow-lg transform hover:-translate-y-1 dark:bg-gray-800 dark:shadow-gray-700"
                 >
-                  <div className="flex justify-between items-start mb-4">
+                  <div className="flex justify-between items-start mb-5">
                     <div className="flex items-center">
                       {confession.is_anonymous ? (
-                        <div className="w-10 h-10 bg-gray-200 rounded-full flex items-center justify-center mr-3 transition-colors hover:bg-gray-300">
-                          <span className="text-gray-600 font-medium">匿</span>
+                        <div className="w-11 h-11 bg-gray-200 rounded-full flex items-center justify-center mr-4 transition-all duration-300 transform hover:scale-110 dark:bg-gray-700">
+                          <span className="text-gray-600 font-medium dark:text-gray-300">匿</span>
                         </div>
                       ) : confession.profile ? (
                         confession.profile.avatar_url ? (
                           <Image
                             src={confession.profile.avatar_url}
                             alt={confession.profile.display_name}
-                            width={40}
-                            height={40}
-                            className="w-10 h-10 rounded-full object-cover mr-3 border border-gray-200"
+                            width={44}
+                            height={44}
+                            className="w-11 h-11 rounded-full object-cover mr-4 border-2 border-gray-200 transition-all duration-300 transform hover:scale-110 dark:border-gray-700"
                           />
                         ) : (
-                          <div className="w-10 h-10 bg-gray-200 rounded-full flex items-center justify-center mr-3 transition-colors hover:bg-gray-300">
-                            <span className="text-gray-600 font-medium">用</span>
+                          <div className="w-11 h-11 bg-gray-200 rounded-full flex items-center justify-center mr-4 transition-all duration-300 transform hover:scale-110 dark:bg-gray-700">
+                            <span className="text-gray-600 font-medium dark:text-gray-300">用</span>
                           </div>
                         )
                       ) : (
-                        <div className="w-10 h-10 bg-gray-200 rounded-full flex items-center justify-center mr-3 transition-colors hover:bg-gray-300">
-                          <span className="text-gray-600 font-medium">用</span>
+                        <div className="w-11 h-11 bg-gray-200 rounded-full flex items-center justify-center mr-4 transition-all duration-300 transform hover:scale-110 dark:bg-gray-700">
+                          <span className="text-gray-600 font-medium dark:text-gray-300">用</span>
                         </div>
                       )}
                       <div>
-                        <h3 className="font-medium text-gray-900">
+                        <h3 className="font-medium text-gray-900 dark:text-white">
                           {confession.is_anonymous ? '匿名用户' : confession.profile?.display_name || '未知用户'}
                         </h3>
-                        <p className="text-sm text-gray-500">
+                        <p className="text-sm text-gray-500 dark:text-gray-400">
                           {formatDate(confession.created_at)}
                         </p>
                       </div>
                     </div>
                   </div>
-                  <p className="text-gray-700 mb-4 leading-relaxed">
+                  <p className="text-gray-700 mb-5 leading-relaxed dark:text-gray-300">
                         {confession.content}
                       </p>
                       
                       {/* 表白图片 */}
                       {confession.images && confession.images.length > 0 && (
-                        <div className="mb-4 grid grid-cols-2 sm:grid-cols-3 gap-3">
+                        <div className="mb-5 grid grid-cols-2 sm:grid-cols-3 gap-4">
                           {confession.images.map((image) => (
-                            <div key={image.id} className="relative group">
-                              <Image
-                                src={image.image_url}
-                                alt="Confession image"
-                                width={200}
-                                height={150}
-                                className="w-full h-32 object-cover rounded-md border border-gray-200 transition-transform duration-300 group-hover:scale-105"
-                              />
+                            <div 
+                              key={image.id} 
+                              className={`relative group transition-all duration-300 ${enlargedImageId === image.id ? 'z-10 col-span-full sm:col-span-2 md:col-span-3' : ''}`}
+                            >
+                              {/* 图片容器 */}
+                              <div 
+                                className="w-full aspect-video overflow-hidden rounded-lg border border-gray-200 dark:border-gray-700"
+                              >
+                                <Image
+                                  src={image.image_url}
+                                  alt="Confession image"
+                                  width={200}
+                                  height={150}
+                                  className={`w-full h-full object-cover transition-all duration-300 transform cursor-pointer hover:shadow-lg ${enlargedImageId === image.id ? 'scale-100 shadow-xl' : 'group-hover:scale-105'}`}
+                                  onClick={() => toggleImageEnlarge(image.id)}
+                                />
+                                {/* 放大/缩小图标 - 只在图片上显示 */}
+                                <div 
+                                  className="absolute inset-0 bg-black bg-opacity-30 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity duration-300 rounded-lg cursor-pointer"
+                                  onClick={() => toggleImageEnlarge(image.id)}
+                                >
+                                  <span className="text-white text-2xl">{enlargedImageId === image.id ? '🗙' : '🔍'}</span>
+                                </div>
+                              </div>
                             </div>
                           ))}
                         </div>
                       )}
                       
-                      <div className="flex items-center space-x-6">
+                      <div className="flex items-center space-x-8">
                         <button 
                           onClick={() => handleLike(confession.id)}
-                          className="flex items-center space-x-1 text-red-500 hover:text-red-600 transition-all duration-200 transform hover:scale-105"
+                          className="flex items-center gap-2 text-red-500 hover:text-red-600 transition-all duration-200 transform hover:scale-110 dark:text-red-400 dark:hover:text-red-300"
                         >
-                          <span className="text-lg">❤️</span>
-                          <span>{confession.likes_count}</span>
+                          <span className="text-xl">❤️</span>
+                          <span className="font-medium">{confession.likes_count}</span>
                         </button>
                       </div>
                   
