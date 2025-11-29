@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import Image from 'next/image';
 import { useAuth } from '@/context/AuthContext';
 import { confessionService } from '@/services/confessionService';
@@ -26,7 +26,7 @@ const CommentSection: React.FC<CommentSectionProps> = ({ confessionId }) => {
   const [isExpanded, setIsExpanded] = useState(false);
 
   // 获取评论列表
-  const fetchComments = async () => {
+  const fetchComments = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
@@ -38,13 +38,12 @@ const CommentSection: React.FC<CommentSectionProps> = ({ confessionId }) => {
     } finally {
       setLoading(false);
     }
-  };
+  }, [confessionId]);
 
+  // 组件挂载时获取评论数
   useEffect(() => {
-    if (isExpanded) {
-      fetchComments();
-    }
-  }, [isExpanded, confessionId]);
+    fetchComments();
+  }, [fetchComments]);
 
   // 格式化时间
   const formatDate = (dateString: string) => {
@@ -188,6 +187,7 @@ const CommentSection: React.FC<CommentSectionProps> = ({ confessionId }) => {
                           width={36}
                           height={36}
                           className="w-9 h-9 rounded-full object-cover mr-3 border-2 border-gray-200 transition-all duration-300 transform hover:scale-110 dark:border-gray-600"
+                          loading="eager"
                         />
                       ) : (
                         <div className="w-9 h-9 bg-gray-200 rounded-full flex items-center justify-center mr-3 transition-all duration-300 transform hover:scale-110 dark:bg-gray-600">

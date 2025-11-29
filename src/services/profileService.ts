@@ -109,15 +109,70 @@ export const profileService = {
       throw new Error('User not authenticated');
     }
     
-    const { data: updatedProfile, error } = await supabase
+    // 获取当前用户资料，用于比较
+    const { data: currentProfile, error: fetchError } = await supabase
       .from('profiles')
-      .update(data)
-      .eq('id', userId)
       .select('*')
+      .eq('id', userId)
+      .single();
+    
+    if (fetchError) {
+      throw new Error(`获取当前用户资料失败: ${fetchError.message}`);
+    }
+    
+    // 移除undefined值，但允许空字符串
+    const filteredData = Object.fromEntries(
+      Object.entries(data)
+        .filter(([, value]) => value !== undefined)
+    );
+    
+    // 只保留与当前值不同的字段，正确处理null值
+    const updateData = Object.fromEntries(
+      Object.entries(filteredData)
+        .filter(([key, value]) => {
+          const currentValue = currentProfile[key];
+          // 处理null和空字符串的比较
+          if (currentValue === null && value === '') {
+            return false; // null和空字符串视为相同，不更新
+          }
+          if (currentValue === '' && value === null) {
+            return false; // 空字符串和null视为相同，不更新
+          }
+          return currentValue !== value;
+        })
+    );
+    
+    // 如果没有要更新的数据，直接返回当前用户资料
+    if (Object.keys(updateData).length === 0) {
+      return currentProfile as Profile;
+    }
+    
+    // 直接更新表，确保只更新自己的资料
+    const { data: updateResult, error: updateError } = await supabase
+      .from('profiles')
+      .update(updateData)
+      .eq('id', userId)
+      .select('*');
+
+    if (updateError) {
+      throw new Error(`更新个人资料失败: ${updateError.message} (${updateError.code || 'Unknown error'})`);
+    }
+    
+    // 如果更新成功，返回更新后的资料
+    if (updateResult && updateResult.length > 0) {
+      return updateResult[0] as Profile;
+    }
+    
+    // 如果没有返回结果，重新获取用户资料
+    const { data: updatedProfile, error: fetchUpdatedError } = await supabase
+      .from('profiles')
+      .select('*')
+      .eq('id', userId)
       .single();
 
-    if (error) {
-      throw error;
+    if (fetchUpdatedError) {
+      // 返回当前资料，因为更新已经成功
+      return currentProfile as Profile;
     }
 
     return updatedProfile as Profile;

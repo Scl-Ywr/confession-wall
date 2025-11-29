@@ -1,0 +1,14 @@
+
+> confession-wall@0.1.0 lint
+> eslint
+
+
+C:\Users\PC\Desktop\confession-wall\src\app\profile\page.tsx
+  54:6   warning  React Hook useEffect has a missing dependency: 'fetchProfile'. Either include it or remove the dependency array  react-hooks/exhaustive-deps
+  92:26  error    Unexpected any. Specify a different type                                                                         @typescript-eslint/no-explicit-any
+
+C:\Users\PC\Desktop\confession-wall\src\components\CommentSection.tsx
+  46:6  warning  React Hook useEffect has a missing dependency: 'fetchComments'. Either include it or remove the dependency array  react-hooks/exhaustive-deps
+
+鉁?3 problems (1 error, 2 warnings)
+

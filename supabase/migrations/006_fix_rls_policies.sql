@@ -1,4 +1,14 @@
--- Create function to update likes_count
+-- Fix RLS policies for profiles table
+-- Ensure users can update their own profile
+CREATE OR REPLACE POLICY "Allow users to update their own profile" ON profiles
+  FOR UPDATE USING (auth.uid() = id)
+  WITH CHECK (auth.uid() = id);
+
+-- Ensure users can insert their own profile
+CREATE OR REPLACE POLICY "Allow users to insert their own profile" ON profiles
+  FOR INSERT WITH CHECK (auth.uid() = id);
+
+-- Ensure update_likes_count function is properly created
 CREATE OR REPLACE FUNCTION update_likes_count()
 RETURNS TRIGGER AS $$
 BEGIN
@@ -15,7 +25,10 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
--- Create triggers for likes table
+-- Ensure triggers are properly created
+DROP TRIGGER IF EXISTS update_likes_count_after_insert ON likes;
+DROP TRIGGER IF EXISTS update_likes_count_after_delete ON likes;
+
 CREATE TRIGGER update_likes_count_after_insert
 AFTER INSERT ON likes
 FOR EACH ROW
