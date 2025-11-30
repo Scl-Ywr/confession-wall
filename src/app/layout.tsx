@@ -17,6 +17,9 @@ const geistMono = Geist_Mono({
 export const metadata: Metadata = {
   title: "表白墙",
   description: "一个功能完整的表白墙应用",
+  icons: {
+    icon: "/favicon.svg",
+  },
 };
 
 export default function RootLayout({
