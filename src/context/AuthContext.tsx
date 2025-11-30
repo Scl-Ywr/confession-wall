@@ -73,6 +73,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         ? `${window.location.origin}/auth/verify-email` 
         : '';
       
+      // 尝试注册
       const { error } = await supabase.auth.signUp({
         email,
         password,
@@ -82,13 +83,16 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       });
 
       if (error) {
-        // 如果用户已存在且未验证，尝试重新发送验证邮件
+        // 如果用户已存在，直接提示用户登录
         if (error.message.includes('User already registered') || error.message.includes('already exists')) {
-          await resendVerificationEmail(email);
+          throw new Error('该邮箱已注册，您可以直接登录');
         } else {
           throw error;
         }
       }
+      
+      // 注册成功，设置loading为false
+      setState(prev => ({ ...prev, loading: false }));
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'An unknown error occurred';
       setState(prev => ({ ...prev, loading: false, error: errorMessage }));
@@ -113,6 +117,40 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         // 邮箱未验证，登出用户并返回错误
         await supabase.auth.signOut();
         throw new Error('请先验证您的邮箱，然后再登录');
+      }
+      
+      // 如果用户已登录，检查是否有profile记录，如果没有则创建
+      if (data.user) {
+        const userId = data.user.id;
+        const userEmail = data.user.email;
+        
+        if (userEmail) {
+          // 检查profile是否存在
+          const { data: profileData, error: profileError } = await supabase
+            .from('profiles')
+            .select('*')
+            .eq('id', userId)
+            .maybeSingle();
+          
+          if (profileError) {
+            console.error('Error checking profile:', profileError);
+          } else if (!profileData) {
+            // 创建默认profile
+            const username = userEmail.split('@')[0];
+            
+            const { error: createError } = await supabase
+              .from('profiles')
+              .insert({
+                id: userId,
+                username,
+                display_name: username
+              });
+            
+            if (createError) {
+              console.error('Error creating profile:', createError);
+            }
+          }
+        }
       }
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'An unknown error occurred';

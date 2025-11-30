@@ -30,8 +30,6 @@ export const profileService = {
     }
     
     // Try to get existing profile
-    let result: Profile | null = null;
-    
     const { data, error } = await supabase
       .from('profiles')
       .select('*')
@@ -42,31 +40,8 @@ export const profileService = {
       throw error;
     }
     
-    // If profile doesn't exist, create a default one
-    if (!data) {
-      // Extract username from email (before @ symbol)
-      const username = user.email.split('@')[0];
-      
-      const { data: newProfile, error: createError } = await supabase
-        .from('profiles')
-        .insert({
-          id: userId,
-          username,
-          display_name: username
-        })
-        .select('*')
-        .single();
-      
-      if (createError) {
-        throw createError;
-      }
-      
-      result = newProfile;
-    } else {
-      result = data;
-    }
-
-    return result as Profile;
+    // If profile doesn't exist, return null instead of creating one
+    return data as Profile | null;
   },
 
   // Get a user's profile by ID

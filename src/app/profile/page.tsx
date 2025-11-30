@@ -7,7 +7,7 @@ import { useRouter } from 'next/navigation';
 import { useAuth } from '@/context/AuthContext';
 import { profileService, Profile, ProfileUpdateData } from '@/services/profileService';
 import MeteorShower from '@/components/MeteorShower';
-import { UserCircleIcon, PhotoIcon, ArrowLeftOnRectangleIcon, TrashIcon } from '@heroicons/react/24/outline';
+import { UserCircleIcon, PhotoIcon, ArrowLeftCircleIcon, TrashIcon } from '@heroicons/react/24/outline';
 
 const ProfilePage: React.FC = () => {
   const router = useRouter();
@@ -93,18 +93,23 @@ const ProfilePage: React.FC = () => {
     setFormSuccess(false);
 
     try {
+      // 表单验证
+      if (!formData.username || formData.username.trim() === '') {
+        throw new Error('请设置用户名');
+      }
+      
+      if (!formData.display_name || formData.display_name.trim() === '') {
+        throw new Error('请设置显示名称');
+      }
+      
       // 只保留有值的字段
       const updatedData: ProfileUpdateData = {};
       
       // 处理用户名
-      if (formData.username && formData.username.trim() !== '') {
-        updatedData.username = formData.username.trim();
-      }
+      updatedData.username = formData.username.trim();
       
       // 处理显示名称
-      if (formData.display_name && formData.display_name.trim() !== '') {
-        updatedData.display_name = formData.display_name.trim();
-      }
+      updatedData.display_name = formData.display_name.trim();
       
       // 处理个人简介
       if (formData.bio !== undefined) {
@@ -154,10 +159,9 @@ const ProfilePage: React.FC = () => {
 
     setDeleteLoading(true);
     try {
-      // Delete all associated data
       const userId = user.id;
 
-      // 1. Delete confession images from storage
+      // 1. 删除用户的存储文件
       const { error: storageError } = await supabase.storage
         .from('confession_images')
         .remove([`avatars/${userId}/*`, `confession_images/${userId}/*`]);
@@ -165,7 +169,7 @@ const ProfilePage: React.FC = () => {
         console.error('Error deleting images:', storageError);
       }
 
-      // 2. Delete likes associated with the user
+      // 2. 删除用户的点赞记录
       const { error: likesError } = await supabase
         .from('likes')
         .delete()
@@ -174,7 +178,7 @@ const ProfilePage: React.FC = () => {
         console.error('Error deleting likes:', likesError);
       }
 
-      // 3. Delete comments associated with the user
+      // 3. 删除用户的评论
       const { error: commentsError } = await supabase
         .from('comments')
         .delete()
@@ -183,16 +187,30 @@ const ProfilePage: React.FC = () => {
         console.error('Error deleting comments:', commentsError);
       }
 
-      // 4. Delete confession images records
-      const { error: confessionImagesError } = await supabase
-        .from('confession_images')
-        .delete()
-        .eq('confession_id', userId);
-      if (confessionImagesError) {
-        console.error('Error deleting confession images records:', confessionImagesError);
+      // 4. 先获取用户的所有表白ID
+      const { data: confessions, error: getConfessionsError } = await supabase
+        .from('confessions')
+        .select('id')
+        .eq('user_id', userId);
+      
+      if (getConfessionsError) {
+        console.error('Error getting user confessions:', getConfessionsError);
+      } else if (confessions && confessions.length > 0) {
+        // 获取所有表白ID
+        const confessionIds = confessions.map(confession => confession.id);
+        
+        // 5. 删除这些表白的图片记录
+        const { error: confessionImagesError } = await supabase
+          .from('confession_images')
+          .delete()
+          .in('confession_id', confessionIds);
+        
+        if (confessionImagesError) {
+          console.error('Error deleting confession images:', confessionImagesError);
+        }
       }
 
-      // 5. Delete confessions associated with the user
+      // 6. 删除用户的表白记录
       const { error: confessionsError } = await supabase
         .from('confessions')
         .delete()
@@ -201,19 +219,14 @@ const ProfilePage: React.FC = () => {
         console.error('Error deleting confessions:', confessionsError);
       }
 
-      // 6. Delete profile
+      // 7. 删除用户的个人资料
       const { error: profileError } = await supabase
         .from('profiles')
         .delete()
         .eq('id', userId);
       if (profileError) {
         console.error('Error deleting profile:', profileError);
-      }
-
-      // 7. Delete user account
-      const { error: userError } = await supabase.auth.admin.deleteUser(userId);
-      if (userError) {
-        console.error('Error deleting user account:', userError);
+        throw new Error('Failed to delete profile');
       }
 
       // 8. Logout and redirect to login page
@@ -221,6 +234,7 @@ const ProfilePage: React.FC = () => {
       router.push('/auth/login');
     } catch (error) {
       console.error('Error deleting account:', error);
+      alert('注销失败：' + (error instanceof Error ? error.message : '未知错误'));
     } finally {
       setDeleteLoading(false);
       setShowDeleteConfirm(false);
@@ -239,17 +253,40 @@ const ProfilePage: React.FC = () => {
     return null;
   }
 
-  if (!profile) {
+  if (!profile && user) {
+    // 如果profile不存在，自动创建默认profile
+    const createDefaultProfile = async () => {
+      try {
+        if (!user.email) return;
+        
+        const username = user.email.split('@')[0];
+        
+        const { error: createError } = await supabase
+          .from('profiles')
+          .insert({
+            id: user.id,
+            username,
+            display_name: username
+          });
+        
+        if (createError) {
+          console.error('Error creating profile:', createError);
+        } else {
+          // 重新获取profile
+          fetchProfile();
+        }
+      } catch (error) {
+        console.error('Error in createDefaultProfile:', error);
+      }
+    };
+    
+    createDefaultProfile();
+    
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-50 dark:bg-gray-900">
         <div className="text-center p-8 glass rounded-2xl">
-          <p className="text-gray-600 dark:text-gray-300 mb-4">无法获取个人资料</p>
-          <button
-            onClick={fetchProfile}
-            className="px-6 py-2 bg-primary-600 text-white rounded-xl hover:bg-primary-700 transition-all"
-          >
-            重试
-          </button>
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary-600 mx-auto mb-4"></div>
+          <p className="text-gray-600 dark:text-gray-300 mb-4">正在初始化您的个人资料...</p>
         </div>
       </div>
     );
@@ -301,7 +338,7 @@ const ProfilePage: React.FC = () => {
                   ) : (
                     <div className="w-full h-full bg-gradient-to-br from-gray-100 to-gray-200 dark:from-gray-700 dark:to-gray-800 flex items-center justify-center">
                       <span className="text-4xl font-bold text-gray-400 dark:text-gray-500">
-                        {profile.display_name.charAt(0).toUpperCase()}
+                        {profile?.display_name.charAt(0).toUpperCase() || '?'}
                       </span>
                     </div>
                   )}
@@ -316,13 +353,13 @@ const ProfilePage: React.FC = () => {
                   />
                 </label>
               </div>
-              <h2 className="text-xl font-bold text-gray-900 dark:text-white mb-1">{profile.display_name}</h2>
-              <p className="text-sm text-gray-600 dark:text-gray-300 mb-4 font-medium">@{profile.username}</p>
+              <h2 className="text-xl font-bold text-gray-900 dark:text-white mb-1">{profile?.display_name || '未设置'}</h2>
+              <p className="text-sm text-gray-600 dark:text-gray-300 mb-4 font-medium">@{profile?.username || '未设置'}</p>
               
               <div className="pt-4 border-t border-gray-200 dark:border-gray-700/50">
                 <div className="flex justify-between text-sm mb-2">
                   <span className="text-gray-600 dark:text-gray-300 font-medium">注册时间</span>
-                  <span className="font-bold text-gray-800 dark:text-gray-100">{new Date(profile.created_at).toLocaleDateString('zh-CN')}</span>
+                  <span className="font-bold text-gray-800 dark:text-gray-100">{profile && new Date(profile.created_at).toLocaleDateString('zh-CN') || '未知'}</span>
                 </div>
                 <div className="flex justify-between text-sm">
                   <span className="text-gray-600 dark:text-gray-300 font-medium">邮箱</span>
@@ -335,7 +372,7 @@ const ProfilePage: React.FC = () => {
               onClick={handleLogout}
               className="w-full glass-card p-4 rounded-xl flex items-center justify-center gap-2 text-red-800 bg-red-50/50 hover:bg-red-100/80 dark:text-red-200 dark:bg-red-900/20 dark:hover:bg-red-900/40 transition-all group font-bold shadow-sm"
             >
-              <ArrowLeftOnRectangleIcon className="w-5 h-5 group-hover:-translate-x-1 transition-transform" />
+              <ArrowLeftCircleIcon className="w-5 h-5 group-hover:-translate-x-1 transition-transform" />
               <span>退出登录</span>
             </button>
 
