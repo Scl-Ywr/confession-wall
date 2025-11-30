@@ -2,11 +2,13 @@ export interface ConfessionImage {
   id: string;
   confession_id: string;
   image_url: string;
+  file_type: 'image' | 'video';
   created_at: string;
 }
 
 export interface Profile {
   display_name: string;
+  username: string;
   avatar_url?: string;
 }
 
@@ -43,6 +45,7 @@ export interface ConfessionFormData {
   content: string;
   is_anonymous: boolean;
   images?: File[];
+  videoUrls?: string[];
 }
 
 export interface CommentFormData {

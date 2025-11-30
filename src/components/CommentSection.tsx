@@ -24,6 +24,10 @@ const CommentSection: React.FC<CommentSectionProps> = ({ confessionId }) => {
   const [formLoading, setFormLoading] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
   const [isExpanded, setIsExpanded] = useState(false);
+  // 删除评论相关状态
+  const [deletingCommentId, setDeletingCommentId] = useState<string | null>(null);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [commentToDelete, setCommentToDelete] = useState<string | null>(null);
 
   // 获取评论列表
   const fetchComments = useCallback(async () => {
@@ -57,6 +61,11 @@ const CommentSection: React.FC<CommentSectionProps> = ({ confessionId }) => {
     });
   };
 
+  // Handle profile click
+  const handleProfileClick = (username: string) => {
+    router.push(`/profile/${username}`);
+  };
+
   // 处理表单提交
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -88,6 +97,26 @@ const CommentSection: React.FC<CommentSectionProps> = ({ confessionId }) => {
       setFormError(errorMessage);
     } finally {
       setFormLoading(false);
+    }
+  };
+
+  // 处理删除评论
+  const handleDeleteComment = async () => {
+    if (!commentToDelete) return;
+    
+    setDeletingCommentId(commentToDelete);
+    setShowDeleteConfirm(false);
+    
+    try {
+      await confessionService.deleteComment(commentToDelete);
+      // 更新本地评论列表
+      setComments(prev => prev.filter(comment => comment.id !== commentToDelete));
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : '删除评论失败';
+      setError(errorMessage);
+    } finally {
+      setDeletingCommentId(null);
+      setCommentToDelete(null);
     }
   };
 
@@ -173,7 +202,22 @@ const CommentSection: React.FC<CommentSectionProps> = ({ confessionId }) => {
           ) : (
             <div className="space-y-5">
               {comments.map((comment) => (
-                <div key={comment.id} className="bg-gray-50 rounded-lg p-4 transition-all duration-300 hover:shadow-sm dark:bg-gray-700 dark:border-gray-600">
+                <div key={comment.id} className="bg-gray-50 rounded-lg p-4 transition-all duration-300 hover:shadow-sm dark:bg-gray-700 dark:border-gray-600 relative">
+                  {/* 删除按钮 - 只有评论作者才能看到 */}
+                  {user && comment.user_id === user.id && (
+                    <button
+                      onClick={() => {
+                        setCommentToDelete(comment.id);
+                        setShowDeleteConfirm(true);
+                      }}
+                      className="absolute top-3 right-3 text-gray-400 hover:text-red-500 transition-colors duration-300"
+                      disabled={deletingCommentId === comment.id}
+                    >
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path>
+                      </svg>
+                    </button>
+                  )}
                   <div className="flex items-center mb-3">
                     {comment.is_anonymous ? (
                       <div className="w-9 h-9 bg-gray-200 rounded-full flex items-center justify-center mr-3 transition-all duration-300 transform hover:scale-110 dark:bg-gray-600">
@@ -181,16 +225,24 @@ const CommentSection: React.FC<CommentSectionProps> = ({ confessionId }) => {
                       </div>
                     ) : comment.profile ? (
                       comment.profile.avatar_url ? (
-                        <Image
-                          src={comment.profile.avatar_url}
-                          alt={comment.profile.display_name}
-                          width={36}
-                          height={36}
-                          className="w-9 h-9 rounded-full object-cover mr-3 border-2 border-gray-200 transition-all duration-300 transform hover:scale-110 dark:border-gray-600"
-                          loading="eager"
-                        />
+                        <div 
+                          className="w-9 h-9 rounded-full overflow-hidden mr-3 border-2 border-gray-200 transition-all duration-300 transform hover:scale-110 dark:border-gray-600 cursor-pointer"
+                          onClick={() => comment.profile?.username && handleProfileClick(comment.profile.username)}
+                        >
+                          <Image
+                            src={comment.profile.avatar_url}
+                            alt={comment.profile.display_name}
+                            width={36}
+                            height={36}
+                            className="w-full h-full object-cover"
+                            loading="eager"
+                          />
+                        </div>
                       ) : (
-                        <div className="w-9 h-9 bg-gray-200 rounded-full flex items-center justify-center mr-3 transition-all duration-300 transform hover:scale-110 dark:bg-gray-600">
+                        <div 
+                          className="w-9 h-9 bg-gray-200 rounded-full flex items-center justify-center mr-3 transition-all duration-300 transform hover:scale-110 dark:bg-gray-600 cursor-pointer"
+                          onClick={() => comment.profile?.username && handleProfileClick(comment.profile.username)}
+                        >
                           <span className="text-xs font-medium text-gray-600 dark:text-gray-300">用</span>
                         </div>
                       )
@@ -200,7 +252,10 @@ const CommentSection: React.FC<CommentSectionProps> = ({ confessionId }) => {
                       </div>
                     )}
                     <div className="flex items-center gap-3">
-                      <h4 className="text-sm font-medium text-gray-900 dark:text-white">
+                      <h4 
+                        className={`text-sm font-medium ${comment.is_anonymous ? 'text-gray-900 dark:text-white' : 'text-gray-900 dark:text-white cursor-pointer hover:text-primary-600 dark:hover:text-primary-400 transition-colors duration-300'}`}
+                        onClick={() => !comment.is_anonymous && comment.profile?.username && handleProfileClick(comment.profile.username)}
+                      >
                         {comment.is_anonymous ? '匿名用户' : comment.profile?.display_name || '未知用户'}
                       </h4>
                       <span className="text-xs text-gray-500 dark:text-gray-400">
@@ -213,6 +268,35 @@ const CommentSection: React.FC<CommentSectionProps> = ({ confessionId }) => {
                   </p>
                 </div>
               ))}
+              
+              {/* 自定义删除确认对话框 */}
+              {showDeleteConfirm && (
+                <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 animate-fade-in">
+                  <div className="bg-white dark:bg-gray-800 rounded-2xl p-6 max-w-sm w-full mx-4 shadow-xl border border-gray-200 dark:border-gray-700">
+                    <div className="text-center mb-4">
+                      <div className="text-4xl mb-2">⚠️</div>
+                      <h3 className="text-xl font-bold text-gray-900 dark:text-white mb-2">确认删除</h3>
+                      <p className="text-gray-600 dark:text-gray-300">
+                        确定要删除这条评论吗？此操作不可恢复。
+                      </p>
+                    </div>
+                    <div className="flex gap-3">
+                      <button
+                        onClick={() => setShowDeleteConfirm(false)}
+                        className="flex-1 px-4 py-2 border border-gray-300 rounded-xl text-gray-700 hover:bg-gray-50 transition-all dark:border-gray-600 dark:text-gray-300 dark:hover:bg-gray-700"
+                      >
+                        取消
+                      </button>
+                      <button
+                        onClick={handleDeleteComment}
+                        className="flex-1 px-4 py-2 bg-red-500 text-white rounded-xl hover:bg-red-600 transition-all"
+                      >
+                        确定删除
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
           )}
         </div>

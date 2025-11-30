@@ -170,19 +170,22 @@ export const confessionService = {
       throw confessionError;
     }
 
-    // 2. 上传图片（如果有）
-    const images: ConfessionImage[] = [];
+    // 2. 处理媒体文件（图片和视频）
+    const mediaItems: ConfessionImage[] = [];
+    
+    // 2.1 上传图片（如果有）
     if (formData.images && formData.images.length > 0) {
       for (const file of formData.images) {
         try {
           const imageUrl = await confessionService.uploadImage(file, confession.id);
           
-          // 3. 保存图片记录到数据库
+          // 保存图片记录到数据库
           const { data: imageRecord, error: imageError } = await supabase
             .from('confession_images')
             .insert({
               confession_id: confession.id,
-              image_url: imageUrl
+              image_url: imageUrl,
+              file_type: 'image'
             })
             .select('*')
             .single();
@@ -191,10 +194,37 @@ export const confessionService = {
             throw imageError;
           }
 
-          images.push(imageRecord as ConfessionImage);
+          mediaItems.push(imageRecord as ConfessionImage);
         } catch (error) {
           console.error('Error uploading image:', error);
           // 继续上传其他图片，不中断整个过程
+        }
+      }
+    }
+    
+    // 2.2 处理视频URL（如果有）
+    if (formData.videoUrls && formData.videoUrls.length > 0) {
+      for (const videoUrl of formData.videoUrls) {
+        try {
+          // 保存视频记录到数据库
+          const { data: videoRecord, error: videoError } = await supabase
+            .from('confession_images')
+            .insert({
+              confession_id: confession.id,
+              image_url: videoUrl,
+              file_type: 'video'
+            })
+            .select('*')
+            .single();
+
+          if (videoError) {
+            throw videoError;
+          }
+
+          mediaItems.push(videoRecord as ConfessionImage);
+        } catch (error) {
+          console.error('Error saving video:', error);
+          // 继续处理其他视频，不中断整个过程
         }
       }
     }
@@ -219,7 +249,7 @@ export const confessionService = {
     return {
       ...confession,
       profile,
-      images
+      images: mediaItems
     } as Confession;
   },
 

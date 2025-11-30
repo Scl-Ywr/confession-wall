@@ -4,7 +4,8 @@ import React, { useState } from 'react';
 import Image from 'next/image';
 import { ConfessionFormData } from '@/types/confession';
 import { confessionService } from '@/services/confessionService';
-import { PhotoIcon, PaperAirplaneIcon, XMarkIcon } from '@heroicons/react/24/outline';
+import { PhotoIcon, PaperAirplaneIcon, XMarkIcon, FilmIcon } from '@heroicons/react/24/outline';
+import VideoUploader from './VideoUploader';
 
 interface CreateConfessionFormProps {
   onSuccess: () => void;
@@ -16,12 +17,15 @@ export default function CreateConfessionForm({ onSuccess, user }: CreateConfessi
     content: '',
     is_anonymous: false,
     images: [],
+    videoUrls: [],
   });
   const [selectedImages, setSelectedImages] = useState<File[]>([]);
   const [previewUrls, setPreviewUrls] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
+  const [showVideoUploader, setShowVideoUploader] = useState(false);
+  const [videoUrl, setVideoUrl] = useState<string | null>(null);
 
   const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
@@ -60,10 +64,14 @@ export default function CreateConfessionForm({ onSuccess, user }: CreateConfessi
 
     try {
       await confessionService.createConfession(formData);
-      setFormData({ content: '', is_anonymous: false, images: [] });
+      // 重置表单数据，包括videoUrls
+      setFormData({ content: '', is_anonymous: false, images: [], videoUrls: [] });
       setSelectedImages([]);
       previewUrls.forEach(url => URL.revokeObjectURL(url));
       setPreviewUrls([]);
+      // 重置视频相关状态
+      setVideoUrl(null);
+      setShowVideoUploader(false);
       setSuccess(true);
       onSuccess();
       setTimeout(() => setSuccess(false), 3000);
@@ -148,6 +156,51 @@ export default function CreateConfessionForm({ onSuccess, user }: CreateConfessi
           </div>
         )}
 
+        {/* Video Uploader */}
+        {showVideoUploader && (
+          <div className="mt-6 animate-fade-in">
+            <VideoUploader 
+              user={user}
+              onUploadSuccess={(videoUrl) => {
+                setVideoUrl(videoUrl);
+                setShowVideoUploader(false);
+                // Add the video URL to the confession data
+                setFormData(prev => ({
+                  ...prev,
+                  videoUrls: [...(prev.videoUrls || []), videoUrl]
+                }));
+              }} 
+            />
+          </div>
+        )}
+
+        {/* Video Preview */}
+        {videoUrl && (
+          <div className="mt-6 animate-fade-in">
+            <div className="relative rounded-xl overflow-hidden shadow-lg border border-gray-200 dark:border-gray-700">
+              <video 
+                src={videoUrl} 
+                controls 
+                className="w-full max-h-64 object-cover"
+              />
+              <button
+                type="button"
+                onClick={() => {
+                  setVideoUrl(null);
+                  // Remove the video URL from the confession data
+                  setFormData(prev => ({
+                    ...prev,
+                    videoUrls: prev.videoUrls?.filter(url => url !== videoUrl) || []
+                  }));
+                }}
+                className="absolute top-2 right-2 bg-black/50 hover:bg-red-500 text-white p-2 rounded-full backdrop-blur-sm transition-all transform hover:scale-110"
+              >
+                <XMarkIcon className="w-5 h-5" />
+              </button>
+            </div>
+          </div>
+        )}
+
         <div className="flex flex-col sm:flex-row items-center justify-between gap-4 pt-2">
           <div className="flex items-center gap-4 w-full sm:w-auto">
             <label className="cursor-pointer group relative">
@@ -164,6 +217,16 @@ export default function CreateConfessionForm({ onSuccess, user }: CreateConfessi
                 <span className="font-medium">添加图片</span>
               </div>
             </label>
+
+            <button
+              type="button"
+              onClick={() => setShowVideoUploader(!showVideoUploader)}
+              disabled={loading}
+              className="flex items-center gap-2 px-4 py-2 bg-gray-50 dark:bg-gray-800/50 hover:bg-gray-100 dark:hover:bg-gray-700/50 text-gray-600 dark:text-gray-300 rounded-xl transition-all border border-gray-200 dark:border-gray-700 group-hover:border-primary-300 dark:group-hover:border-primary-700"
+            >
+              <FilmIcon className="w-5 h-5 text-primary-500 group-hover:scale-110 transition-transform" />
+              <span className="font-medium">{showVideoUploader ? '关闭视频上传' : '上传视频'}</span>
+            </button>
 
             <label className="flex items-center gap-3 cursor-pointer group select-none">
               <div className="relative">

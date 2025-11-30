@@ -26,7 +26,17 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     const checkUser = async () => {
       try {
         const { data: { user } } = await supabase.auth.getUser();
-        setState(prev => ({ ...prev, user: user as User | null, loading: false }));
+        setState(prev => ({ 
+          ...prev, 
+          user: user ? {
+            id: user.id,
+            email: user.email || '',
+            email_confirmed_at: user.email_confirmed_at,
+            created_at: user.created_at,
+            updated_at: user.updated_at
+          } as User : null, 
+          loading: false 
+        }));
       } catch (error) {
         console.error('Error checking user:', error);
         setState(prev => ({ ...prev, loading: false, error: 'Failed to check user' }));
@@ -39,7 +49,13 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     const { data: authListener } = supabase.auth.onAuthStateChange((_event, session) => {
       setState(prev => ({
         ...prev,
-        user: session?.user as User | null,
+        user: session?.user ? {
+          id: session.user.id,
+          email: session.user.email || '',
+          email_confirmed_at: session.user.email_confirmed_at,
+          created_at: session.user.created_at,
+          updated_at: session.user.updated_at
+        } as User : null,
         loading: false,
       }));
     });
@@ -66,7 +82,12 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       });
 
       if (error) {
-        throw error;
+        // 如果用户已存在且未验证，尝试重新发送验证邮件
+        if (error.message.includes('User already registered') || error.message.includes('already exists')) {
+          await resendVerificationEmail(email);
+        } else {
+          throw error;
+        }
       }
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'An unknown error occurred';

@@ -86,14 +86,23 @@ export const profileService = {
 
   // Get a user's profile by username
   getProfileByUsername: async (username: string): Promise<Profile | null> => {
+    // 检查用户名是否为空
+    if (!username || username.trim() === '') {
+      return null;
+    }
+
+    // 解码URL编码的用户名
+    const decodedUsername = decodeURIComponent(username);
+
     const { data, error } = await supabase
       .from('profiles')
       .select('*')
-      .eq('username', username)
-      .single();
+      .eq('username', decodedUsername)
+      .maybeSingle();
 
     if (error) {
-      throw error;
+      console.error('获取用户资料失败:', error);
+      return null;
     }
 
     return data as Profile;

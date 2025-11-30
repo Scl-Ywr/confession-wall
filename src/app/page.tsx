@@ -122,14 +122,19 @@ export default function Home() {
       return;
     }
 
-    if (!confirm('Are you sure you want to delete this confession?')) return;
+    // 使用中文提示，确保用户能理解
+    const isConfirmed = window.confirm('确定要删除这条表白吗？此操作不可恢复。');
+    if (!isConfirmed) {
+      return;
+    }
 
     try {
       await confessionService.deleteConfession(confessionId);
       setConfessions(prev => prev.filter(c => c.id !== confessionId));
     } catch (err) {
       console.error('Delete error:', err);
-      alert('Failed to delete confession');
+      // 使用中文提示，确保用户能理解
+      window.alert('删除表白失败，请稍后重试。');
     }
   };
 

@@ -2,11 +2,12 @@
 
 import React, { useState, useEffect, useCallback } from 'react';
 import Image from 'next/image';
+import { supabase } from '@/lib/supabase/client';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/context/AuthContext';
 import { profileService, Profile, ProfileUpdateData } from '@/services/profileService';
 import MeteorShower from '@/components/MeteorShower';
-import { UserCircleIcon, PhotoIcon, ArrowLeftOnRectangleIcon } from '@heroicons/react/24/outline';
+import { UserCircleIcon, PhotoIcon, ArrowLeftOnRectangleIcon, TrashIcon } from '@heroicons/react/24/outline';
 
 const ProfilePage: React.FC = () => {
   const router = useRouter();
@@ -20,6 +21,8 @@ const ProfilePage: React.FC = () => {
   const [formSuccess, setFormSuccess] = useState(false);
   const [selectedAvatar, setSelectedAvatar] = useState<File | null>(null);
   const [avatarPreview, setAvatarPreview] = useState<string | null>(null);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [deleteLoading, setDeleteLoading] = useState(false);
 
   // Fetch user profile
   const fetchProfile = useCallback(async () => {
@@ -143,6 +146,87 @@ const ProfilePage: React.FC = () => {
     }
   };
 
+  // Handle account deletion
+  const handleDeleteAccount = async () => {
+    if (!user) {
+      return;
+    }
+
+    setDeleteLoading(true);
+    try {
+      // Delete all associated data
+      const userId = user.id;
+
+      // 1. Delete confession images from storage
+      const { error: storageError } = await supabase.storage
+        .from('confession_images')
+        .remove([`avatars/${userId}/*`, `confession_images/${userId}/*`]);
+      if (storageError) {
+        console.error('Error deleting images:', storageError);
+      }
+
+      // 2. Delete likes associated with the user
+      const { error: likesError } = await supabase
+        .from('likes')
+        .delete()
+        .eq('user_id', userId);
+      if (likesError) {
+        console.error('Error deleting likes:', likesError);
+      }
+
+      // 3. Delete comments associated with the user
+      const { error: commentsError } = await supabase
+        .from('comments')
+        .delete()
+        .eq('user_id', userId);
+      if (commentsError) {
+        console.error('Error deleting comments:', commentsError);
+      }
+
+      // 4. Delete confession images records
+      const { error: confessionImagesError } = await supabase
+        .from('confession_images')
+        .delete()
+        .eq('confession_id', userId);
+      if (confessionImagesError) {
+        console.error('Error deleting confession images records:', confessionImagesError);
+      }
+
+      // 5. Delete confessions associated with the user
+      const { error: confessionsError } = await supabase
+        .from('confessions')
+        .delete()
+        .eq('user_id', userId);
+      if (confessionsError) {
+        console.error('Error deleting confessions:', confessionsError);
+      }
+
+      // 6. Delete profile
+      const { error: profileError } = await supabase
+        .from('profiles')
+        .delete()
+        .eq('id', userId);
+      if (profileError) {
+        console.error('Error deleting profile:', profileError);
+      }
+
+      // 7. Delete user account
+      const { error: userError } = await supabase.auth.admin.deleteUser(userId);
+      if (userError) {
+        console.error('Error deleting user account:', userError);
+      }
+
+      // 8. Logout and redirect to login page
+      await logout();
+      router.push('/auth/login');
+    } catch (error) {
+      console.error('Error deleting account:', error);
+    } finally {
+      setDeleteLoading(false);
+      setShowDeleteConfirm(false);
+    }
+  };
+
   if (authLoading || loading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-50 dark:bg-gray-900">
@@ -254,6 +338,14 @@ const ProfilePage: React.FC = () => {
               <ArrowLeftOnRectangleIcon className="w-5 h-5 group-hover:-translate-x-1 transition-transform" />
               <span>退出登录</span>
             </button>
+
+            <button
+              onClick={() => setShowDeleteConfirm(true)}
+              className="w-full glass-card p-4 rounded-xl flex items-center justify-center gap-2 text-red-800 bg-red-50/50 hover:bg-red-100/80 dark:text-red-200 dark:bg-red-900/20 dark:hover:bg-red-900/40 transition-all group font-bold shadow-sm"
+            >
+              <TrashIcon className="w-5 h-5 group-hover:-translate-x-1 transition-transform" />
+              <span>注销账号</span>
+            </button>
           </div>
 
           {/* Right Column: Edit Form */}
@@ -347,6 +439,38 @@ const ProfilePage: React.FC = () => {
           </div>
         </div>
       </main>
+
+      {/* Delete Confirmation Modal */}
+      {showDeleteConfirm && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50">
+          <div className="glass-card rounded-2xl p-8 max-w-md w-full mx-4 animate-fade-in">
+            <h3 className="text-2xl font-bold text-gray-900 dark:text-white mb-4">确认注销账号</h3>
+            <p className="text-gray-700 dark:text-gray-300 mb-6">
+              您确定要注销账号吗？此操作将永久删除您的账号及所有关联数据，包括表白、评论、点赞和个人资料。此操作不可撤销！
+            </p>
+            <div className="flex items-center justify-end gap-4">
+              <button
+                onClick={() => setShowDeleteConfirm(false)}
+                className="px-6 py-2.5 border border-gray-400 dark:border-gray-500 rounded-xl text-gray-900 dark:text-white bg-white/50 hover:bg-white/80 dark:bg-gray-800/50 dark:hover:bg-gray-700/80 transition-all font-bold shadow-sm"
+              >
+                取消
+              </button>
+              <button
+                onClick={handleDeleteAccount}
+                disabled={deleteLoading}
+                className={`px-8 py-2.5 bg-red-600 text-white rounded-xl font-bold shadow-lg shadow-red-500/30 hover:shadow-red-500/50 transform hover:-translate-y-0.5 transition-all ${deleteLoading ? 'opacity-70 cursor-wait' : ''}`}
+              >
+                {deleteLoading ? (
+                  <div className="flex items-center gap-2">
+                    <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
+                    <span>注销中...</span>
+                  </div>
+                ) : '确认注销'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
