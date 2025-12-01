@@ -58,7 +58,7 @@ const OtherUserProfilePage = () => {
   }, [user, userId]);
 
   const handleSendFriendRequest = async () => {
-    if (!user) return;
+    if (!user || !profile) return;
 
     try {
       setRequestLoading(true);
