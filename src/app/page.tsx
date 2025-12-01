@@ -8,6 +8,7 @@ import { Confession } from '@/types/confession';
 import { useRouter } from 'next/navigation';
 import ConfessionCard from '@/components/ConfessionCard';
 import CreateConfessionForm from '@/components/CreateConfessionForm';
+import { CustomSelect } from '@/components/CustomSelect';
 
 export default function Home() {
   const router = useRouter();
@@ -19,9 +20,16 @@ export default function Home() {
   const [hasMore, setHasMore] = useState(true);
   const [page, setPage] = useState(1);
   const [searchKeyword, setSearchKeyword] = useState('');
+  const [searchType, setSearchType] = useState<'content' | 'username'>('content'); // 添加搜索类型状态
   
   // Like loading state
   const [likeLoading, setLikeLoading] = useState<Record<string, boolean>>({});
+
+  // 添加搜索参数状态，用于存储当前搜索条件
+  const [currentSearchParams, setCurrentSearchParams] = useState({
+    keyword: '',
+    type: 'content' as 'content' | 'username'
+  });
 
   const fetchConfessions = useCallback(async (isLoadMore: boolean = false) => {
     const currentPage = isLoadMore ? page + 1 : 1;
@@ -34,22 +42,50 @@ export default function Home() {
     try {
       let data;
       if (searchKeyword.trim()) {
-        data = await confessionService.searchConfessions(searchKeyword);
+        // 直接使用最新的searchKeyword和searchType，而不是依赖currentSearchParams
+        data = await confessionService.searchConfessions(
+          searchKeyword,
+          searchType,
+          currentPage
+        );
+        
+        // 更新currentSearchParams，用于显示当前搜索状态
+        setCurrentSearchParams({
+          keyword: searchKeyword,
+          type: searchType
+        });
       } else {
         data = await confessionService.getConfessions(currentPage);
+        
+        // 清空搜索参数
+        setCurrentSearchParams({
+          keyword: '',
+          type: 'content'
+        });
       }
       
       if (isLoadMore) {
         if (data.length === 0) {
           setHasMore(false);
         } else {
-          setConfessions(prev => [...prev, ...data]);
-          setPage(currentPage);
+          // 检查是否有重复项，避免重复加载
+          setConfessions(prev => {
+            const newConfessions = data.filter(newConfession => 
+              !prev.some(existingConfession => existingConfession.id === newConfession.id)
+            );
+            if (newConfessions.length > 0) {
+              setPage(currentPage);
+              return [...prev, ...newConfessions];
+            } else {
+              setHasMore(false);
+              return prev;
+            }
+          });
         }
       } else {
         setConfessions(data);
         setPage(1);
-        setHasMore(true);
+        setHasMore(data.length > 0);
       }
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'Failed to load confessions';
@@ -57,11 +93,12 @@ export default function Home() {
     } finally {
       loadingState(false);
     }
-  }, [page, searchKeyword]);
+  }, [page, searchKeyword, searchType]);
 
+  // 初始加载
   useEffect(() => {
     fetchConfessions();
-  }, [fetchConfessions]);
+  }, [fetchConfessions]); // 添加fetchConfessions到依赖数组，确保依赖数组大小一致
 
   const handleObserver = useCallback((entries: IntersectionObserverEntry[]) => {
     const [entry] = entries;
@@ -165,30 +202,48 @@ export default function Home() {
             <form 
               onSubmit={(e) => {
                 e.preventDefault();
+                // 直接调用fetchConfessions，它会自动处理搜索参数
                 fetchConfessions();
               }}
               className="w-full md:w-auto flex gap-2"
             >
+              <CustomSelect
+                options={[
+                  { value: 'content', label: '表白内容' },
+                  { value: 'username', label: '用户名' }
+                ]}
+                value={searchType}
+                onChange={(value) => setSearchType(value)}
+                className="w-32"
+              />
               <input
                 type="text"
                 placeholder="搜索表白..."
-                className="w-full md:w-64 px-4 py-2 rounded-xl border border-gray-200 dark:border-gray-700 bg-white/50 dark:bg-gray-800/50 backdrop-blur-sm focus:ring-2 focus:ring-primary-500 focus:outline-none transition-all"
+                className="w-full md:w-64 px-4 py-2 rounded-xl border border-gray-200 dark:border-gray-700 bg-white/80 dark:bg-gray-800/80 backdrop-blur-md focus:ring-2 focus:ring-primary-500 focus:outline-none transition-all duration-300 hover:border-primary-300 dark:hover:border-primary-600 shadow-sm hover:shadow-md"
                 value={searchKeyword}
                 onChange={(e) => setSearchKeyword(e.target.value)}
               />
               <button
                 type="submit"
-                className="px-6 py-2 bg-white dark:bg-gray-800 text-primary-600 font-semibold rounded-xl shadow-sm hover:shadow-md transition-all border border-gray-100 dark:border-gray-700"
+                className="px-6 py-2 bg-gradient-to-r from-primary-500 to-primary-600 text-white font-semibold rounded-xl shadow-sm hover:shadow-md transition-all duration-300 hover:from-primary-600 hover:to-primary-700 disabled:opacity-50 disabled:cursor-not-allowed disabled:from-primary-400 disabled:to-primary-500 flex items-center justify-center gap-2"
+                disabled={loading}
               >
-                搜索
+                {loading ? (
+                  <>
+                    <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
+                    搜索中...
+                  </>
+                ) : (
+                  '搜索'
+                )}
               </button>
             </form>
           </div>
           
-          {loading && confessions.length === 0 ? (
+          {loading ? (
             <div className="text-center py-20">
               <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary-600 mx-auto mb-4"></div>
-              <p className="text-gray-500">加载秘密中...</p>
+              <p className="text-gray-500">{currentSearchParams.keyword ? '搜索中...' : '加载秘密中...'}</p>
             </div>
           ) : error ? (
             <div className="bg-red-50 border border-red-200 rounded-xl p-6 text-center">
@@ -202,7 +257,7 @@ export default function Home() {
             </div>
           ) : confessions.length === 0 ? (
             <div className="glass rounded-2xl p-12 text-center">
-              <p className="text-gray-500 text-lg">还没有表白。成为第一个吧！</p>
+              <p className="text-gray-500 text-lg">{currentSearchParams.keyword ? '没有找到匹配的表白' : '还没有表白。成为第一个吧！'}</p>
             </div>
           ) : (
             <div className="grid gap-6">

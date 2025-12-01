@@ -480,16 +480,54 @@ export const confessionService = {
   },
 
   // 搜索表白
-  searchConfessions: async (keyword: string): Promise<Confession[]> => {
-    // 1. 获取搜索结果
-    const { data: confessions, error: confessionsError } = await supabase
-      .from('confessions')
-      .select('*')
-      .ilike('content', `%${keyword}%`)
-      .order('created_at', { ascending: false });
+  searchConfessions: async (keyword: string, searchType: 'content' | 'username', page: number = 1, limit: number = 10): Promise<Confession[]> => {
+    const offset = (page - 1) * limit;
+    let confessions = [];
 
-    if (confessionsError) {
-      throw confessionsError;
+    // 1. 根据搜索类型执行不同的搜索逻辑
+    if (searchType === 'username') {
+      // 优化：先获取匹配用户名的用户
+      const { data: matchedProfiles, error: profilesError } = await supabase
+        .from('profiles')
+        .select('id')
+        .ilike('username', `%${keyword}%`);
+      
+      if (profilesError) {
+        throw profilesError;
+      }
+      
+      if (matchedProfiles && matchedProfiles.length > 0) {
+        // 获取匹配用户的ID列表
+        const matchedUserIds = matchedProfiles.map(profile => profile.id);
+        
+        // 然后获取这些用户的表白
+        const { data, error } = await supabase
+          .from('confessions')
+          .select('*')
+          .in('user_id', matchedUserIds)
+          .order('created_at', { ascending: false })
+          .range(offset, offset + limit - 1);
+        
+        if (error) {
+          throw error;
+        }
+        
+        confessions = data || [];
+      }
+    } else {
+      // 按表白内容搜索
+      const { data, error } = await supabase
+        .from('confessions')
+        .select('*')
+        .ilike('content', `%${keyword}%`)
+        .order('created_at', { ascending: false })
+        .range(offset, offset + limit - 1);
+      
+      if (error) {
+        throw error;
+      }
+      
+      confessions = data || [];
     }
 
     // 2. 获取所有表白的图片
@@ -527,7 +565,7 @@ export const confessionService = {
     }
 
     // 4. 将图片分组到对应的表白
-    const imagesByConfessionId = images.reduce((acc, image) => {
+    const imagesByConfessionId = (images || []).reduce((acc, image) => {
       if (!acc[image.confession_id]) {
         acc[image.confession_id] = [];
       }
