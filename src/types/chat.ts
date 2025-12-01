@@ -33,6 +33,7 @@ export interface Friendship {
   created_at: string;
   updated_at: string;
   friend_profile?: Profile;
+  unread_count: number;
 }
 
 // 聊天消息
@@ -97,7 +98,7 @@ export interface GroupAnnouncement {
 }
 
 // 通知类型
-export type NotificationType = 'friend_request' | 'friend_accepted' | 'friend_rejected';
+export type NotificationType = 'friend_request' | 'friend_accepted' | 'friend_rejected' | 'friend_request_sent';
 
 // 通知
 export interface Notification {

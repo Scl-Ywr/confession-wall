@@ -19,24 +19,16 @@ const createNotification = async (
   type: NotificationType,
   friendRequestId?: string
 ): Promise<Notification> => {
-  console.log('Creating notification:', {
-    recipientId,
-    content,
-    type,
-    friendRequestId
-  });
-  
   // 获取当前认证用户
   let user = await supabase.auth.getUser();
   
   // 检查是否有错误获取用户信息，尝试刷新会话
   if (user.error || !user.data.user?.id) {
-    console.log('Refreshing session...');
     // 尝试刷新会话
     const { error: refreshError } = await supabase.auth.refreshSession();
     
     if (refreshError) {
-      console.error('Failed to refresh session:', refreshError);
+      console.error('Failed to refresh session:', refreshError.message || JSON.stringify(refreshError));
       throw new Error('User not authenticated');
     }
     
@@ -44,15 +36,13 @@ const createNotification = async (
     user = await supabase.auth.getUser();
     
     if (user.error || !user.data.user?.id) {
-      console.error('Auth error in createNotification after refresh:', user.error);
+      console.error('Auth error in createNotification after refresh:', user.error?.message || JSON.stringify(user.error));
       throw new Error('User not authenticated');
     }
   }
   
   const senderId = user.data.user.id;
 
-  console.log('Sender ID for notification:', senderId);
-  
   // 尝试插入通知，移除.select('*').single()，因为发送者不是接收者，不能查询通知
   const { error } = await supabase
     .from('notifications')
@@ -65,10 +55,9 @@ const createNotification = async (
     });
 
   if (error) {
-    console.error('Error inserting notification:', error);
+    console.error('Error inserting notification:', error.message || JSON.stringify(error));
     // 检查是否是认证错误，如果是，尝试刷新会话并重试
     if (error.code === '42501' || error.code === '401' || error.code === '403') {
-      console.log('Authentication error, refreshing session and retrying...');
       // 刷新会话
       const { error: refreshError } = await supabase.auth.refreshSession();
       
@@ -85,7 +74,6 @@ const createNotification = async (
           });
         
         if (!retryError) {
-          console.log('Successfully created notification on retry');
           // 返回一个模拟的通知对象，因为我们不需要实际的数据库ID
           return {
             id: 'temp-notification-id',
@@ -99,13 +87,12 @@ const createNotification = async (
             friend_request_id: friendRequestId
           } as Notification;
         }
-        console.error('Retry failed:', retryError);
+        console.error('Retry failed:', retryError.message || JSON.stringify(retryError));
       }
     }
     throw error;
   }
 
-  console.log('Successfully created notification');
   // 返回一个模拟的通知对象，因为我们不需要实际的数据库ID
   return {
     id: 'temp-notification-id',
@@ -138,13 +125,11 @@ export const chatService = {
 
   // 发送好友申请
   sendFriendRequest: async (receiverId: string, message?: string): Promise<FriendRequest> => {
-    console.log('Starting sendFriendRequest for receiver:', receiverId);
-    
     const user = await supabase.auth.getUser();
     
     // 检查是否有错误获取用户信息
     if (user.error) {
-      console.error('Auth error in sendFriendRequest:', user.error);
+      console.error('Auth error in sendFriendRequest:', user.error.message || JSON.stringify(user.error));
       throw new Error('User not authenticated');
     }
     
@@ -154,8 +139,6 @@ export const chatService = {
       console.error('No sender ID in sendFriendRequest');
       throw new Error('User not authenticated');
     }
-
-    console.log('Sender ID:', senderId);
     
     // 简单验证 receiverId 格式，避免无效请求
     if (!receiverId || receiverId.length !== 36) {
@@ -174,11 +157,9 @@ export const chatService = {
       .single();
 
     if (error) {
-      console.error('Error inserting friend request:', error);
+      console.error('Error inserting friend request:', error.message || JSON.stringify(error));
       throw error;
     }
-
-    console.log('Successfully created friend request:', data);
     
     // 获取发送者的资料，用于通知内容
     const { data: senderProfile } = await supabase
@@ -186,21 +167,32 @@ export const chatService = {
       .select('display_name')
       .eq('id', senderId)
       .single();
-
-    console.log('Sender profile:', senderProfile);
+    
+    // 获取接收者的资料，用于通知内容
+    const { data: receiverProfile } = await supabase
+      .from('profiles')
+      .select('display_name')
+      .eq('id', receiverId)
+      .single();
     
     try {
-      // 创建通知
-      console.log('Calling createNotification...');
+      // 创建通知给接收者
       await createNotification(
         receiverId,
         `${senderProfile?.display_name || '用户'} 发送了好友请求`,
         'friend_request',
         data.id
       );
-      console.log('Notification created successfully');
+      
+      // 创建通知给发起者
+      await createNotification(
+        senderId,
+        `你已向 ${receiverProfile?.display_name || '用户'} 发送了好友请求，等待对方同意`,
+        'friend_request_sent',
+        data.id
+      );
     } catch (notificationError) {
-      console.error('Error creating notification:', notificationError);
+      console.error('Error creating notification:', notificationError instanceof Error ? notificationError.message : JSON.stringify(notificationError));
       // 继续执行，不中断好友请求流程
     }
 
@@ -272,12 +264,17 @@ export const chatService = {
         ? `${receiverProfile?.display_name || '用户'} 接受了你的好友请求`
         : `${receiverProfile?.display_name || '用户'} 拒绝了你的好友请求`;
       
-      await createNotification(
-        updatedRequest.sender_id,
-        notificationContent,
-        status === 'accepted' ? 'friend_accepted' : 'friend_rejected',
-        updatedRequest.id
-      );
+      try {
+        await createNotification(
+          updatedRequest.sender_id,
+          notificationContent,
+          status === 'accepted' ? 'friend_accepted' : 'friend_rejected',
+          updatedRequest.id
+        );
+      } catch (notificationError) {
+        console.error('Error creating notification:', notificationError instanceof Error ? notificationError.message : JSON.stringify(notificationError));
+        // 继续执行，不中断好友请求处理流程
+      }
 
       // 如果是接受请求，创建好友关系
       if (status === 'accepted') {
@@ -306,16 +303,27 @@ export const chatService = {
   // 获取好友列表
   getFriends: async (): Promise<Friendship[]> => {
     try {
+      // 获取当前认证用户，检查是否有错误
       const user = await supabase.auth.getUser();
+      
+      // 检查认证错误
+      if (user.error) {
+        console.error('Auth error in getFriends:', user.error.message || JSON.stringify(user.error));
+        throw new Error('User not authenticated');
+      }
+      
       const userId = user.data.user?.id;
 
       if (!userId) {
         throw new Error('User not authenticated');
       }
 
-      const { data, error } = await supabase
+      console.log('Fetching friends for user:', userId);
+      
+      // 查询好友关系
+      const { data: friendships, error } = await supabase
         .from('friendships')
-        .select('*, friend_profile:profiles!friend_id(*)')
+        .select('*')
         .eq('user_id', userId)
         .order('updated_at', { ascending: false });
 
@@ -324,7 +332,64 @@ export const chatService = {
         throw new Error(`Failed to fetch friends: ${error.message || 'Unknown error'}`);
       }
 
-      return data as Friendship[];
+      console.log('Found friendships:', friendships?.length || 0);
+
+      // 如果没有好友关系，直接返回空数组
+      if (!friendships || friendships.length === 0) {
+        return [] as Friendship[];
+      }
+
+      // 获取所有好友的 ID
+      const friendIds = friendships.map(friendship => friendship.friend_id);
+
+      // 查询所有好友的资料
+      const { data: friendsProfiles, error: profilesError } = await supabase
+        .from('profiles')
+        .select('*')
+        .in('id', friendIds);
+
+      if (profilesError) {
+        console.error('Error fetching friends profiles:', profilesError);
+        // 即使获取资料失败，也返回好友关系数据
+        return friendships.map(friendship => ({
+          ...friendship,
+          unread_count: 0
+        })) as Friendship[];
+      }
+
+      // 查询每个好友的未读消息数量
+      const { data: chatMessages, error: messagesError } = await supabase
+        .from('chat_messages')
+        .select('sender_id, receiver_id, is_read')
+        .or(`sender_id.in.(${friendIds.join(',')}),receiver_id.in.(${friendIds.join(',')})`)
+        .eq('receiver_id', userId)
+        .eq('is_read', false);
+
+      if (messagesError) {
+        console.error('Error fetching unread messages:', messagesError);
+      }
+
+      // 计算每个好友的未读消息数量
+      const unreadCounts: Record<string, number> = {};
+      if (chatMessages) {
+        chatMessages.forEach(message => {
+          const senderId = message.sender_id;
+          unreadCounts[senderId] = (unreadCounts[senderId] || 0) + 1;
+        });
+      }
+
+      // 将好友资料和未读消息数量合并到好友关系中
+      const friendsWithProfiles = friendships.map(friendship => {
+        const friendProfile = friendsProfiles?.find(profile => profile.id === friendship.friend_id);
+        return {
+          ...friendship,
+          friend_profile: friendProfile,
+          unread_count: unreadCounts[friendship.friend_id] || 0
+        };
+      });
+
+      console.log('Found friends with profiles:', friendsWithProfiles.length);
+      return friendsWithProfiles as Friendship[];
     } catch (error) {
       console.error('Error in getFriends:', error);
       throw error;
@@ -333,53 +398,159 @@ export const chatService = {
 
   // 发送一对一消息
   sendPrivateMessage: async (receiverId: string, content: string): Promise<ChatMessage> => {
-    const user = await supabase.auth.getUser();
-    const senderId = user.data.user?.id;
+    try {
+      // 获取当前认证用户，检查是否有错误
+      const user = await supabase.auth.getUser();
+      
+      // 检查认证错误
+      if (user.error) {
+        console.error('Auth error in sendPrivateMessage:', user.error);
+        throw new Error('User not authenticated');
+      }
+      
+      const senderId = user.data.user?.id;
 
-    if (!senderId) {
-      throw new Error('User not authenticated');
-    }
+      if (!senderId) {
+        throw new Error('User not authenticated');
+      }
 
-    const { data, error } = await supabase
-      .from('chat_messages')
-      .insert({
-        sender_id: senderId,
-        receiver_id: receiverId,
-        content,
-        type: 'text',
-        is_read: false
-      })
-      .select('*')
-      .single();
+      console.log('Sending message from', senderId, 'to', receiverId, ':', content);
+      
+      // 检查好友关系状态
+      const friendshipStatus = await chatService.checkFriendshipStatus(receiverId);
+      if (friendshipStatus !== 'accepted') {
+        throw new Error('You are not friends with this user, cannot send message');
+      }
+      
+      // 先获取发送者的资料
+      const { data: senderProfile, error: profileError } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('id', senderId)
+        .single();
 
-    if (error) {
+      if (profileError) {
+        console.error('Error fetching sender profile:', profileError);
+      }
+
+      // 发送消息
+      const { data, error } = await supabase
+        .from('chat_messages')
+        .insert({
+          sender_id: senderId,
+          receiver_id: receiverId,
+          content,
+          type: 'text',
+          is_read: false
+        })
+        .select('*')
+        .single();
+
+      if (error) {
+        console.error('Error inserting message:', error);
+        throw error;
+      }
+
+      console.log('Message sent successfully:', data);
+      
+      // 返回包含发送者资料的消息
+      return {
+        ...data,
+        sender_profile: senderProfile
+      } as ChatMessage;
+    } catch (error) {
+      console.error('Unexpected error in sendPrivateMessage:', error);
       throw error;
     }
-
-    return data as ChatMessage;
   },
 
   // 获取聊天消息
   getChatMessages: async (otherUserId: string, limit: number = 50, offset: number = 0): Promise<ChatMessage[]> => {
-    const user = await supabase.auth.getUser();
-    const userId = user.data.user?.id;
+    try {
+      console.log('getChatMessages called with:', { otherUserId, limit, offset });
+      
+      // 获取当前认证用户
+      const user = await supabase.auth.getUser();
+      
+      // 检查认证错误
+      if (user.error || !user.data.user?.id) {
+        console.error('Auth error in getChatMessages:', user.error);
+        return [];
+      }
+      
+      const userId = user.data.user.id;
+      console.log('Current user ID:', userId);
 
-    if (!userId) {
-      throw new Error('User not authenticated');
+      // 在数据库查询时就过滤出当前对话的消息，使用and和or组合条件
+      // 确保只返回当前用户和指定用户之间的消息
+      const { data: messages, error: messagesError } = await supabase
+        .from('chat_messages')
+        .select('*')
+        .or(`and(sender_id.eq.${userId},receiver_id.eq.${otherUserId}),and(sender_id.eq.${otherUserId},receiver_id.eq.${userId})`)
+        .order('created_at', { ascending: false })
+        .range(offset, offset + limit - 1);
+
+      if (messagesError) {
+        console.error('Error fetching messages:', messagesError);
+        console.error('Error details:', JSON.stringify(messagesError, null, 2));
+        // 尝试直接返回空数组，不中断聊天功能
+        return [];
+      }
+
+      console.log('Messages from database:', messages?.length || 0);
+
+      // 确保 messages 是数组
+      const chatMessages = messages || [];
+
+      // 客户端再次过滤，确保只返回当前用户和对方之间的消息
+      // 这是一个额外的安全检查，确保不会返回其他对话的消息
+      const filteredMessages = chatMessages.filter(message => 
+        (message.sender_id === userId && message.receiver_id === otherUserId) ||
+        (message.sender_id === otherUserId && message.receiver_id === userId)
+      );
+
+      console.log('Filtered messages:', filteredMessages.length);
+
+      // 如果没有消息，直接返回空数组
+      if (filteredMessages.length === 0) {
+        return [] as ChatMessage[];
+      }
+
+      // 获取所有发送者的 ID
+      const senderIds = [...new Set(filteredMessages.map(message => message.sender_id))];
+      console.log('Sender IDs to fetch profiles for:', senderIds);
+
+      // 查询所有发送者的资料
+      const { data: sendersProfiles, error: profilesError } = await supabase
+        .from('profiles')
+        .select('*')
+        .in('id', senderIds);
+
+      if (profilesError) {
+        console.error('Error fetching senders profiles:', profilesError);
+        console.error('Profiles error details:', JSON.stringify(profilesError, null, 2));
+        // 即使获取资料失败，也返回消息数据
+        return filteredMessages as ChatMessage[];
+      }
+
+      console.log('Fetched sender profiles:', sendersProfiles?.length || 0);
+
+      // 将发送者资料合并到消息中
+      const messagesWithProfiles = filteredMessages.map(message => {
+        const senderProfile = sendersProfiles?.find(profile => profile.id === message.sender_id);
+        return {
+          ...message,
+          sender_profile: senderProfile
+        };
+      });
+
+      console.log('Messages with profiles:', messagesWithProfiles.length);
+      return messagesWithProfiles as ChatMessage[];
+    } catch (error) {
+      console.error('Unexpected error in getChatMessages:', error);
+      // 返回空数组而不是抛出错误，避免影响用户体验
+      return [] as ChatMessage[];
     }
-
-    const { data, error } = await supabase
-      .from('chat_messages')
-      .select('*, sender_profile:profiles!sender_id(*)')
-      .or(`and(sender_id.eq.${userId},receiver_id.eq.${otherUserId}),and(sender_id.eq.${otherUserId},receiver_id.eq.${userId})`)
-      .order('created_at', { ascending: false })
-      .range(offset, offset + limit - 1);
-
-    if (error) {
-      throw error;
-    }
-
-    return data as ChatMessage[];
   },
 
   // 创建交流群
@@ -686,7 +857,7 @@ export const chatService = {
 
     let query = supabase
       .from('profiles')
-      .select('id, username, display_name, avatar_url, created_at, bio');
+      .select('id, username, display_name, avatar_url, created_at, bio, online_status, last_seen');
 
     // 根据格式判断是 UUID 还是用户名
     if (identifier.length === 36 && identifier.includes('-')) {
@@ -725,7 +896,7 @@ export const chatService = {
     }
 
     try {
-      // 检查是否已经是好友
+      // 检查是否已经是好友（只需要检查当前用户的好友关系记录）
       const { data: friendship, error: friendshipError } = await supabase
         .from('friendships')
         .select('id')
@@ -767,6 +938,70 @@ export const chatService = {
     }
 
     return 'none';
+  },
+
+  // 删除好友
+  removeFriend: async (friendId: string): Promise<void> => {
+    const user = await supabase.auth.getUser();
+    const userId = user.data.user?.id;
+
+    if (!userId) {
+      throw new Error('User not authenticated');
+    }
+
+    // 简单验证 friendId 格式，避免无效请求
+    if (!friendId || friendId.length !== 36) {
+      throw new Error('Invalid friend ID format');
+    }
+
+    const errors: string[] = [];
+
+    try {
+      // 1. 删除当前用户的好友关系
+      const { error: friendshipError1 } = await supabase
+        .from('friendships')
+        .delete()
+        .eq('user_id', userId)
+        .eq('friend_id', friendId);
+
+      if (friendshipError1) {
+        console.error('Error deleting current user\'s friendship:', friendshipError1);
+        errors.push(`Failed to delete your friendship: ${friendshipError1.message}`);
+      }
+
+      // 2. 删除对方的好友关系
+      const { error: friendshipError2 } = await supabase
+        .from('friendships')
+        .delete()
+        .eq('user_id', friendId)
+        .eq('friend_id', userId);
+
+      if (friendshipError2) {
+        console.error('Error deleting friend\'s friendship:', friendshipError2);
+        errors.push(`Failed to delete friend\'s friendship: ${friendshipError2.message}`);
+      }
+
+      // 3. 删除双方之间的所有聊天记录
+      const { error: messagesError } = await supabase
+        .from('chat_messages')
+        .delete()
+        .or(`and(sender_id.eq.${userId},receiver_id.eq.${friendId}),and(sender_id.eq.${friendId},receiver_id.eq.${userId})`);
+
+      if (messagesError) {
+        console.error('Error deleting chat messages:', messagesError);
+        errors.push(`Failed to delete chat messages: ${messagesError.message}`);
+      }
+
+      // 如果所有操作都失败，抛出错误
+      if (errors.length === 3) {
+        throw new Error('Failed to remove friend: All operations failed');
+      }
+
+      console.log('Successfully removed friend and deleted chat messages');
+    } catch (error) {
+      console.error('Error removing friend:', error);
+      throw error;
+    }
   },
 
   // 获取用户的通知列表

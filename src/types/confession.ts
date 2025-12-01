@@ -6,11 +6,18 @@ export interface ConfessionImage {
   created_at: string;
 }
 
+export type OnlineStatus = 'online' | 'offline' | 'away' | 'busy';
+
 export interface Profile {
   id: string;
   display_name: string;
   username: string;
   avatar_url?: string;
+  online_status?: OnlineStatus;
+  last_seen?: string;
+  bio?: string;
+  created_at?: string;
+  updated_at?: string;
 }
 
 export interface Confession {

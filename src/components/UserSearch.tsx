@@ -44,11 +44,8 @@ export function UserSearch({ onUserSelect, currentUserId }: UserSearchProps) {
     // 查找对应的用户对象
     const selectedUser = results.find(user => user.id === userId);
     if (selectedUser) {
-      if (onUserSelect) {
-        onUserSelect(selectedUser);
-      } else {
-        router.push(`/profile/${userId}`);
-      }
+      // 无论是否有 onUserSelect 回调，都跳转到用户主页
+      router.push(`/profile/${userId}`);
       setShowResults(false);
     }
   };

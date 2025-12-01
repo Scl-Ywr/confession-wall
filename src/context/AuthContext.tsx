@@ -21,11 +21,33 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     error: null,
   });
 
+  // 更新用户在线状态的辅助函数
+  const updateOnlineStatus = async (userId: string, status: 'online' | 'offline' | 'away') => {
+    try {
+      const { error } = await supabase
+        .from('profiles')
+        .update({
+          online_status: status,
+          last_seen: new Date().toISOString()
+        })
+        .eq('id', userId);
+      if (error) {
+        console.error('Error updating online status:', error);
+      }
+    } catch (error) {
+      console.error('Unexpected error updating online status:', error);
+    }
+  };
+
   useEffect(() => {
     // Check if user is already logged in
     const checkUser = async () => {
       try {
         const { data: { user } } = await supabase.auth.getUser();
+        if (user) {
+          // 用户已登录，设置在线状态
+          await updateOnlineStatus(user.id, 'online');
+        }
         setState(prev => ({ 
           ...prev, 
           user: user ? {
@@ -46,7 +68,17 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     checkUser();
 
     // Listen for auth changes
-    const { data: authListener } = supabase.auth.onAuthStateChange((_event, session) => {
+    const { data: authListener } = supabase.auth.onAuthStateChange((event, session) => {
+      if (session?.user) {
+        // 用户登录或会话恢复，设置在线状态
+        updateOnlineStatus(session.user.id, 'online');
+      } else if (event === 'SIGNED_OUT') {
+        // 用户主动退出登录，设置离线状态
+        const userId = state.user?.id;
+        if (userId) {
+          updateOnlineStatus(userId, 'offline');
+        }
+      }
       setState(prev => ({
         ...prev,
         user: session?.user ? {
@@ -60,10 +92,67 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       }));
     });
 
+    // 监听页面关闭或刷新事件，设置离线状态
+    const handleBeforeUnload = async () => {
+      const userId = state.user?.id;
+      if (userId) {
+        try {
+          // 尝试使用fetch发送同步请求，确保请求能被处理
+          await fetch('/api/update-status', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ userId, status: 'offline' }),
+            keepalive: true,
+          });
+        } catch (error) {
+          console.error('Error sending offline status:', error);
+          // 如果fetch失败，尝试使用navigator.sendBeacon
+          try {
+            const formData = new FormData();
+            formData.append('userId', userId);
+            formData.append('status', 'offline');
+            navigator.sendBeacon('/api/update-status', formData);
+          } catch (beaconError) {
+            console.error('Error sending beacon for offline status:', beaconError);
+          }
+        }
+      }
+    };
+
+    // 监听页面可见性变化，当页面隐藏时设置为离开，显示时设置为在线
+    const handleVisibilityChange = async () => {
+      const userId = state.user?.id;
+      if (userId) {
+        const status = document.hidden ? 'away' : 'online';
+        await updateOnlineStatus(userId, status as 'online' | 'offline');
+      }
+    };
+
+    // 添加心跳机制，定期更新在线状态
+    const heartbeatInterval = setInterval(async () => {
+      const userId = state.user?.id;
+      if (userId) {
+        await updateOnlineStatus(userId, 'online');
+      }
+    }, 30000); // 每30秒发送一次心跳
+
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
     return () => {
       authListener.subscription.unsubscribe();
+      window.removeEventListener('beforeunload', handleBeforeUnload);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      clearInterval(heartbeatInterval);
+      // 组件卸载时也设置为离线
+      const userId = state.user?.id;
+      if (userId) {
+        updateOnlineStatus(userId, 'offline');
+      }
     };
-  }, []);
+  }, [state.user?.id]);
 
   const register = async (email: string, password: string) => {
     setState(prev => ({ ...prev, loading: true, error: null }));

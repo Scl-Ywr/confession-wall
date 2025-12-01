@@ -5,6 +5,7 @@ import { useParams } from 'next/navigation';
 import { Profile } from '@/types/chat';
 import { ChatInterface } from '@/components/ChatInterface';
 import Navbar from '@/components/Navbar';
+import { chatService } from '@/services/chatService';
 
 const ChatPage = () => {
   const { userId } = useParams<{ userId: string }>();
@@ -14,17 +15,9 @@ const ChatPage = () => {
   useEffect(() => {
     const fetchUserProfile = async () => {
       try {
-        // 这里需要实现获取用户资料的功能
-        // 假设profileService有getProfileById方法
-        // const profile = await profileService.getProfileById(userId);
-        // 暂时使用模拟数据
-        const mockProfile: Profile = {
-          id: userId,
-          username: 'testuser',
-          display_name: '测试用户',
-          avatar_url: ''
-        };
-        setOtherUserProfile(mockProfile);
+        // 使用chatService获取用户资料
+        const profile = await chatService.getUserProfile(userId);
+        setOtherUserProfile(profile);
       } catch (error) {
         console.error('Failed to fetch user profile:', error);
       } finally {

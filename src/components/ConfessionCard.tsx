@@ -145,19 +145,10 @@ export default function ConfessionCard({
           <button
             onClick={() => onLike(confession.id)}
             disabled={isLikeLoading}
-            className={`flex items-center gap-2 transition-all duration-300 group ${
-              isLikeLoading ? 'opacity-50' : 'hover:scale-105'
-            }`}
+            className={`flex items-center gap-2 transition-all duration-300 group ${isLikeLoading ? 'opacity-50' : 'hover:scale-105'}`}
           >
-            <div className={`p-2 rounded-full transition-colors ${
-              confession.likes_count > 0 ? 'bg-red-50 text-red-500 dark:bg-red-900/20' : 'bg-gray-50 text-gray-400 group-hover:bg-red-50 group-hover:text-red-500 dark:bg-gray-800 dark:group-hover:bg-red-900/20'
-            }`}>
-               {/* Note: Ideally we pass 'isLiked' prop, but for now relying on logic from parent or optimistically showing solid if likes > 0 is a bit weak. 
-                   However, the original code didn't pass 'isLiked' explicitly in the map, it used a separate state. 
-                   For this refactor, I will assume the parent handles the visual state or I should pass 'isLiked'.
-                   Let's stick to the icon change for now.
-               */}
-               <HeartIconSolid className={`w-5 h-5 ${confession.likes_count > 0 ? 'text-red-500' : 'text-gray-300 group-hover:text-red-500'}`} />
+            <div className={`p-2 rounded-full transition-colors ${confession.liked_by_user ? 'bg-red-50 text-red-500 dark:bg-red-900/20' : 'bg-gray-50 text-gray-400 group-hover:bg-red-50 group-hover:text-red-500 dark:bg-gray-800 dark:group-hover:bg-red-900/20'}`}>
+               <HeartIconSolid className={`w-5 h-5 ${confession.liked_by_user ? 'text-red-500' : 'text-gray-300 group-hover:text-red-500'}`} />
             </div>
             <span className="font-semibold text-gray-600 dark:text-gray-300 group-hover:text-red-500">
               {confession.likes_count}

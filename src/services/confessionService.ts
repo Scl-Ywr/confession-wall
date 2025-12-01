@@ -60,11 +60,31 @@ export const confessionService = {
       return acc;
     }, {} as Record<string, ConfessionImage[]>);
 
-    // 5. 合并图片和profile到表白对象
+    // 5. 检查当前用户是否点赞了这些表白
+    const user = await supabase.auth.getUser();
+    const userId = user.data.user?.id;
+    const likesMap: Record<string, boolean> = {};
+    
+    if (userId) {
+      const { data: likes, error: likesError } = await supabase
+        .from('likes')
+        .select('confession_id')
+        .in('confession_id', confessionIds)
+        .eq('user_id', userId);
+      
+      if (!likesError && likes) {
+        likes.forEach(like => {
+          likesMap[like.confession_id] = true;
+        });
+      }
+    }
+
+    // 6. 合并图片、profile和点赞状态到表白对象
     const confessionsWithImages = confessions.map(confession => ({
       ...confession,
       profile: confession.user_id ? profilesMap[confession.user_id] : undefined,
-      images: imagesByConfessionId[confession.id] || []
+      images: imagesByConfessionId[confession.id] || [],
+      liked_by_user: likesMap[confession.id] || false
     })) as Confession[];
 
     return confessionsWithImages;
@@ -110,10 +130,29 @@ export const confessionService = {
       }
     }
 
+    // 4. 检查当前用户是否点赞了该表白
+    const user = await supabase.auth.getUser();
+    const userId = user.data.user?.id;
+    let liked_by_user = false;
+    
+    if (userId) {
+      const { data: like, error: likeError } = await supabase
+        .from('likes')
+        .select('id')
+        .eq('confession_id', id)
+        .eq('user_id', userId)
+        .single();
+      
+      if (!likeError && like) {
+        liked_by_user = true;
+      }
+    }
+
     return {
       ...confession,
       profile,
-      images: images as ConfessionImage[]
+      images: images as ConfessionImage[],
+      liked_by_user
     } as Confession;
   },
 

@@ -138,12 +138,12 @@ export default function Home() {
       if (isLiked) {
         await confessionService.unlikeConfession(confessionId);
         setConfessions(prev => prev.map(c => 
-          c.id === confessionId ? { ...c, likes_count: Math.max(c.likes_count - 1, 0) } : c
+          c.id === confessionId ? { ...c, likes_count: Math.max(c.likes_count - 1, 0), liked_by_user: false } : c
         ));
       } else {
         await confessionService.likeConfession(confessionId);
         setConfessions(prev => prev.map(c => 
-          c.id === confessionId ? { ...c, likes_count: c.likes_count + 1 } : c
+          c.id === confessionId ? { ...c, likes_count: c.likes_count + 1, liked_by_user: true } : c
         ));
       }
     } catch (err) {

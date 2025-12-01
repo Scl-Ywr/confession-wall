@@ -7,12 +7,15 @@ import { Friendship } from '@/types/chat';
 import Link from 'next/link';
 import Image from 'next/image';
 import Navbar from '@/components/Navbar';
-import { MessageCircleIcon, UserSearchIcon, UsersIcon } from 'lucide-react';
+import { MessageCircleIcon, UserSearchIcon, UsersIcon, TrashIcon } from 'lucide-react';
+import { supabase } from '@/lib/supabase/client';
 
 const ChatListPage = () => {
   const { user } = useAuth();
   const [friends, setFriends] = useState<Friendship[]>([]);
   const [loading, setLoading] = useState(true);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [friendToDelete, setFriendToDelete] = useState<string | null>(null);
 
   useEffect(() => {
     const fetchFriends = async () => {
@@ -30,7 +33,142 @@ const ChatListPage = () => {
     };
 
     fetchFriends();
-  }, [user]);
+
+    // 重新获取未读消息数量的辅助函数
+    const refreshUnreadCounts = async () => {
+      if (!user) return;
+      
+      try {
+        // 查询所有未读消息
+        const currentUser = user;
+        const { data: unreadMessages, error } = await supabase
+          .from('chat_messages')
+          .select('sender_id')
+          .eq('receiver_id', currentUser.id)
+          .eq('is_read', false);
+
+        if (error) {
+          console.error('Error fetching unread messages:', error);
+          return;
+        }
+
+        // 计算每个好友的未读消息数量
+        const unreadCounts: Record<string, number> = {};
+        if (unreadMessages) {
+          unreadMessages.forEach(message => {
+            const senderId = message.sender_id;
+            unreadCounts[senderId] = (unreadCounts[senderId] || 0) + 1;
+          });
+        }
+
+        // 更新好友列表中的未读消息数量
+        setFriends(prev => prev.map(friendship => ({
+          ...friendship,
+          unread_count: unreadCounts[friendship.friend_id] || 0
+        })));
+      } catch (error) {
+        console.error('Error refreshing unread counts:', error);
+      }
+    };
+
+    // 添加实时订阅监听好友在线状态变化和消息状态变化
+    if (user && friends.length > 0) {
+      const friendIds = friends.map(f => f.friend_id).join(',');
+      if (friendIds) {
+        const channel = supabase
+          .channel('friends-updates')
+          .on(
+            'postgres_changes',
+            {
+              event: 'UPDATE',
+              schema: 'public',
+              table: 'profiles',
+              filter: `id=in.(${friendIds})`
+            },
+            (payload) => {
+              console.log('=== FRIEND PROFILE UPDATE EVENT RECEIVED ===');
+              console.log('Profile details:', JSON.stringify(payload.new, null, 2));
+              // 更新好友列表中的在线状态
+              setFriends(prev => prev.map(friendship => {
+                if (friendship.friend_id === payload.new.id && friendship.friend_profile) {
+                  return {
+                    ...friendship,
+                    friend_profile: {
+                      ...friendship.friend_profile,
+                      online_status: payload.new.online_status,
+                      last_seen: payload.new.last_seen
+                    }
+                  };
+                }
+                return friendship;
+              }));
+            }
+          )
+          .on(
+            'postgres_changes',
+            {
+              event: 'UPDATE',
+              schema: 'public',
+              table: 'chat_messages',
+              filter: `receiver_id=eq.${user.id}`
+            },
+            (payload) => {
+              console.log('=== MESSAGE UPDATE EVENT RECEIVED ===');
+              console.log('Message details:', JSON.stringify(payload.new, null, 2));
+              // 重新获取所有未读消息数量
+              refreshUnreadCounts();
+            }
+          )
+          .on(
+            'postgres_changes',
+            {
+              event: 'INSERT',
+              schema: 'public',
+              table: 'chat_messages',
+              filter: `receiver_id=eq.${user.id} AND is_read=eq.false`
+            },
+            (payload) => {
+              console.log('=== NEW MESSAGE EVENT RECEIVED ===');
+              console.log('Message details:', JSON.stringify(payload.new, null, 2));
+              // 重新获取所有未读消息数量
+              refreshUnreadCounts();
+            }
+          )
+          .subscribe();
+
+        return () => {
+          supabase.removeChannel(channel);
+        };
+      }
+    }
+  }, [user, friends.map(f => f.friend_id).join(',')]);
+
+  // 打开删除确认对话框
+  const handleOpenDeleteConfirm = (friendId: string) => {
+    setFriendToDelete(friendId);
+    setShowDeleteConfirm(true);
+  };
+
+  // 关闭删除确认对话框
+  const handleCloseDeleteConfirm = () => {
+    setShowDeleteConfirm(false);
+    setFriendToDelete(null);
+  };
+
+  // 确认删除好友
+  const handleConfirmDelete = async () => {
+    if (!friendToDelete) return;
+
+    try {
+      await chatService.removeFriend(friendToDelete);
+      // 更新本地好友列表
+      setFriends(prev => prev.filter(friendship => friendship.friend_id !== friendToDelete));
+      handleCloseDeleteConfirm();
+    } catch (err) {
+      console.error('Failed to remove friend:', err);
+      // 可以添加错误提示
+    }
+  };
 
   if (loading) {
     return (
@@ -64,7 +202,7 @@ const ChatListPage = () => {
                 </h2>
                 <Link
                   href="/chat/search"
-                  className="flex items-center gap-1 text-primary-600 hover:text-primary-700 transition-colors"
+                  className="flex items-center gap-1 bg-gradient-to-r from-yellow-400 to-blue-500 bg-clip-text text-transparent hover:from-yellow-500 hover:to-blue-600 transition-all duration-300"
                 >
                   <UserSearchIcon className="h-4 w-4" />
                   <span className="text-sm font-medium">查找用户</span>
@@ -77,7 +215,7 @@ const ChatListPage = () => {
                   <p className="text-gray-500 dark:text-gray-400">你还没有好友</p>
                   <Link
                     href="/chat/search"
-                    className="mt-4 inline-block text-primary-600 hover:text-primary-700 font-medium"
+                    className="mt-4 inline-block bg-gradient-to-r from-yellow-400 to-blue-500 bg-clip-text text-transparent font-medium hover:from-yellow-500 hover:to-blue-600 transition-all duration-300"
                   >
                     查找并添加好友
                   </Link>
@@ -89,44 +227,74 @@ const ChatListPage = () => {
                     if (!friend) return null;
                     
                     return (
-                      <Link
-                        key={friend.id}
-                        href={`/chat/${friend.id}`}
-                        className="flex items-center gap-3 p-3 rounded-xl hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors group"
-                      >
-                        <div className="relative">
-                          <div className="w-12 h-12 rounded-full overflow-hidden border-2 border-white dark:border-gray-700 shadow-sm">
-                            {friend.avatar_url ? (
-                              <Image
-                                src={friend.avatar_url}
-                                alt={friend.display_name || friend.username}
-                                width={48}
-                                height={48}
-                                className="object-cover"
-                              />
-                            ) : (
-                              <div className="w-full h-full bg-gradient-to-br from-gray-200 to-gray-300 dark:from-gray-700 dark:to-gray-800 flex items-center justify-center">
-                                <span className="text-lg font-bold text-gray-500 dark:text-gray-400">
-                                  {(friend.display_name || friend.username).charAt(0).toUpperCase()}
-                                </span>
+                      <div key={friendship.friend_id} className="flex items-center gap-3 p-3 rounded-xl hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors group">
+                        <Link
+                          href={`/chat/${friend.id}`}
+                          className="flex items-center gap-3 flex-1"
+                        >
+                          <div className="relative">
+                            <div className="w-12 h-12 rounded-full overflow-hidden border-2 border-white dark:border-gray-700 shadow-sm">
+                              {friend.avatar_url ? (
+                                <Image
+                                  src={friend.avatar_url}
+                                  alt={friend.display_name || friend.username}
+                                  width={44}
+                                  height={44}
+                                  className="object-cover w-full h-full"
+                                />
+                              ) : (
+                                <div className="w-full h-full bg-gradient-to-br from-gray-200 to-gray-300 dark:from-gray-700 dark:to-gray-800 flex items-center justify-center">
+                                  <span className="text-lg font-bold text-gray-500 dark:text-gray-400">
+                                    {(friend.display_name || friend.username).charAt(0).toUpperCase()}
+                                  </span>
+                                </div>
+                              )}
+                            </div>
+                            {/* 在线状态指示器 */}
+            <div className={`absolute bottom-0 right-0 w-4 h-4 rounded-full border-2 border-white dark:border-gray-700 ${friend.online_status === 'online' ? 'bg-green-500' : friend.online_status === 'away' ? 'bg-yellow-500' : 'bg-gray-400'}`}></div>
+                            {/* 未读消息指示器 */}
+                            {friendship.unread_count > 0 && (
+                              <div className="absolute top-0 right-0 w-5 h-5 bg-red-500 text-white text-xs font-bold rounded-full flex items-center justify-center border-2 border-white dark:border-gray-700 shadow-md">
+                                {friendship.unread_count > 9 ? '9+' : friendship.unread_count}
                               </div>
                             )}
                           </div>
-                          {/* 在线状态指示器 */}
-                          <div className="absolute bottom-0 right-0 w-4 h-4 bg-green-500 rounded-full border-2 border-white dark:border-gray-700"></div>
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center justify-between">
-                            <h3 className="font-semibold text-gray-800 dark:text-white truncate">
-                              {friend.display_name || friend.username}
-                            </h3>
-                            <span className="text-xs text-gray-500 dark:text-gray-400">
-                              {new Date(friendship.created_at).toLocaleString('zh-CN', { hour: '2-digit', minute: '2-digit' })}
-                            </span>
+                          <div className="flex-1 min-w-0">
+                            <div className="flex flex-col">
+                              <div className="flex items-center justify-between">
+                                <h3 className="font-semibold text-gray-800 dark:text-white truncate">
+                                  {friend.display_name || friend.username}
+                                </h3>
+                                {friend.online_status === 'online' ? (
+                                  <span className="text-xs text-green-500">在线</span>
+                                ) : (
+                                  <span className="text-xs text-gray-500 dark:text-gray-400">
+                                    {(() => {
+                                      const lastActive = friend.last_seen || friend.updated_at;
+                                      if (lastActive) {
+                                        try {
+                                          return new Date(lastActive).toLocaleString('zh-CN', { hour: '2-digit', minute: '2-digit' });
+                                        } catch (e) {
+                                          return '离线';
+                                        }
+                                      }
+                                      return '离线';
+                                    })()}
+                                  </span>
+                                )}
+                              </div>
+                              {/* 这里可以添加最后一条消息的显示 */}
+                            </div>
                           </div>
-                          {/* 这里可以添加最后一条消息的显示 */}
-                        </div>
-                      </Link>
+                        </Link>
+                        <button
+                          onClick={() => handleOpenDeleteConfirm(friend.id)}
+                          className="text-gray-400 hover:text-red-500 transition-colors duration-200 flex-shrink-0 p-2 rounded-full hover:bg-red-50 dark:hover:bg-red-900/20"
+                          aria-label="删除好友"
+                        >
+                          <TrashIcon className="w-4 h-4" />
+                        </button>
+                      </div>
                     );
                   })}
                 </div>
@@ -146,7 +314,7 @@ const ChatListPage = () => {
               </p>
               <Link
                 href="/chat/search"
-                className="mt-6 inline-flex items-center gap-2 px-5 py-2.5 bg-primary-600 text-white font-semibold rounded-xl shadow-sm hover:shadow-md transition-all duration-300 hover:bg-primary-700"
+                className="mt-6 inline-flex items-center gap-2 px-5 py-2.5 bg-gradient-to-r from-yellow-400 to-blue-500 text-white font-semibold rounded-xl shadow-sm hover:shadow-md transition-all duration-300 hover:from-yellow-500 hover:to-blue-600"
               >
                 <UserSearchIcon className="h-4 w-4" />
                 查找用户
@@ -154,6 +322,35 @@ const ChatListPage = () => {
             </div>
           </div>
         </div>
+
+        {/* 删除确认对话框 */}
+        {showDeleteConfirm && (
+          <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50">
+            <div className="bg-white dark:bg-gray-800 rounded-2xl p-6 max-w-sm w-full mx-4 shadow-xl">
+              <div className="text-center mb-4">
+                <div className="text-4xl mb-2">⚠️</div>
+                <h3 className="text-xl font-bold text-gray-900 dark:text-white mb-2">确认删除好友</h3>
+                <p className="text-gray-600 dark:text-gray-300">
+                  确定要删除这个好友吗？删除后，你们之间的所有聊天记录也将被删除，且无法恢复。
+                </p>
+              </div>
+              <div className="flex gap-3">
+                <button
+                  onClick={handleCloseDeleteConfirm}
+                  className="flex-1 px-4 py-2 border border-gray-300 rounded-xl text-gray-700 hover:bg-gray-50 transition-all dark:border-gray-600 dark:text-gray-300 dark:hover:bg-gray-700"
+                >
+                  取消
+                </button>
+                <button
+                  onClick={handleConfirmDelete}
+                  className="flex-1 px-4 py-2 bg-red-500 text-white rounded-xl hover:bg-red-600 transition-all"
+                >
+                  确认删除
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
       </main>
     </div>
   );

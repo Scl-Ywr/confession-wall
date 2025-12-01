@@ -4,12 +4,13 @@ import React, { useEffect, useState, useCallback } from 'react';
 import Link from 'next/link';
 import { useAuth } from '@/context/AuthContext';
 import { useTheme } from '@/context/ThemeContext';
-import { HomeIcon, UserIcon, ArrowLeftOnRectangleIcon, UserPlusIcon, MoonIcon, SunIcon, BellIcon } from '@heroicons/react/20/solid';
+import { HomeIcon, UserIcon, ArrowLeftOnRectangleIcon, UserPlusIcon, MoonIcon, SunIcon, BellIcon, TrashIcon } from '@heroicons/react/20/solid';
 import { MessageCircleIcon } from 'lucide-react';
 import { chatService } from '@/services/chatService';
 import { Notification } from '@/types/chat';
 import { useRouter } from 'next/navigation';
 import Alert from './Alert';
+import { supabase } from '@/lib/supabase/client';
 
 const Navbar: React.FC = () => {
   const { user, logout, loading } = useAuth();
@@ -20,6 +21,10 @@ const Navbar: React.FC = () => {
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [loadingNotifications, setLoadingNotifications] = useState(false);
   const [showAlert, setShowAlert] = useState(false);
+  // 跟踪已处理的好友请求ID，防止重复点击
+  const [processedRequests, setProcessedRequests] = useState<Set<string>>(new Set());
+  // 未读消息数量
+  const [unreadMessageCount, setUnreadMessageCount] = useState(0);
 
   // 确保组件在客户端 hydration 完成后再渲染主题相关内容
   useEffect(() => {
@@ -42,7 +47,35 @@ const Navbar: React.FC = () => {
     }
   }, [user]);
 
-  // 实时订阅通知
+  // 获取未读消息数量
+  const fetchUnreadMessageCount = async () => {
+    if (!user) return;
+    
+    try {
+      const { data: unreadMessages, error } = await supabase
+        .from('chat_messages')
+        .select('id')
+        .eq('receiver_id', user.id)
+        .eq('is_read', false);
+      
+      if (error) {
+        console.error('Error fetching unread messages:', error);
+        return;
+      }
+      
+      setUnreadMessageCount(unreadMessages?.length || 0);
+    } catch (error) {
+      console.error('Error fetching unread message count:', error);
+    }
+  };
+
+  // 初始获取未读消息数量
+  useEffect(() => {
+    if (!user) return;
+    fetchUnreadMessageCount();
+  }, [user]);
+
+  // 实时订阅通知和未读消息
   useEffect(() => {
     if (!user) return;
     
@@ -54,9 +87,27 @@ const Navbar: React.FC = () => {
       setNotifications(prev => [newNotification, ...prev]);
     });
     
+    // 订阅未读消息变化 - 简化过滤条件，确保能收到所有相关事件
+    const messageChannel = supabase
+      .channel('unread-messages')
+      .on(
+        'postgres_changes',
+        {
+          event: '*', // 监听所有事件类型
+          schema: 'public',
+          table: 'chat_messages',
+          filter: `receiver_id=eq.${user.id}` // 只过滤当前用户接收的消息
+        },
+        () => {
+          fetchUnreadMessageCount();
+        }
+      )
+      .subscribe();
+    
     // 清理订阅
     return () => {
       subscription.unsubscribe();
+      supabase.removeChannel(messageChannel);
     };
   }, [user, fetchNotifications]);
 
@@ -107,6 +158,18 @@ const Navbar: React.FC = () => {
       ));
     } catch (error) {
       console.error('Error marking notification as read:', error);
+    }
+  };
+
+  // 删除通知
+  const deleteNotification = async (notificationId: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    try {
+      await chatService.deleteNotification(notificationId);
+      // 更新本地状态，移除已删除的通知
+      setNotifications(prev => prev.filter(notification => notification.id !== notificationId));
+    } catch (error) {
+      console.error('Error deleting notification:', error);
     }
   };
 
@@ -175,9 +238,18 @@ const Navbar: React.FC = () => {
                                   })}
                                 </p>
                               </div>
-                              {!notification.read_status && (
-                                <div className="w-2 h-2 rounded-full bg-red-500 mt-2"></div>
-                              )}
+                              <div className="flex items-start gap-2">
+                                {!notification.read_status && (
+                                  <div className="w-2 h-2 rounded-full bg-red-500 mt-2"></div>
+                                )}
+                                <button
+                                  onClick={(e) => deleteNotification(notification.id, e)}
+                                  className="text-gray-400 hover:text-red-500 transition-colors duration-200 flex-shrink-0"
+                                  aria-label="删除通知"
+                                >
+                                  <TrashIcon className="w-4 h-4" />
+                                </button>
+                              </div>
                             </div>
                             {/* 好友请求操作按钮 */}
                             {notification.type === 'friend_request' && notification.friend_request_id && (
@@ -185,30 +257,60 @@ const Navbar: React.FC = () => {
                                 <button
                                   onClick={async (e) => {
                                     e.stopPropagation();
+                                    // 检查是否已经处理过该请求
+                                    if (processedRequests.has(notification.friend_request_id!)) {
+                                      return;
+                                    }
+                                    
+                                    // 将请求标记为已处理
+                                    setProcessedRequests(prev => new Set(prev).add(notification.friend_request_id!));
+                                    
                                     try {
                                       await chatService.handleFriendRequest(notification.friend_request_id!, 'accepted');
                                       // 更新通知内容
                                       await markAsRead(notification.id);
                                     } catch (error) {
                                       console.error('Error accepting friend request:', error);
+                                      // 如果处理失败，从已处理集合中移除
+                                      setProcessedRequests(prev => {
+                                        const newSet = new Set(prev);
+                                        newSet.delete(notification.friend_request_id!);
+                                        return newSet;
+                                      });
                                     }
                                   }}
-                                  className="flex-1 px-3 py-1 text-xs bg-primary-600 text-white rounded-lg hover:bg-primary-700 transition-colors duration-200"
+                                  className="flex-1 px-3 py-1 text-xs bg-gray-500 text-white rounded-lg hover:bg-gray-600 transition-colors duration-200"
+                                  disabled={processedRequests.has(notification.friend_request_id!)}
                                 >
                                   接受
                                 </button>
                                 <button
                                   onClick={async (e) => {
                                     e.stopPropagation();
+                                    // 检查是否已经处理过该请求
+                                    if (processedRequests.has(notification.friend_request_id!)) {
+                                      return;
+                                    }
+                                    
+                                    // 将请求标记为已处理
+                                    setProcessedRequests(prev => new Set(prev).add(notification.friend_request_id!));
+                                    
                                     try {
                                       await chatService.handleFriendRequest(notification.friend_request_id!, 'rejected');
                                       // 更新通知内容
                                       await markAsRead(notification.id);
                                     } catch (error) {
                                       console.error('Error rejecting friend request:', error);
+                                      // 如果处理失败，从已处理集合中移除
+                                      setProcessedRequests(prev => {
+                                        const newSet = new Set(prev);
+                                        newSet.delete(notification.friend_request_id!);
+                                        return newSet;
+                                      });
                                     }
                                   }}
                                   className="flex-1 px-3 py-1 text-xs bg-gray-300 text-gray-800 rounded-lg hover:bg-gray-400 transition-colors duration-200 dark:bg-gray-600 dark:text-gray-200 dark:hover:bg-gray-500"
+                                  disabled={processedRequests.has(notification.friend_request_id!)}
                                 >
                                   拒绝
                                 </button>
@@ -263,11 +365,24 @@ const Navbar: React.FC = () => {
               {user ? (
                 <div className="ml-4 flex items-center md:ml-6 gap-3">
                   <Link
-                    href="/chat"
+                    href="/"
                     className="flex items-center gap-1 text-gray-700 hover:text-primary-600 font-medium transition-colors dark:text-gray-300 dark:hover:text-primary-400"
+                  >
+                    <HomeIcon className="w-5 h-5" />
+                    <span className="hidden md:inline">表白墙</span>
+                  </Link>
+                  <Link
+                    href="/chat"
+                    className="flex items-center gap-1 text-gray-700 hover:text-primary-600 font-medium transition-colors dark:text-gray-300 dark:hover:text-primary-400 relative"
                   >
                     <MessageCircleIcon className="w-5 h-5" />
                     <span className="hidden md:inline">聊天</span>
+                    {/* 未读消息提示红点 */}
+                    {unreadMessageCount > 0 && (
+                      <span className="absolute -top-1 -right-1 w-4 h-4 bg-red-500 text-white text-xs font-bold rounded-full flex items-center justify-center border-2 border-white dark:border-gray-700 shadow-md">
+                        {unreadMessageCount > 9 ? '9+' : unreadMessageCount}
+                      </span>
+                    )}
                   </Link>
                   <Link
                     href="/profile"

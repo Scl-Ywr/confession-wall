@@ -67,6 +67,12 @@ const OtherUserProfilePage = () => {
       setFriendshipStatus('pending');
     } catch (err) {
       console.error('Failed to send friend request:', err);
+      // 检查是否是唯一约束错误
+      const errorMessage = err instanceof Error ? err.message : JSON.stringify(err);
+      if (errorMessage.includes('duplicate key') || errorMessage.includes('unique constraint')) {
+        // 如果是重复请求，更新状态为pending，避免用户重复点击
+        setFriendshipStatus('pending');
+      }
     } finally {
       setRequestLoading(false);
     }
@@ -103,7 +109,7 @@ const OtherUserProfilePage = () => {
     <div className="min-h-screen pb-20 bg-gray-50 dark:bg-gray-900 overflow-hidden fixed inset-0">
       <Navbar />
       <main className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-8 overflow-y-auto h-[calc(100vh-80px)]">
-        <div className="flex items-center justify-between mb-10">
+        <div className="flex items-center justify-between mb-6 sm:mb-10">
           {/* 退出按钮 */}
           <button
             onClick={() => window.history.back()}
@@ -112,12 +118,12 @@ const OtherUserProfilePage = () => {
             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
             </svg>
-            <span>返回</span>
+            <span className="sm:inline hidden">返回</span>
           </button>
-          <h1 className="text-4xl font-bold text-gray-900 dark:text-white mb-3 flex items-center justify-center gap-3">
-            <span className="text-4xl">👤</span> 用户资料
+          <h1 className="text-2xl sm:text-4xl font-bold text-gray-900 dark:text-white mb-3 flex items-center justify-center gap-3">
+            <span className="text-3xl sm:text-4xl">👤</span> 用户资料
           </h1>
-          <div className="w-20"></div> {/* 占位元素，保持标题居中 */}
+          <div className="w-16 sm:w-20"></div> {/* 占位元素，保持标题居中 */}
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
@@ -167,11 +173,11 @@ const OtherUserProfilePage = () => {
               {/* 操作按钮 - 只有查看他人资料时显示 */}
               {user && user.id !== profile.id && (
                 <div className="mt-6 space-y-3">
-                  <div className="flex gap-3">
+                  <div className="flex flex-col sm:flex-row gap-3">
                     {/* 聊天按钮 */}
                     <button
                       onClick={() => window.location.href = `/chat/${profile.id}`}
-                      className="flex-1 flex items-center justify-center gap-2 px-4 py-3 bg-blue-600 text-white font-semibold rounded-xl shadow-md hover:shadow-lg transition-all duration-300 hover:bg-blue-700 disabled:bg-blue-400 disabled:text-white disabled:opacity-80 disabled:cursor-not-allowed dark:bg-blue-500 dark:hover:bg-blue-600 dark:disabled:bg-blue-700"
+                      className="w-full sm:flex-1 flex items-center justify-center gap-2 px-4 py-3 bg-blue-600 text-white font-semibold rounded-xl shadow-md hover:shadow-lg transition-all duration-300 hover:bg-blue-700 disabled:bg-blue-400 disabled:text-white disabled:opacity-80 disabled:cursor-not-allowed dark:bg-blue-500 dark:hover:bg-blue-600 dark:disabled:bg-blue-700"
                       disabled={friendshipStatus !== 'accepted'}
                     >
                       <MessageCircleIcon className="w-5 h-5" />
@@ -183,7 +189,7 @@ const OtherUserProfilePage = () => {
                       <button
                         onClick={handleSendFriendRequest}
                         disabled={requestLoading}
-                        className="flex-1 flex items-center justify-center gap-2 px-4 py-3 bg-green-500 text-white font-semibold rounded-xl shadow-md hover:shadow-lg transition-all duration-300 hover:bg-green-600 disabled:opacity-50 disabled:cursor-not-allowed dark:bg-green-500 dark:hover:bg-green-600"
+                        className="w-full sm:flex-1 flex items-center justify-center gap-2 px-4 py-3 bg-green-500 text-white font-semibold rounded-xl shadow-md hover:shadow-lg transition-all duration-300 hover:bg-green-600 disabled:opacity-50 disabled:cursor-not-allowed dark:bg-green-500 dark:hover:bg-green-600"
                       >
                         {requestLoading ? (
                           <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
@@ -194,7 +200,7 @@ const OtherUserProfilePage = () => {
                       </button>
                     ) : friendshipStatus === 'pending' ? (
                       <button
-                        className="flex-1 flex items-center justify-center gap-2 px-4 py-3 bg-yellow-500 text-white font-semibold rounded-xl shadow-md cursor-not-allowed opacity-70 dark:bg-yellow-500"
+                        className="w-full sm:flex-1 flex items-center justify-center gap-2 px-4 py-3 bg-yellow-500 text-white font-semibold rounded-xl shadow-md cursor-not-allowed opacity-70 dark:bg-yellow-500"
                         disabled
                       >
                         <CheckIcon className="w-5 h-5" />
@@ -202,7 +208,7 @@ const OtherUserProfilePage = () => {
                       </button>
                     ) : (
                       <button
-                        className="flex-1 flex items-center justify-center gap-2 px-4 py-3 bg-green-500 text-white font-semibold rounded-xl shadow-md cursor-not-allowed opacity-70 dark:bg-green-500"
+                        className="w-full sm:flex-1 flex items-center justify-center gap-2 px-4 py-3 bg-green-500 text-white font-semibold rounded-xl shadow-md cursor-not-allowed opacity-70 dark:bg-green-500"
                         disabled
                       >
                         <CheckIcon className="w-5 h-5" />
