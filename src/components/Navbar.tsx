@@ -4,7 +4,7 @@ import React, { useEffect, useState, useCallback } from 'react';
 import Link from 'next/link';
 import { useAuth } from '@/context/AuthContext';
 import { useTheme } from '@/context/ThemeContext';
-import { HomeIcon, UserIcon, ArrowLeftOnRectangleIcon, UserPlusIcon, MoonIcon, SunIcon, BellIcon, TrashIcon } from '@heroicons/react/20/solid';
+import { HomeIcon, UserIcon, ArrowLeftOnRectangleIcon, UserPlusIcon, MoonIcon, SunIcon, BellIcon, TrashIcon, VideoCameraIcon, MusicalNoteIcon } from '@heroicons/react/20/solid';
 import { MessageCircleIcon } from 'lucide-react';
 import { chatService } from '@/services/chatService';
 import { Notification } from '@/types/chat';
@@ -25,6 +25,10 @@ const Navbar: React.FC = () => {
   const [processedRequests, setProcessedRequests] = useState<Set<string>>(new Set());
   // 未读消息数量
   const [unreadMessageCount, setUnreadMessageCount] = useState(0);
+  // 确认弹窗状态
+  const [showConfirmModal, setShowConfirmModal] = useState(false);
+  // 存储要跳转的URL
+  const [targetUrl, setTargetUrl] = useState('');
 
   // 确保组件在客户端 hydration 完成后再渲染主题相关内容
   useEffect(() => {
@@ -135,6 +139,24 @@ const Navbar: React.FC = () => {
     router.push('/auth/login');
     // 关闭Alert
     setShowAlert(false);
+  };
+
+  // 处理视频/音乐按钮点击，显示确认弹窗
+  const handleMediaButtonClick = (url: string) => {
+    setTargetUrl(url);
+    setShowConfirmModal(true);
+  };
+
+  // 处理确认跳转
+  const handleConfirmRedirect = () => {
+    window.location.href = targetUrl;
+    setShowConfirmModal(false);
+  };
+
+  // 处理取消跳转
+  const handleCancelRedirect = () => {
+    setShowConfirmModal(false);
+    setTargetUrl('');
   };
 
   // 标记所有通知为已读
@@ -342,7 +364,7 @@ const Navbar: React.FC = () => {
                 </Link>
               </div>
             </div>
-            <div className="flex items-center">
+            <div className="flex items-center gap-2">
               {/* 主题切换按钮 */}
               <button
                 onClick={toggleTheme}
@@ -362,7 +384,34 @@ const Navbar: React.FC = () => {
                 )}
               </button>
               
-              {user ? (
+              {/* 视频图标按钮 */}
+              <button
+                className="flex items-center justify-center w-10 h-10 rounded-full bg-gray-100/50 hover:bg-white transition-all duration-200 transform hover:scale-110 dark:bg-gray-700/50 dark:hover:bg-gray-600 backdrop-blur-sm"
+                aria-label="视频"
+                onClick={() => handleMediaButtonClick('https://alist.suchuanli.me:1234')}
+              >
+                <VideoCameraIcon className="w-5 h-5 text-primary-600 dark:text-primary-400" />
+              </button>
+              
+              {/* 音乐图标按钮 */}
+              <button
+                className="flex items-center justify-center w-10 h-10 rounded-full bg-gray-100/50 hover:bg-white transition-all duration-200 transform hover:scale-110 dark:bg-gray-700/50 dark:hover:bg-gray-600 backdrop-blur-sm"
+                aria-label="音乐"
+                onClick={() => handleMediaButtonClick('https://solara.suchuanli.me:2340')}
+              >
+                <MusicalNoteIcon className="w-5 h-5 text-primary-600 dark:text-primary-400" />
+              </button>
+              
+              {/* 在认证状态加载中时，保持布局稳定，不显示具体的登录/未登录内容 */}
+              {loading ? (
+                <div className="ml-4 flex items-center md:ml-6 gap-3">
+                  {/* 显示占位符，保持布局一致 */}
+                  <div className="w-16 h-8 rounded-md bg-gray-200 dark:bg-gray-700 animate-pulse"></div>
+                  <div className="w-16 h-8 rounded-md bg-gray-200 dark:bg-gray-700 animate-pulse"></div>
+                  <div className="w-16 h-8 rounded-md bg-gray-200 dark:bg-gray-700 animate-pulse"></div>
+                  <div className="w-16 h-8 rounded-md bg-gray-200 dark:bg-gray-700 animate-pulse"></div>
+                </div>
+              ) : user ? (
                 <div className="ml-4 flex items-center md:ml-6 gap-3">
                   <Link
                     href="/"
@@ -432,6 +481,30 @@ const Navbar: React.FC = () => {
         confirmText="去登录"
         cancelText="取消"
       />
+      
+      {/* IPv6支持提示弹窗 */}
+      {showConfirmModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-white dark:bg-gray-800 rounded-xl shadow-lg p-6 max-w-sm w-full">
+            <h3 className="text-xl font-semibold text-gray-900 dark:text-white mb-4">提示</h3>
+            <p className="text-gray-600 dark:text-gray-300 mb-6">当前网站只支持IPv6，您确定要继续访问吗？</p>
+            <div className="flex gap-3">
+              <button
+                onClick={handleCancelRedirect}
+                className="flex-1 py-2 px-4 bg-gray-200 hover:bg-gray-300 text-gray-800 font-medium rounded-lg transition-colors duration-200 dark:bg-gray-700 dark:hover:bg-gray-600 dark:text-gray-200"
+              >
+                取消
+              </button>
+              <button
+                onClick={handleConfirmRedirect}
+                className="flex-1 py-2 px-4 bg-gradient-to-r from-pink-400 to-pink-500 hover:from-pink-500 hover:to-pink-600 text-white font-medium rounded-lg transition-all duration-200 shadow-md hover:shadow-lg transform hover:scale-105"
+              >
+                确认
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </>
   );
 };

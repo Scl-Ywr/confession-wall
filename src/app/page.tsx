@@ -31,7 +31,7 @@ export default function Home() {
     type: 'content' as 'content' | 'username'
   });
 
-  const fetchConfessions = useCallback(async (isLoadMore: boolean = false) => {
+  const fetchConfessions = useCallback(async (isLoadMore: boolean = false, isSearch: boolean = false, searchParams?: { keyword: string; type: 'content' | 'username' }) => {
     const currentPage = isLoadMore ? page + 1 : 1;
     const loadingState = isLoadMore ? setLoadingMore : setLoading;
     const errorState = isLoadMore ? setError : setError;
@@ -41,18 +41,26 @@ export default function Home() {
     
     try {
       let data;
-      if (searchKeyword.trim()) {
-        // 直接使用最新的searchKeyword和searchType，而不是依赖currentSearchParams
+      let keyword = searchKeyword;
+      let type = searchType;
+      
+      // 如果是搜索操作，使用传入的搜索参数
+      if (isSearch && searchParams) {
+        keyword = searchParams.keyword;
+        type = searchParams.type;
+      }
+      
+      if (keyword.trim()) {
         data = await confessionService.searchConfessions(
-          searchKeyword,
-          searchType,
+          keyword,
+          type,
           currentPage
         );
         
         // 更新currentSearchParams，用于显示当前搜索状态
         setCurrentSearchParams({
-          keyword: searchKeyword,
-          type: searchType
+          keyword,
+          type
         });
       } else {
         data = await confessionService.getConfessions(currentPage);
@@ -93,12 +101,12 @@ export default function Home() {
     } finally {
       loadingState(false);
     }
-  }, [page, searchKeyword, searchType]);
+  }, [page]); // 移除searchKeyword和searchType依赖，避免自动搜索
 
   // 初始加载
   useEffect(() => {
     fetchConfessions();
-  }, [fetchConfessions]); // 添加fetchConfessions到依赖数组，确保依赖数组大小一致
+  }, [fetchConfessions]); // 只在初始加载和加载更多时调用
 
   const handleObserver = useCallback((entries: IntersectionObserverEntry[]) => {
     const [entry] = entries;
@@ -202,8 +210,11 @@ export default function Home() {
             <form 
               onSubmit={(e) => {
                 e.preventDefault();
-                // 直接调用fetchConfessions，它会自动处理搜索参数
-                fetchConfessions();
+                // 调用fetchConfessions并标记为搜索操作，传入搜索参数
+                fetchConfessions(false, true, { 
+                  keyword: searchKeyword, 
+                  type: searchType 
+                });
               }}
               className="w-full md:w-auto flex gap-2"
             >

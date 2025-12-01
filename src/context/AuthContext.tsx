@@ -40,6 +40,9 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   };
 
   useEffect(() => {
+    // 跟踪认证检查是否已完成
+    let isAuthChecked = false;
+    
     // Check if user is already logged in
     const checkUser = async () => {
       try {
@@ -48,6 +51,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
           // 用户已登录，设置在线状态
           await updateOnlineStatus(user.id, 'online');
         }
+        isAuthChecked = true;
         setState(prev => ({ 
           ...prev, 
           user: user ? {
@@ -61,6 +65,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         }));
       } catch (error) {
         console.error('Error checking user:', error);
+        isAuthChecked = true;
         setState(prev => ({ ...prev, loading: false, error: 'Failed to check user' }));
       }
     };
@@ -79,17 +84,22 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
           updateOnlineStatus(userId, 'offline');
         }
       }
-      setState(prev => ({
-        ...prev,
-        user: session?.user ? {
-          id: session.user.id,
-          email: session.user.email || '',
-          email_confirmed_at: session.user.email_confirmed_at,
-          created_at: session.user.created_at,
-          updated_at: session.user.updated_at
-        } as User : null,
-        loading: false,
-      }));
+      
+      // 只有当认证检查已完成或会话存在时，才更新状态并设置loading为false
+      // 这避免了在checkUser完成前，onAuthStateChange触发导致的状态闪烁
+      if (isAuthChecked || session?.user) {
+        setState(prev => ({
+          ...prev,
+          user: session?.user ? {
+            id: session.user.id,
+            email: session.user.email || '',
+            email_confirmed_at: session.user.email_confirmed_at,
+            created_at: session.user.created_at,
+            updated_at: session.user.updated_at
+          } as User : null,
+          loading: false,
+        }));
+      }
     });
 
     // 监听页面关闭或刷新事件，设置离线状态

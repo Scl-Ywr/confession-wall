@@ -267,7 +267,7 @@ export const confessionService = {
         }
       }
     }
-
+    
     // 获取用户资料
     let profile = undefined;
     if (confession.user_id) {
@@ -288,7 +288,8 @@ export const confessionService = {
     return {
       ...confession,
       profile,
-      images: mediaItems
+      images: mediaItems,
+      liked_by_user: false // 新创建的表白，当前用户默认未点赞
     } as Confession;
   },
 
@@ -326,9 +327,28 @@ export const confessionService = {
       }
     }
 
+    // 3. 检查当前用户是否点赞了该表白
+    const user = await supabase.auth.getUser();
+    const userId = user.data.user?.id;
+    let liked_by_user = false;
+    
+    if (userId) {
+      const { data: like, error: likeError } = await supabase
+        .from('likes')
+        .select('id')
+        .eq('confession_id', id)
+        .eq('user_id', userId)
+        .maybeSingle();
+      
+      if (!likeError && like) {
+        liked_by_user = true;
+      }
+    }
+
     return {
       ...confession,
-      profile
+      profile,
+      liked_by_user
     } as Confession;
   },
 
@@ -603,7 +623,26 @@ export const confessionService = {
       });
     }
 
-    // 4. 将图片分组到对应的表白
+    // 4. 检查当前用户是否点赞了这些表白
+    const user = await supabase.auth.getUser();
+    const userId = user.data.user?.id;
+    const likesMap: Record<string, boolean> = {};
+    
+    if (userId && confessionIds.length > 0) {
+      const { data: likes, error: likesError } = await supabase
+        .from('likes')
+        .select('confession_id')
+        .in('confession_id', confessionIds)
+        .eq('user_id', userId);
+      
+      if (!likesError && likes) {
+        likes.forEach(like => {
+          likesMap[like.confession_id] = true;
+        });
+      }
+    }
+
+    // 5. 将图片分组到对应的表白
     const imagesByConfessionId = (images || []).reduce((acc, image) => {
       if (!acc[image.confession_id]) {
         acc[image.confession_id] = [];
@@ -612,11 +651,12 @@ export const confessionService = {
       return acc;
     }, {} as Record<string, ConfessionImage[]>);
 
-    // 5. 合并图片和profile到表白对象
+    // 6. 合并图片、profile和点赞状态到表白对象
     const confessionsWithImages = confessions.map(confession => ({
       ...confession,
       profile: confession.user_id ? profilesMap[confession.user_id] : undefined,
-      images: imagesByConfessionId[confession.id] || []
+      images: imagesByConfessionId[confession.id] || [],
+      liked_by_user: likesMap[confession.id] || false
     })) as Confession[];
 
     return confessionsWithImages;

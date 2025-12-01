@@ -160,7 +160,7 @@ const CommentSection: React.FC<CommentSectionProps> = ({ confessionId }) => {
               <button
                 type="submit"
                 disabled={formLoading}
-                className={`flex items-center gap-1 bg-primary-600 hover:bg-primary-700 text-white font-medium py-2 px-6 rounded-lg transition-all duration-200 transform hover:scale-105 text-sm ${formLoading ? 'opacity-50 cursor-not-allowed' : ''} dark:bg-primary-500 dark:hover:bg-primary-400`}
+                className={`flex items-center gap-1 bg-gradient-to-r from-blue-500 to-pink-500 hover:from-blue-600 hover:to-pink-600 text-white font-medium py-2 px-6 rounded-lg transition-all duration-200 transform hover:scale-105 text-sm ${formLoading ? 'opacity-50 cursor-not-allowed' : ''} dark:from-blue-500 dark:to-pink-500 dark:hover:from-blue-600 dark:hover:to-pink-600`}
               >
                 {formLoading ? (
                   <>
