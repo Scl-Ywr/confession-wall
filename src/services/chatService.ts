@@ -9,7 +9,8 @@ import {
   GroupAnnouncement, 
   UserSearchResult,
   Notification,
-  NotificationType
+  NotificationType,
+  Profile
 } from '@/types/chat';
 
 // 创建通知的辅助函数
@@ -17,7 +18,8 @@ const createNotification = async (
   recipientId: string,
   content: string,
   type: NotificationType,
-  friendRequestId?: string
+  friendRequestId?: string,
+  groupId?: string
 ): Promise<Notification> => {
   // 获取当前认证用户
   let user = await supabase.auth.getUser();
@@ -44,6 +46,7 @@ const createNotification = async (
   const senderId = user.data.user.id;
 
   // 尝试插入通知，移除.select('*').single()，因为发送者不是接收者，不能查询通知
+  // 注意：notifications 表没有 group_id 列，所以不插入该字段
   const { error } = await supabase
     .from('notifications')
     .insert({
@@ -52,6 +55,7 @@ const createNotification = async (
       content,
       type,
       friend_request_id: friendRequestId
+      // 移除 group_id 字段，因为表中没有这个列
     });
 
   if (error) {
@@ -71,6 +75,7 @@ const createNotification = async (
             content,
             type,
             friend_request_id: friendRequestId
+            // 移除 group_id 字段，因为表中没有这个列
           });
         
         if (!retryError) {
@@ -84,7 +89,8 @@ const createNotification = async (
             read_status: false,
             created_at: new Date().toISOString(),
             updated_at: new Date().toISOString(),
-            friend_request_id: friendRequestId
+            friend_request_id: friendRequestId,
+            group_id: groupId
           } as Notification;
         }
         console.error('Retry failed:', retryError.message || JSON.stringify(retryError));
@@ -103,7 +109,8 @@ const createNotification = async (
     read_status: false,
     created_at: new Date().toISOString(),
     updated_at: new Date().toISOString(),
-    friend_request_id: friendRequestId
+    friend_request_id: friendRequestId,
+    group_id: groupId
   } as Notification;
 };
 
@@ -303,96 +310,95 @@ export const chatService = {
   // 获取好友列表
   getFriends: async (): Promise<Friendship[]> => {
     try {
-      // 获取当前认证用户，检查是否有错误
+      // 获取当前认证用户
       const user = await supabase.auth.getUser();
       
-      // 检查认证错误
-      if (user.error) {
-        console.error('Auth error in getFriends:', user.error.message || JSON.stringify(user.error));
+      if (user.error || !user.data.user?.id) {
         throw new Error('User not authenticated');
       }
       
-      const userId = user.data.user?.id;
+      const userId = user.data.user.id;
 
-      if (!userId) {
-        throw new Error('User not authenticated');
-      }
 
-      console.log('Fetching friends for user:', userId);
-      
       // 查询好友关系
-      const { data: friendships, error } = await supabase
+      const { data: friendships, error: friendshipsError } = await supabase
         .from('friendships')
         .select('*')
         .eq('user_id', userId)
         .order('updated_at', { ascending: false });
 
-      if (error) {
-        console.error('Supabase error:', error);
-        throw new Error(`Failed to fetch friends: ${error.message || 'Unknown error'}`);
+      if (friendshipsError) {
+        console.error('Supabase error in friendships query:', friendshipsError);
+        throw new Error(`Failed to fetch friends: ${friendshipsError.message || 'Unknown error'}`);
       }
 
-      console.log('Found friendships:', friendships?.length || 0);
+
 
       // 如果没有好友关系，直接返回空数组
       if (!friendships || friendships.length === 0) {
         return [] as Friendship[];
       }
 
-      // 获取所有好友的 ID
-      const friendIds = friendships.map(friendship => friendship.friend_id);
+      // 获取所有好友的 ID，确保没有重复
+      const friendIds = [...new Set(friendships.map(friendship => friendship.friend_id))];
 
-      // 查询所有好友的资料
-      const { data: friendsProfiles, error: profilesError } = await supabase
-        .from('profiles')
-        .select('*')
-        .in('id', friendIds);
 
-      if (profilesError) {
-        console.error('Error fetching friends profiles:', profilesError);
-        // 即使获取资料失败，也返回好友关系数据
-        return friendships.map(friendship => ({
-          ...friendship,
-          unread_count: 0
-        })) as Friendship[];
+      // 初始化好友资料对象
+      const friendsProfiles: Record<string, Profile> = {};
+
+      // 逐个查询好友资料，避免 in 查询可能出现的问题
+      for (const friendId of friendIds) {
+        try {
+
+          const { data: profile, error: profileError } = await supabase
+            .from('profiles')
+            .select('id, username, display_name, avatar_url, online_status, last_seen')
+            .eq('id', friendId)
+            .single();
+          
+          if (profileError) {
+            console.error(`Error fetching profile for friend ${friendId}:`, profileError);
+          } else if (profile) {
+            friendsProfiles[friendId] = profile;
+          }
+        } catch (singleProfileError) {
+          console.error(`Exception fetching profile for friend ${friendId}:`, singleProfileError);
+        }
       }
 
+
+
       // 查询每个好友的未读消息数量
-      const { data: chatMessages, error: messagesError } = await supabase
+      const { data: chatMessages } = await supabase
         .from('chat_messages')
         .select('sender_id, receiver_id, is_read')
-        .or(`sender_id.in.(${friendIds.join(',')}),receiver_id.in.(${friendIds.join(',')})`)
+        .in('sender_id', friendIds)
         .eq('receiver_id', userId)
         .eq('is_read', false);
 
-      if (messagesError) {
-        console.error('Error fetching unread messages:', messagesError);
-      }
+
 
       // 计算每个好友的未读消息数量
       const unreadCounts: Record<string, number> = {};
       if (chatMessages) {
         chatMessages.forEach(message => {
-          const senderId = message.sender_id;
-          unreadCounts[senderId] = (unreadCounts[senderId] || 0) + 1;
+          unreadCounts[message.sender_id] = (unreadCounts[message.sender_id] || 0) + 1;
         });
       }
 
       // 将好友资料和未读消息数量合并到好友关系中
-      const friendsWithProfiles = friendships.map(friendship => {
-        const friendProfile = friendsProfiles?.find(profile => profile.id === friendship.friend_id);
-        return {
-          ...friendship,
-          friend_profile: friendProfile,
-          unread_count: unreadCounts[friendship.friend_id] || 0
-        };
-      });
+      const friendsWithProfiles = friendships.map(friendship => ({
+        ...friendship,
+        friend_profile: friendsProfiles[friendship.friend_id],
+        unread_count: unreadCounts[friendship.friend_id] || 0
+      }));
 
-      console.log('Found friends with profiles:', friendsWithProfiles.length);
+
       return friendsWithProfiles as Friendship[];
     } catch (error) {
       console.error('Error in getFriends:', error);
-      throw error;
+      // 发生错误时返回空数组，避免整个聊天页面崩溃
+      return [] as Friendship[];
     }
   },
 
@@ -414,7 +420,7 @@ export const chatService = {
         throw new Error('User not authenticated');
       }
 
-      console.log('Sending message from', senderId, 'to', receiverId, ':', content);
+
       
       // 检查好友关系状态
       const friendshipStatus = await chatService.checkFriendshipStatus(receiverId);
@@ -451,7 +457,7 @@ export const chatService = {
         throw error;
       }
 
-      console.log('Message sent successfully:', data);
+
       
       // 返回包含发送者资料的消息
       return {
@@ -467,7 +473,7 @@ export const chatService = {
   // 获取聊天消息
   getChatMessages: async (otherUserId: string, limit: number = 50, offset: number = 0): Promise<ChatMessage[]> => {
     try {
-      console.log('getChatMessages called with:', { otherUserId, limit, offset });
+
       
       // 获取当前认证用户
       const user = await supabase.auth.getUser();
@@ -479,7 +485,7 @@ export const chatService = {
       }
       
       const userId = user.data.user.id;
-      console.log('Current user ID:', userId);
+
 
       // 在数据库查询时就过滤出当前对话的消息，使用and和or组合条件
       // 确保只返回当前用户和指定用户之间的消息
@@ -497,7 +503,7 @@ export const chatService = {
         return [];
       }
 
-      console.log('Messages from database:', messages?.length || 0);
+
 
       // 确保 messages 是数组
       const chatMessages = messages || [];
@@ -509,7 +515,7 @@ export const chatService = {
         (message.sender_id === otherUserId && message.receiver_id === userId)
       );
 
-      console.log('Filtered messages:', filteredMessages.length);
+
 
       // 如果没有消息，直接返回空数组
       if (filteredMessages.length === 0) {
@@ -518,12 +524,12 @@ export const chatService = {
 
       // 获取所有发送者的 ID
       const senderIds = [...new Set(filteredMessages.map(message => message.sender_id))];
-      console.log('Sender IDs to fetch profiles for:', senderIds);
 
-      // 查询所有发送者的资料
+
+      // 查询所有发送者的资料，包含在线状态
       const { data: sendersProfiles, error: profilesError } = await supabase
         .from('profiles')
-        .select('*')
+        .select('id, username, display_name, avatar_url, online_status, last_seen')
         .in('id', senderIds);
 
       if (profilesError) {
@@ -533,7 +539,7 @@ export const chatService = {
         return filteredMessages as ChatMessage[];
       }
 
-      console.log('Fetched sender profiles:', sendersProfiles?.length || 0);
+
 
       // 将发送者资料合并到消息中
       const messagesWithProfiles = filteredMessages.map(message => {
@@ -544,7 +550,7 @@ export const chatService = {
         };
       });
 
-      console.log('Messages with profiles:', messagesWithProfiles.length);
+
       return messagesWithProfiles as ChatMessage[];
     } catch (error) {
       console.error('Unexpected error in getChatMessages:', error);
@@ -562,49 +568,101 @@ export const chatService = {
       throw new Error('User not authenticated');
     }
 
-    // 创建群
-    const { data: group, error: groupError } = await supabase
+    // 验证群聊名称长度
+    if (!name || name.trim().length < 2 || name.trim().length > 20) {
+      throw new Error('群聊名称必须为2-20个字符');
+    }
+
+    // 验证群聊名称是否已存在
+    const trimmedName = name.trim();
+    const { data: existingGroups, error: existingGroupsError } = await supabase
       .from('groups')
-      .insert({
-        name,
-        description,
-        avatar_url: avatarUrl,
-        creator_id: creatorId,
-        member_count: 1
-      })
-      .select('*')
-      .single();
+      .select('id')
+      .eq('name', trimmedName)
+      .limit(1);
 
-    if (groupError) {
-      throw groupError;
+    if (!existingGroupsError && existingGroups && existingGroups.length > 0) {
+      throw new Error('群聊名称已存在，请使用其他名称');
+      }
+
+    // 创建群，不使用 .select()，因为由于 RLS 策略，SELECT 可能会失败
+    // 我们将使用生成的群 ID 来构建返回的群对象
+    const now = new Date().toISOString();
+    
+    // 使用 UUID 生成群 ID
+    const groupId = crypto.randomUUID();
+    
+    // 创建群对象
+    const newGroup: Group = {
+      id: groupId,
+      name: name.trim(),
+      description,
+      avatar_url: avatarUrl,
+      creator_id: creatorId,
+      member_count: 1,
+      created_at: now,
+      updated_at: now
+    };
+
+    try {
+      // 尝试创建群，不使用 .select()，因为由于 RLS 策略，SELECT 可能会失败
+      const { error: groupError } = await supabase
+        .from('groups')
+        .insert({
+          id: groupId,
+          name: name.trim(),
+          description,
+          avatar_url: avatarUrl,
+          creator_id: creatorId,
+          member_count: 1
+        });
+
+      if (groupError) {
+        console.error('Error creating group:', groupError);
+        // 检查是否是唯一性约束违反错误
+        if (groupError.code === '23505' || groupError.message?.includes('unique constraint')) {
+          throw new Error('群聊名称已存在，请使用其他名称');
+        }
+        throw groupError;
+      }
+
+      // 添加创建者为群成员
+      // 由于我们已经修复了 RLS 策略，现在可以添加群成员了
+      const { error: memberError } = await supabase
+        .from('group_members')
+        .insert({
+          group_id: groupId,
+          user_id: creatorId,
+          role: 'owner'
+        });
+
+      if (memberError) {
+        console.error('Error adding creator as group member:', memberError);
+        // 即使添加群成员失败，我们也返回群对象，因为群已经创建成功
+      }
+
+      // 返回生成的群对象，而不是从数据库中查询的对象
+      return newGroup;
+    } catch (error) {
+      console.error('Error in createGroup:', error);
+      throw error;
     }
-
-    // 添加创建者为群成员
-    const { error: memberError } = await supabase
-      .from('group_members')
-      .insert({
-        group_id: group.id,
-        user_id: creatorId,
-        role: 'owner'
-      });
-
-    if (memberError) {
-      throw memberError;
-    }
-
-    return group as Group;
   },
 
   // 邀请好友加入群
   inviteToGroup: async (groupId: string, friendIds: string[]): Promise<void> => {
-    const user = await supabase.auth.getUser();
-    const userId = user.data.user?.id;
+    try {
+      const user = await supabase.auth.getUser();
+      const userId = user.data.user?.id;
 
-    if (!userId) {
-      throw new Error('User not authenticated');
-    }
+      if (!userId) {
+        throw new Error('User not authenticated');
+      }
 
-    // 检查当前用户是否是群管理员或群主
+    // 检查当前用户是否是群管理员、群主或创建者
+    let hasPermission = false;
+
+    // 先检查是否是群成员
     const { data: member, error: memberError } = await supabase
       .from('group_members')
       .select('role')
@@ -612,9 +670,53 @@ export const chatService = {
       .eq('user_id', userId)
       .single();
 
-    if (memberError || !member || (member.role !== 'owner' && member.role !== 'admin')) {
+    if (!memberError && member && (member.role === 'owner' || member.role === 'admin')) {
+      // 是群管理员或群主，有邀请权限
+      hasPermission = true;
+    } else {
+      // 不是群管理员或群主，检查是否是群创建者
+      const { data: group, error: groupError } = await supabase
+        .from('groups')
+        .select('creator_id')
+        .eq('id', groupId)
+        .single();
+
+      if (!groupError && group && group.creator_id === userId) {
+        // 是群创建者，有邀请权限
+        hasPermission = true;
+        
+        // 将创建者添加到群成员表中
+        try {
+          await supabase
+            .from('group_members')
+            .insert({
+              group_id: groupId,
+              user_id: userId,
+              role: 'owner'
+            });
+        } catch (err) {
+          console.error('Error adding creator to group_members:', err);
+        }
+      }
+    }
+
+    if (!hasPermission) {
       throw new Error('You do not have permission to invite members to this group');
     }
+
+    // 获取当前用户的资料
+    const { data: inviterProfile } = await supabase
+      .from('profiles')
+      .select('display_name')
+      .eq('id', userId)
+      .single();
+
+    // 获取群聊信息
+    const { data: groupInfo } = await supabase
+      .from('groups')
+      .select('name')
+      .eq('id', groupId)
+      .single();
 
     // 批量添加群成员
     const memberInserts = friendIds.map(friendId => ({
@@ -623,70 +725,260 @@ export const chatService = {
       role: 'member'
     }));
 
-    const { error: insertError } = await supabase
-      .from('group_members')
-      .insert(memberInserts);
-
-    if (insertError) {
-      throw insertError;
+    // 尝试添加群成员，忽略可能的错误（如重复添加）
+    try {
+      await supabase
+        .from('group_members')
+        .insert(memberInserts);
+    } catch (insertError) {
+      console.error('Insert error:', insertError);
     }
 
     // 更新群成员数量
-    const { data: countData } = await supabase
-      .from('group_members')
-      .select('*', { count: 'exact' })
-      .eq('group_id', groupId);
+    try {
+      const { data: countData } = await supabase
+        .from('group_members')
+        .select('*', { count: 'exact' })
+        .eq('group_id', groupId);
 
-    const memberCount = countData?.length || 0;
+      const memberCount = countData?.length || 0;
 
-    await supabase
-      .from('groups')
-      .update({ member_count: memberCount })
-      .eq('group_id', groupId);
-  },
+      await supabase
+        .from('groups')
+        .update({ member_count: memberCount })
+        .eq('id', groupId);
+    } catch (countError) {
+      console.error('Count error:', countError);
+    }
+
+    // 为每个被邀请的用户创建通知
+    const inviterName = inviterProfile?.display_name || '用户';
+    const groupName = groupInfo?.name || '群聊';
+
+    for (const friendId of friendIds) {
+      try {
+        await createNotification(
+          friendId,
+          `${inviterName} 邀请你加入群聊 "${groupName}"`,
+          'group_invite',
+          undefined,
+          groupId
+        );
+      } catch (notificationError) {
+        console.error(`Failed to create notification for user ${friendId}:`, notificationError);
+        // 继续执行，不中断整个邀请流程
+      }
+    }
+  } catch (error) {
+    console.error('Error in inviteToGroup:', error);
+    // 重新抛出错误，让调用者知道发生了错误
+    throw error;
+  }
+},
 
   // 获取群列表
   getGroups: async (): Promise<Group[]> => {
-    const user = await supabase.auth.getUser();
-    const userId = user.data.user?.id;
+    try {
 
-    if (!userId) {
-      throw new Error('User not authenticated');
-    }
+      
+      // 获取当前认证用户
+      const user = await supabase.auth.getUser();
+      
+      if (user.error || !user.data.user?.id) {
+        throw new Error('User not authenticated');
+      }
+      
+      const userId = user.data.user.id;
+      
+      // 查询用户所在的群聊成员关系
+      const { data: groupMemberships, error: membershipError } = await supabase
+        .from('group_members')
+        .select('group_id')
+        .eq('user_id', userId);
+      
+      if (membershipError) {
+        console.error('Error getting group memberships:', membershipError);
+        return [];
+      }
+      
+      if (!groupMemberships || groupMemberships.length === 0) {
+        return [];
+      }
+      
+      // 获取用户所属的所有群ID
+      const groupIds = groupMemberships.map(membership => membership.group_id);
+      
+      // 查询这些群的详细信息
+      const { data: groups, error: groupsError } = await supabase
+        .from('groups')
+        .select('*')
+        .in('id', groupIds)
+        .order('created_at', { ascending: false });
+      
+      if (groupsError) {
+        console.error('Error getting groups:', groupsError);
+        return [];
+      }
+      
+      // 查询所有群聊的未读消息数量
+      // 使用计数查询获取每个群聊的未读消息数量
+      const unreadCountsMap: Record<string, number> = {};
+      
+      // 为每个群聊获取未读消息数量
+      for (const groupId of groupIds) {
+        try {
+          const { count } = await supabase
+            .from('group_message_read_status')
+            .select('*', { count: 'exact', head: true })
+            .eq('group_id', groupId)
+            .eq('user_id', userId)
+            .eq('is_read', false);
+          
+          unreadCountsMap[groupId] = count || 0;
+        } catch (error) {
+          console.error(`Error getting unread count for group ${groupId}:`, error);
+          unreadCountsMap[groupId] = 0;
+        }
+      }
+      
+      // 将未读消息数量映射到群聊对象中
+      const groupsWithUnreadCounts = groups?.map(group => ({
+        ...group,
+        unread_count: unreadCountsMap[group.id] || 0
+      })) || [];
+      
 
-    const { data, error } = await supabase
-      .from('group_members')
-      .select('group:groups(*)')
-      .eq('user_id', userId)
-      .order('group.created_at', { ascending: false });
 
-    if (error) {
-      throw error;
-    }
-
-    // 正确处理返回的数据结构
-    if (!data || data.length === 0) {
+      
+      return groupsWithUnreadCounts as Group[];
+    } catch (error) {
+      console.error('Error in getGroups:', error);
       return [];
     }
+  },
 
-    return data
-      .filter(item => item.group && typeof item.group === 'object')
-      .map(item => item.group as unknown as Group);
+  // 获取单个群信息
+  getGroup: async (groupId: string): Promise<Group | null> => {
+    try {
+      // 从数据库中获取实际的群聊信息
+      const { data: group, error } = await supabase
+        .from('groups')
+        .select('*')
+        .eq('id', groupId)
+        .single();
+
+      if (error) {
+        console.error('Error getting group:', error);
+        // 如果获取失败，返回一个包含 groupId 的默认群对象
+        return {
+          id: groupId,
+          name: `群聊 ${groupId.substring(0, 8)}`, // 使用 groupId 的前 8 个字符作为默认名称
+          description: '',
+          avatar_url: undefined,
+          creator_id: 'unknown',
+          member_count: 1,
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString()
+        } as Group;
+      }
+
+      return group as Group;
+    } catch (error) {
+      console.error('Error in getGroup:', error);
+      // 返回一个包含 groupId 的默认群对象，避免页面崩溃
+      return {
+        id: groupId,
+        name: `群聊 ${groupId.substring(0, 8)}`, // 使用 groupId 的前 8 个字符作为默认名称
+        description: '',
+        avatar_url: undefined,
+        creator_id: 'unknown',
+        member_count: 1,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
+      } as Group;
+    }
   },
 
   // 获取群成员列表
   getGroupMembers: async (groupId: string): Promise<GroupMember[]> => {
-    const { data, error } = await supabase
-      .from('group_members')
-      .select('*, user_profile:profiles!user_id(*)')
-      .eq('group_id', groupId)
-      .order('joined_at', { ascending: true });
+    try {
+      // 先获取群成员基本信息
+      const { data: members, error } = await supabase
+        .from('group_members')
+        .select('*')
+        .eq('group_id', groupId)
+        .order('joined_at', { ascending: true });
 
-    if (error) {
+      if (error) {
+        console.error('Error getting group members:', error);
+        return [];
+      }
+
+      if (!members || members.length === 0) {
+        return members as GroupMember[];
+      }
+
+      // 获取所有成员的用户ID
+      const userIds = members.map(member => member.user_id);
+      
+      // 单独获取所有用户的资料，包含在线状态
+      const { data: profiles, error: profilesError } = await supabase
+        .from('profiles')
+        .select('id, username, display_name, avatar_url, online_status, last_seen')
+        .in('id', userIds);
+
+      if (profilesError) {
+        console.error('Error getting profiles for group members:', profilesError);
+        // 即使获取用户资料失败，也返回群成员基本信息
+        return members as GroupMember[];
+      }
+
+      // 将用户资料映射到群成员信息中
+      const membersWithProfiles = members.map(member => {
+        // 查找对应的用户资料
+        const profile = profiles?.find(p => p.id === member.user_id);
+        return {
+          ...member,
+          user_profile: profile // 将用户资料添加到群成员对象中
+        };
+      });
+
+      return membersWithProfiles as GroupMember[];
+    } catch (error) {
+      console.error('Error in getGroupMembers:', error);
+      return [];
+    }
+  },
+
+  // 更新群成员信息（群内昵称和头像）
+  updateGroupMemberInfo: async (groupId: string, groupNickname?: string, groupAvatarUrl?: string): Promise<void> => {
+    try {
+      const user = await supabase.auth.getUser();
+      const userId = user.data.user?.id;
+
+      if (!userId) {
+        throw new Error('User not authenticated');
+      }
+
+      // 更新群成员信息
+      const { error } = await supabase
+        .from('group_members')
+        .update({
+          group_nickname: groupNickname,
+          group_avatar_url: groupAvatarUrl,
+          updated_at: new Date().toISOString()
+        })
+        .eq('group_id', groupId)
+        .eq('user_id', userId);
+
+      if (error) {
+        console.error('Error updating group member info:', error);
+        throw error;
+      }
+    } catch (error) {
+      console.error('Error in updateGroupMemberInfo:', error);
       throw error;
     }
-
-    return data as GroupMember[];
   },
 
   // 发送群消息
@@ -698,6 +990,7 @@ export const chatService = {
       throw new Error('User not authenticated');
     }
 
+    // 开始事务
     const { data, error } = await supabase
       .from('chat_messages')
       .insert({
@@ -714,23 +1007,98 @@ export const chatService = {
       throw error;
     }
 
-    return data as ChatMessage;
+    // 获取所有群成员（除了发送者自己）
+    const { data: groupMembers } = await supabase
+      .from('group_members')
+      .select('user_id')
+      .eq('group_id', groupId)
+      .neq('user_id', senderId);
+
+    // 为每个群成员创建一条未读消息记录
+      if (groupMembers && groupMembers.length > 0) {
+        const unreadStatusInserts = groupMembers.map(member => ({
+          group_id: groupId,
+          user_id: member.user_id,
+          message_id: data.id,
+          is_read: false
+          // 不设置 read_at 字段，让它使用默认值
+        }));
+
+        // 批量插入未读状态记录
+        try {
+          await supabase
+            .from('group_message_read_status')
+            .insert(unreadStatusInserts);
+        } catch (insertError) {
+          console.error('Error inserting group message read status:', insertError);
+          // 继续执行，不中断发送消息流程
+        }
+      }
+
+    // 获取发送者资料
+    const { data: senderProfile } = await supabase
+      .from('profiles')
+      .select('id, username, display_name, avatar_url')
+      .eq('id', senderId)
+      .single();
+
+    // 返回包含发送者资料的消息
+    return {
+      ...data,
+      sender_profile: senderProfile || null
+    } as ChatMessage;
   },
 
   // 获取群消息
   getGroupMessages: async (groupId: string, limit: number = 50, offset: number = 0): Promise<ChatMessage[]> => {
-    const { data, error } = await supabase
-      .from('chat_messages')
-      .select('*, sender_profile:profiles!sender_id(*)')
-      .eq('group_id', groupId)
-      .order('created_at', { ascending: false })
-      .range(offset, offset + limit - 1);
+    try {
+      // 简化查询，先获取消息基本信息
+      const { data: messages, error } = await supabase
+        .from('chat_messages')
+        .select('id, sender_id, group_id, content, created_at, updated_at, is_read, type')
+        .eq('group_id', groupId)
+        .order('created_at', { ascending: false })
+        .range(offset, offset + limit - 1);
 
-    if (error) {
-      throw error;
+      if (error) {
+        console.error('Error getting group messages:', error.message || JSON.stringify(error));
+        return [];
+      }
+
+      // 如果没有消息，直接返回空数组
+      if (!messages || messages.length === 0) {
+        return [];
+      }
+
+      // 获取所有发送者的ID
+      const senderIds = [...new Set(messages.map(msg => msg.sender_id))];
+
+      // 单独获取发送者的资料，包含在线状态
+      const { data: profiles, error: profilesError } = await supabase
+        .from('profiles')
+        .select('id, username, display_name, avatar_url, online_status, last_seen')
+        .in('id', senderIds);
+
+      if (profilesError) {
+        console.error('Error getting sender profiles:', profilesError.message || JSON.stringify(profilesError));
+        // 即使获取不到资料，也返回消息
+        return messages as ChatMessage[];
+      }
+
+      // 将发送者资料合并到消息中
+      const messagesWithProfiles = messages.map(msg => {
+        const senderProfile = profiles?.find(profile => profile.id === msg.sender_id);
+        return {
+          ...msg,
+          sender_profile: senderProfile || null
+        };
+      });
+
+      return messagesWithProfiles as ChatMessage[];
+    } catch (error) {
+      console.error('Error in getGroupMessages:', error instanceof Error ? error.message : JSON.stringify(error));
+      return [];
     }
-
-    return data as ChatMessage[];
   },
 
   // 更新消息已读状态
@@ -997,7 +1365,7 @@ export const chatService = {
         throw new Error('Failed to remove friend: All operations failed');
       }
 
-      console.log('Successfully removed friend and deleted chat messages');
+
     } catch (error) {
       console.error('Error removing friend:', error);
       throw error;
@@ -1022,7 +1390,7 @@ export const chatService = {
         return [];
       }
 
-      console.log('Fetching notifications for user:', userId);
+
       
       // 尝试获取通知列表
       const { data, error } = await supabase
@@ -1036,7 +1404,7 @@ export const chatService = {
         return [];
       }
 
-      console.log('Found notifications:', data?.length || 0);
+
       return data as Notification[];
     } catch (error) {
       console.error('Unexpected error in getNotifications:', error instanceof Error ? error.message : 'Unknown error');
@@ -1158,6 +1526,307 @@ export const chatService = {
       .eq('recipient_id', userId);
 
     if (error) {
+      throw error;
+    }
+  },
+
+  // 用户退出群聊
+  leaveGroup: async (groupId: string): Promise<void> => {
+    const user = await supabase.auth.getUser();
+    const userId = user.data.user?.id;
+
+    if (!userId) {
+      throw new Error('User not authenticated');
+    }
+
+    // 开始事务
+    try {
+      // 1. 删除用户的群成员记录
+      const { error: removeMemberError } = await supabase
+        .from('group_members')
+        .delete()
+        .eq('group_id', groupId)
+        .eq('user_id', userId);
+
+      if (removeMemberError) {
+        throw removeMemberError;
+      }
+
+      // 2. 更新群成员数量
+      const { data: memberCountData } = await supabase
+        .from('group_members')
+        .select('id', { count: 'exact' })
+        .eq('group_id', groupId);
+
+      const newMemberCount = memberCountData?.length || 0;
+
+      await supabase
+        .from('groups')
+        .update({ member_count: newMemberCount })
+        .eq('id', groupId);
+
+    } catch (error) {
+      console.error('Error leaving group:', error);
+      throw error;
+    }
+  },
+
+  // 管理员删除群成员
+  removeGroupMember: async (groupId: string, memberId: string): Promise<void> => {
+    const user = await supabase.auth.getUser();
+    const userId = user.data.user?.id;
+
+    if (!userId) {
+      throw new Error('User not authenticated');
+    }
+
+    try {
+      // 1. 检查当前用户是否是群管理员或群主
+      const { data: currentMember, error: currentMemberError } = await supabase
+        .from('group_members')
+        .select('role')
+        .eq('group_id', groupId)
+        .eq('user_id', userId)
+        .single();
+
+      if (currentMemberError) {
+        throw new Error('You are not a member of this group');
+      }
+
+      if (currentMember.role !== 'owner' && currentMember.role !== 'admin') {
+        throw new Error('Only group owners and admins can remove members');
+      }
+
+      // 2. 检查被删除的成员是否是群主
+      const { data: targetMember, error: targetMemberError } = await supabase
+        .from('group_members')
+        .select('role')
+        .eq('group_id', groupId)
+        .eq('user_id', memberId)
+        .single();
+
+      if (targetMemberError) {
+        throw new Error('Member not found in group');
+      }
+
+      if (targetMember.role === 'owner') {
+        throw new Error('Cannot remove group owner');
+      }
+
+      // 3. 删除群成员记录
+      const { error: removeMemberError } = await supabase
+        .from('group_members')
+        .delete()
+        .eq('group_id', groupId)
+        .eq('user_id', memberId);
+
+      if (removeMemberError) {
+        throw removeMemberError;
+      }
+
+      // 4. 更新群成员数量
+      const { data: memberCountData } = await supabase
+        .from('group_members')
+        .select('id', { count: 'exact' })
+        .eq('group_id', groupId);
+
+      const newMemberCount = memberCountData?.length || 0;
+
+      await supabase
+        .from('groups')
+        .update({ member_count: newMemberCount })
+        .eq('id', groupId);
+
+    } catch (error) {
+      console.error('Error removing group member:', error);
+      throw error;
+    }
+  },
+
+  // 获取群聊未读消息数量
+  getGroupUnreadMessageCount: async (groupId: string): Promise<number> => {
+    try {
+      const user = await supabase.auth.getUser();
+      const userId = user.data.user?.id;
+
+      if (!userId) {
+        console.error('User not authenticated in getGroupUnreadMessageCount');
+        return 0;
+      }
+
+      // 查询用户在指定群聊中的未读消息数量
+      console.log('Attempting to get group unread message count:', { groupId, userId });
+      const { count, error } = await supabase
+        .from('group_message_read_status')
+        .select('*', { count: 'exact', head: true })
+        .eq('group_id', groupId)
+        .eq('user_id', userId)
+        .eq('is_read', false);
+
+      if (error) {
+        console.error('Error getting group unread message count:', { 
+          error, 
+          message: error.message, 
+          code: error.code, 
+          details: error.details, 
+          hint: error.hint, 
+          groupId, 
+          userId 
+        });
+        return 0;
+      }
+
+      console.log('Got group unread message count:', { count, groupId, userId });
+      return count || 0;
+    } catch (error) {
+      console.error('Unexpected error in getGroupUnreadMessageCount:', { 
+        error, 
+        message: (error as Error).message, 
+        stack: (error as Error).stack 
+      });
+      return 0;
+    }
+  },
+
+  // 标记群聊消息为已读
+  markGroupMessagesAsRead: async (groupId: string, messageIds?: string[]): Promise<void> => {
+    const user = await supabase.auth.getUser();
+    const userId = user.data.user?.id;
+
+    if (!userId) {
+      throw new Error('User not authenticated');
+    }
+
+    try {
+      let query = supabase
+        .from('group_message_read_status')
+        .update({
+          is_read: true,
+          read_at: new Date().toISOString()
+        })
+        .eq('group_id', groupId)
+        .eq('user_id', userId)
+        .eq('is_read', false);
+
+      // 如果提供了消息ID列表，只标记这些消息为已读
+      if (messageIds && messageIds.length > 0) {
+        query = query.in('message_id', messageIds);
+      }
+
+      const { error } = await query;
+
+      if (error) {
+        console.error('Error marking group messages as read:', error);
+        throw error;
+      }
+    } catch (error) {
+      console.error('Error in markGroupMessagesAsRead:', error);
+      throw error;
+    }
+  },
+
+  // 更新群信息
+  updateGroup: async (groupId: string, name?: string, avatarUrl?: string): Promise<void> => {
+    const user = await supabase.auth.getUser();
+    const userId = user.data.user?.id;
+
+    if (!userId) {
+      throw new Error('User not authenticated');
+    }
+
+    try {
+      // 检查用户是否是群管理员或群主
+      const { data: groupMember, error: memberError } = await supabase
+        .from('group_members')
+        .select('role')
+        .eq('group_id', groupId)
+        .eq('user_id', userId)
+        .single();
+
+      if (memberError) {
+        throw new Error('You are not a member of this group');
+      }
+
+      if (groupMember.role !== 'owner' && groupMember.role !== 'admin') {
+        throw new Error('Only group owners and admins can update group settings');
+      }
+
+      // 更新群信息
+    const updateData: { updated_at: string; name?: string; avatar_url?: string } = {
+      updated_at: new Date().toISOString()
+    };
+
+      if (name !== undefined) {
+        updateData.name = name;
+      }
+
+      if (avatarUrl !== undefined) {
+        updateData.avatar_url = avatarUrl;
+      }
+
+      const { error: updateError } = await supabase
+        .from('groups')
+        .update(updateData)
+        .eq('id', groupId);
+
+      if (updateError) {
+        console.error('Error updating group:', updateError);
+        throw updateError;
+      }
+
+    } catch (error) {
+      console.error('Error in updateGroup:', error);
+      throw error;
+    }
+  },
+
+  // 删除群聊
+  deleteGroup: async (groupId: string): Promise<void> => {
+    const user = await supabase.auth.getUser();
+    const userId = user.data.user?.id;
+
+    if (!userId) {
+      throw new Error('User not authenticated');
+    }
+
+    try {
+      // 检查用户是否是群聊的创建者
+      const { data: groupMember, error: memberError } = await supabase
+        .from('group_members')
+        .select('role')
+        .eq('group_id', groupId)
+        .eq('user_id', userId)
+        .single();
+
+      if (memberError) {
+        throw new Error('You are not a member of this group');
+      }
+
+      if (groupMember.role !== 'owner') {
+        throw new Error('Only group owners can delete groups');
+      }
+
+      // 开始事务
+      // 1. 删除群聊的所有消息
+      await supabase
+        .from('chat_messages')
+        .delete()
+        .eq('group_id', groupId);
+
+      // 2. 删除群聊的所有成员
+      await supabase
+        .from('group_members')
+        .delete()
+        .eq('group_id', groupId);
+
+      // 3. 删除群聊本身
+      await supabase
+        .from('groups')
+        .delete()
+        .eq('id', groupId);
+
+    } catch (error) {
+      console.error('Error deleting group:', error);
       throw error;
     }
   },

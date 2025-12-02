@@ -190,10 +190,10 @@ export default function Home() {
       <main className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         {/* Hero Section */}
         <div className="text-center mb-16 pt-10 animate-fade-in">
-          <h1 className="text-5xl md:text-7xl font-bold mb-6 bg-gradient-to-r from-primary-600 via-purple-600 to-secondary-500 bg-clip-text text-transparent drop-shadow-sm">
+          <h1 className="text-4xl sm:text-5xl md:text-7xl font-bold mb-6 bg-gradient-to-r from-primary-600 via-purple-600 to-secondary-500 bg-clip-text text-transparent drop-shadow-sm">
             Confession Wall
           </h1>
-          <p className="text-xl text-gray-600 dark:text-gray-300 max-w-2xl mx-auto leading-relaxed">
+          <p className="text-lg sm:text-xl text-gray-600 dark:text-gray-300 max-w-2xl mx-auto leading-relaxed">
             一个倾诉秘密、表达爱意或发泄情绪的安全空间。
             <span className="block mt-2 font-medium text-primary-600 dark:text-primary-400">匿名 安全 免费</span>
           </p>
@@ -216,27 +216,31 @@ export default function Home() {
                   type: searchType 
                 });
               }}
-              className="w-full md:w-auto flex gap-2"
+              className="w-full md:w-auto flex flex-col sm:flex-row gap-3"
             >
-              <CustomSelect
-                options={[
-                  { value: 'content', label: '表白内容' },
-                  { value: 'username', label: '用户名' }
-                ]}
-                value={searchType}
-                onChange={(value) => setSearchType(value)}
-                className="w-32"
-              />
-              <input
-                type="text"
-                placeholder="搜索表白..."
-                className="w-full md:w-64 px-4 py-2 rounded-xl border border-gray-200 dark:border-gray-700 bg-white/80 dark:bg-gray-800/80 backdrop-blur-md focus:ring-2 focus:ring-primary-500 focus:outline-none transition-all duration-300 hover:border-primary-300 dark:hover:border-primary-600 shadow-sm hover:shadow-md"
-                value={searchKeyword}
-                onChange={(e) => setSearchKeyword(e.target.value)}
-              />
+              <div className="w-full sm:w-32">
+                <CustomSelect
+                  options={[
+                    { value: 'content', label: '表白内容' },
+                    { value: 'username', label: '用户名' }
+                  ]}
+                  value={searchType}
+                  onChange={(value) => setSearchType(value)}
+                  className="w-full"
+                />
+              </div>
+              <div className="flex-grow">
+                <input
+                  type="text"
+                  placeholder="搜索表白..."
+                  className="w-full px-4 py-3 rounded-xl border border-gray-200 dark:border-gray-700 bg-white/80 dark:bg-gray-800/80 backdrop-blur-md focus:ring-2 focus:ring-primary-500 focus:outline-none transition-all duration-300 hover:border-primary-300 dark:hover:border-primary-600 shadow-sm hover:shadow-md text-sm"
+                  value={searchKeyword}
+                  onChange={(e) => setSearchKeyword(e.target.value)}
+                />
+              </div>
               <button
                 type="submit"
-                className="px-6 py-2 bg-gradient-to-r from-primary-500 to-primary-600 text-white font-semibold rounded-xl shadow-sm hover:shadow-md transition-all duration-300 hover:from-primary-600 hover:to-primary-700 disabled:opacity-50 disabled:cursor-not-allowed disabled:from-primary-400 disabled:to-primary-500 flex items-center justify-center gap-2"
+                className="w-full sm:w-auto px-6 py-3 bg-gradient-to-r from-primary-500 to-primary-600 text-white font-semibold rounded-xl shadow-sm hover:shadow-md transition-all duration-300 hover:from-primary-600 hover:to-primary-700 disabled:opacity-50 disabled:cursor-not-allowed disabled:from-primary-400 disabled:to-primary-500 flex items-center justify-center gap-2 min-w-12"
                 disabled={loading}
               >
                 {loading ? (

@@ -24,6 +24,11 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   // 更新用户在线状态的辅助函数
   const updateOnlineStatus = async (userId: string, status: 'online' | 'offline' | 'away') => {
     try {
+      // 检查当前状态中是否还有用户，如果没有则跳过更新
+      if (!state.user) {
+        return;
+      }
+      
       const { error } = await supabase
         .from('profiles')
         .update({
@@ -35,6 +40,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         console.error('Error updating online status:', error);
       }
     } catch (error) {
+      // 忽略网络请求错误，例如用户已离线或会话过期
       console.error('Unexpected error updating online status:', error);
     }
   };
@@ -103,31 +109,11 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     });
 
     // 监听页面关闭或刷新事件，设置离线状态
-    const handleBeforeUnload = async () => {
+    const handleBeforeUnload = () => {
       const userId = state.user?.id;
       if (userId) {
-        try {
-          // 尝试使用fetch发送同步请求，确保请求能被处理
-          await fetch('/api/update-status', {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({ userId, status: 'offline' }),
-            keepalive: true,
-          });
-        } catch (error) {
-          console.error('Error sending offline status:', error);
-          // 如果fetch失败，尝试使用navigator.sendBeacon
-          try {
-            const formData = new FormData();
-            formData.append('userId', userId);
-            formData.append('status', 'offline');
-            navigator.sendBeacon('/api/update-status', formData);
-          } catch (beaconError) {
-            console.error('Error sending beacon for offline status:', beaconError);
-          }
-        }
+        // 直接调用updateOnlineStatus函数
+        updateOnlineStatus(userId, 'offline');
       }
     };
 
@@ -136,7 +122,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       const userId = state.user?.id;
       if (userId) {
         const status = document.hidden ? 'away' : 'online';
-        await updateOnlineStatus(userId, status as 'online' | 'offline');
+        await updateOnlineStatus(userId, status);
       }
     };
 

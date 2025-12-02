@@ -73,6 +73,7 @@ export interface Group {
   created_at: string;
   updated_at: string;
   member_count: number;
+  unread_count?: number;
 }
 
 // 群成员
@@ -84,6 +85,8 @@ export interface GroupMember {
   joined_at: string;
   updated_at: string;
   user_profile?: Profile;
+  group_nickname?: string; // 群内昵称
+  group_avatar_url?: string; // 群内头像
 }
 
 // 群公告
@@ -98,7 +101,8 @@ export interface GroupAnnouncement {
 }
 
 // 通知类型
-export type NotificationType = 'friend_request' | 'friend_accepted' | 'friend_rejected' | 'friend_request_sent';
+export type NotificationType = 'friend_request' | 'friend_accepted' | 'friend_rejected' | 'friend_request_sent' | 'group_invite';
+
 
 // 通知
 export interface Notification {
@@ -111,6 +115,7 @@ export interface Notification {
   created_at: string;
   updated_at: string;
   friend_request_id?: string;
+  group_id?: string;
   sender_profile?: Profile;
 }
 

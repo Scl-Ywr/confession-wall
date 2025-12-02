@@ -4,6 +4,9 @@ export interface User {
   email_confirmed_at?: string;
   created_at: string;
   updated_at: string;
+  display_name?: string;
+  username?: string;
+  avatar_url?: string;
 }
 
 export interface AuthState {

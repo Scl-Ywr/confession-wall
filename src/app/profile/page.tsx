@@ -322,7 +322,7 @@ const ProfilePage: React.FC = () => {
           </div>
         )}
 
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
           {/* Left Column: Avatar & Quick Stats */}
           <div className="md:col-span-1 space-y-6">
             <div className="glass-card p-6 rounded-2xl text-center animate-slide-up">
@@ -438,18 +438,18 @@ const ProfilePage: React.FC = () => {
                   ></textarea>
                 </div>
 
-                <div className="pt-4 flex items-center justify-end gap-4">
+                <div className="pt-4 flex flex-col sm:flex-row items-center justify-end gap-3">
                   <button
                     type="button"
                     onClick={() => router.push('/')}
-                    className="px-6 py-2.5 border border-gray-400 dark:border-gray-500 rounded-xl text-gray-900 dark:text-white bg-white/50 hover:bg-white/80 dark:bg-gray-800/50 dark:hover:bg-gray-700/80 transition-all font-bold shadow-sm"
+                    className="w-full sm:w-auto px-6 py-3 border border-gray-400 dark:border-gray-500 rounded-xl text-gray-900 dark:text-white bg-white/50 hover:bg-white/80 dark:bg-gray-800/50 dark:hover:bg-gray-700/80 transition-all font-bold shadow-sm min-h-12 flex items-center justify-center"
                   >
                     取消
                   </button>
                   <button
                     type="submit"
                     disabled={formLoading}
-                    className={`px-8 py-2.5 bg-gradient-to-r from-primary-600 to-secondary-600 text-black dark:text-white rounded-xl font-bold shadow-lg shadow-primary-500/30 hover:shadow-primary-500/50 transform hover:-translate-y-0.5 transition-all ${formLoading ? 'opacity-70 cursor-wait' : ''}`}
+                    className={`w-full sm:w-auto px-8 py-3 bg-gradient-to-r from-primary-600 to-secondary-600 text-black dark:text-white rounded-xl font-bold shadow-lg shadow-primary-500/30 hover:shadow-primary-500/50 transform hover:-translate-y-0.5 transition-all min-h-12 flex items-center justify-center ${formLoading ? 'opacity-70 cursor-wait' : ''}`}
                   >
                     {formLoading ? (
                       <div className="flex items-center gap-2">
@@ -485,17 +485,17 @@ const ProfilePage: React.FC = () => {
             <p className="text-gray-700 dark:text-gray-300 mb-6">
               您确定要注销账号吗？此操作将永久删除您的账号及所有关联数据，包括表白、评论、点赞和个人资料。此操作不可撤销！
             </p>
-            <div className="flex items-center justify-end gap-4">
+            <div className="flex flex-col sm:flex-row items-center justify-end gap-3">
               <button
                 onClick={() => setShowDeleteConfirm(false)}
-                className="px-6 py-2.5 border border-gray-400 dark:border-gray-500 rounded-xl text-gray-900 dark:text-white bg-white/50 hover:bg-white/80 dark:bg-gray-800/50 dark:hover:bg-gray-700/80 transition-all font-bold shadow-sm"
+                className="w-full sm:w-auto px-6 py-3 border border-gray-400 dark:border-gray-500 rounded-xl text-gray-900 dark:text-white bg-white/50 hover:bg-white/80 dark:bg-gray-800/50 dark:hover:bg-gray-700/80 transition-all font-bold shadow-sm min-h-12 flex items-center justify-center"
               >
                 取消
               </button>
               <button
                 onClick={handleDeleteAccount}
                 disabled={deleteLoading}
-                className={`px-8 py-2.5 bg-red-600 text-white rounded-xl font-bold shadow-lg shadow-red-500/30 hover:shadow-red-500/50 transform hover:-translate-y-0.5 transition-all ${deleteLoading ? 'opacity-70 cursor-wait' : ''}`}
+                className={`w-full sm:w-auto px-8 py-3 bg-red-600 text-white rounded-xl font-bold shadow-lg shadow-red-500/30 hover:shadow-red-500/50 transform hover:-translate-y-0.5 transition-all min-h-12 flex items-center justify-center ${deleteLoading ? 'opacity-70 cursor-wait' : ''}`}
               >
                 {deleteLoading ? (
                   <div className="flex items-center gap-2">

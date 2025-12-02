@@ -33,7 +33,7 @@ export function ChatInterface({ otherUserId, otherUserProfile: initialOtherUserP
 
   // 滚动到最新消息
   const scrollToBottom = () => {
-    console.log('Scrolling to bottom');
+
     if (messagesEndRef.current) {
       messagesEndRef.current.scrollIntoView({ behavior: 'smooth', block: 'end' });
     }
@@ -71,66 +71,112 @@ export function ChatInterface({ otherUserId, otherUserProfile: initialOtherUserP
     }
   }, [otherUserId]);
 
+  // 请求通知权限
+  const requestNotificationPermission = async () => {
+    if ('Notification' in window && Notification.permission === 'default') {
+      await Notification.requestPermission();
+    }
+  };
+
+  // 显示通知
+  const showNotification = (message: ChatMessage) => {
+    if ('Notification' in window && Notification.permission === 'granted') {
+      // 获取发送者名称
+      const senderName = otherUserProfile.display_name || otherUserProfile.username || '用户';
+      
+      // 显示通知
+      new Notification(`${senderName}`, {
+        body: message.content,
+        icon: otherUserProfile.avatar_url || undefined,
+        tag: `private_${otherUserId}`,
+        badge: '/favicon.ico'
+      });
+    }
+  };
+
   // 添加实时消息订阅
   useEffect(() => {
     if (!currentUserId || !otherUserId) {
-      console.log('Missing currentUserId or otherUserId, skipping realtime setup');
+
       return;
     }
 
-    console.log('Setting up realtime channel for chat messages');
-    console.log('Current user ID:', currentUserId);
-    console.log('Other user ID:', otherUserId);
+    // 请求通知权限
+    requestNotificationPermission();
 
-    // 创建实时通道，使用更简单的名称
+
+
+    // 创建实时通道，使用基于用户ID的唯一名称，避免冲突
+    const channelName = `chat-messages-${currentUserId}-${otherUserId}`;
     const channel = supabase
-      .channel('chat-messages')
+      .channel(channelName)
       .on(
         'postgres_changes',
         {
           event: 'INSERT',
           schema: 'public',
-          table: 'chat_messages'
+          table: 'chat_messages',
+          filter: `or(and(sender_id.eq.${otherUserId},receiver_id.eq.${currentUserId}),and(sender_id.eq.${currentUserId},receiver_id.eq.${otherUserId}))`
         },
-        (payload) => {
-          console.log('=== NEW MESSAGE EVENT RECEIVED ===');
-          console.log('Message details:', JSON.stringify(payload.new, null, 2));
-          
+        async (payload) => {
           // 检查是否是当前对话的消息
           const isCurrentChat = 
             (payload.new.sender_id === currentUserId && payload.new.receiver_id === otherUserId) ||
             (payload.new.sender_id === otherUserId && payload.new.receiver_id === currentUserId);
           
-          console.log('Is current chat:', isCurrentChat);
-          console.log('Current chat check:', {
-            currentUserId,
-            otherUserId,
-            messageSender: payload.new.sender_id,
-            messageReceiver: payload.new.receiver_id
-          });
-          
           if (isCurrentChat) {
-            console.log('This is a message for the current chat, adding to list');
-            // 添加新消息到消息列表
+            
+            // 获取发送者资料
+            const { data: senderProfile } = await supabase
+              .from('profiles')
+              .select('id, username, display_name, avatar_url')
+              .eq('id', payload.new.sender_id)
+              .single();
+            
+            // 构造完整的消息对象
+            const completeMessage = {
+              ...payload.new,
+              sender_profile: senderProfile || null
+            } as ChatMessage;
+            
+            // 添加到消息列表
             setMessages(prev => {
-              console.log('Current messages count:', prev.length);
               // 检查消息是否已经存在，避免重复
-              const exists = prev.some(msg => msg.id === payload.new.id);
+              const exists = prev.some(msg => msg.id === completeMessage.id);
               if (exists) {
-                console.log('Message already exists, skipping');
+
                 return prev;
               }
-              // 添加到数组末尾，最新消息在底部
-              console.log('Adding new message to messages list');
-              const updatedMessages = [...prev, payload.new as ChatMessage];
-              console.log('Updated messages count:', updatedMessages.length);
-              return updatedMessages;
+              return [...prev, completeMessage];
             });
+            
             // 滚动到最新消息
-            console.log('Calling scrollToBottom after adding new message');
             scrollToBottom();
+            
+            // 显示消息通知
+            showNotification(completeMessage);
+            
+            // 如果消息是发给当前用户的，标记为已读
+            if (payload.new.receiver_id === currentUserId) {
+              try {
+                await supabase
+                  .from('chat_messages')
+                  .update({ is_read: true })
+                  .eq('id', payload.new.id);
+                
+                // 触发自定义事件，通知好友列表更新未读消息数量
+                window.dispatchEvent(new CustomEvent('privateMessagesRead', { detail: { friendId: otherUserId } }));
+                
+                // 更新本地消息状态
+                setMessages(prev => prev.map(msg => 
+                  msg.id === payload.new.id ? { ...msg, is_read: true } : msg
+                ));
+              } catch (error) {
+                console.error('Error marking message as read:', error);
+              }
+            }
           } else {
-            console.log('This message is not for the current chat, ignoring');
+
           }
         }
       )
@@ -143,7 +189,7 @@ export function ChatInterface({ otherUserId, otherUserProfile: initialOtherUserP
           filter: `or(user_id=eq.${currentUserId} AND friend_id=eq.${otherUserId},user_id=eq.${otherUserId} AND friend_id=eq.${currentUserId})`
         },
         () => {
-          console.log('=== FRIENDSHIP DELETED EVENT RECEIVED ===');
+
           // 立即更新好友关系状态
           setFriendshipStatus('none');
           setShowFriendDeletedAlert(true);
@@ -158,8 +204,7 @@ export function ChatInterface({ otherUserId, otherUserProfile: initialOtherUserP
           filter: `id=eq.${otherUserId}`
         },
         (payload) => {
-          console.log('=== PROFILE UPDATE EVENT RECEIVED ===');
-          console.log('Profile details:', JSON.stringify(payload.new, null, 2));
+
           // 更新好友在线状态
           setOtherUserProfile(prev => ({
             ...prev,
@@ -169,22 +214,12 @@ export function ChatInterface({ otherUserId, otherUserProfile: initialOtherUserP
         }
       )
       .subscribe((status) => {
-        console.log('Realtime channel status:', status);
-        if (status === 'SUBSCRIBED') {
-          console.log('✅ Successfully subscribed to realtime channel');
-        } else if (status === 'CHANNEL_ERROR') {
-          console.error('❌ Channel error occurred');
-        } else if (status === 'TIMED_OUT') {
-          console.error('❌ Channel subscription timed out');
-        }
+
       });
 
     channelRef.current = channel;
-    console.log('Realtime channel setup completed');
-
     // 组件卸载时取消订阅
     return () => {
-      console.log('Removing realtime channel');
       supabase.removeChannel(channel);
       channelRef.current = null;
     };
@@ -211,6 +246,9 @@ export function ChatInterface({ otherUserId, otherUserProfile: initialOtherUserP
             .from('chat_messages')
             .update({ is_read: true })
             .in('id', messageIds);
+          
+          // 触发自定义事件，通知好友列表更新未读消息数量
+          window.dispatchEvent(new CustomEvent('privateMessagesRead', { detail: { friendId: otherUserId } }));
         }
       } catch (error) {
         console.error('Error marking messages as read:', error);
@@ -331,7 +369,7 @@ export function ChatInterface({ otherUserId, otherUserProfile: initialOtherUserP
             </div>
           )}
           <div
-            className={`relative p-3 rounded-lg max-w-[80%] ${isCurrentUser ? 'bg-gradient-to-r from-blue-400 to-pink-500 text-white rounded-tr-none self-end' : 'bg-gray-200 dark:bg-gray-700 text-gray-800 dark:text-white rounded-tl-none self-start'} cursor-pointer inline-block`}
+            className={`relative p-2 sm:p-3 rounded-lg max-w-[95%] sm:max-w-[80%] mx-auto ${isCurrentUser ? 'bg-gradient-to-r from-blue-400 to-pink-500 text-white rounded-tr-none' : 'bg-gray-200 dark:bg-gray-700 text-gray-800 dark:text-white rounded-tl-none'} cursor-pointer inline-block`}
             onClick={() => toggleMessageSelection(message.id)}
           >
             {isSelected && (
@@ -360,7 +398,7 @@ export function ChatInterface({ otherUserId, otherUserProfile: initialOtherUserP
   };
 
   return (
-    <div className="flex flex-col h-[calc(100vh-120px)] bg-white dark:bg-gray-800 rounded-xl shadow-lg overflow-hidden">
+    <div className="flex flex-col h-[calc(100vh-120px)] sm:h-[calc(100vh-100px)] bg-white dark:bg-gray-800 rounded-xl shadow-lg overflow-hidden sm:rounded-none sm:shadow-none">
       {/* 聊天头部 */}
       <div className="flex items-center justify-between p-4 border-b border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800">
         <div className="flex items-center gap-3">
@@ -384,18 +422,21 @@ export function ChatInterface({ otherUserId, otherUserProfile: initialOtherUserP
               {otherUserProfile.display_name || otherUserProfile.username}
             </div>
             {friendshipStatus === 'accepted' ? (
-              <div className={`text-sm ${otherUserProfile.online_status === 'online' ? 'text-green-500' : otherUserProfile.online_status === 'away' ? 'text-yellow-500' : 'text-gray-500'}`}>
-                {otherUserProfile.online_status === 'online' ? '在线' : otherUserProfile.online_status === 'away' ? '离开' : (() => {
-                  const lastActive = otherUserProfile.last_seen || otherUserProfile.updated_at;
-                  if (lastActive) {
-                    try {
-                      return new Date(lastActive).toLocaleString('zh-CN', { hour: '2-digit', minute: '2-digit' });
-                    } catch (e) {
-                      return '离线';
+              <div className="flex items-center gap-1 text-sm">
+                <span className={`w-2 h-2 rounded-full ${otherUserProfile.online_status === 'online' ? 'bg-green-500' : otherUserProfile.online_status === 'away' ? 'bg-yellow-500' : 'bg-gray-500'}`}></span>
+                <span className={otherUserProfile.online_status === 'online' ? 'text-green-500' : otherUserProfile.online_status === 'away' ? 'text-yellow-500' : 'text-gray-500'}>
+                  {otherUserProfile.online_status === 'online' ? '在线' : otherUserProfile.online_status === 'away' ? '离开' : (() => {
+                    const lastActive = otherUserProfile.last_seen || otherUserProfile.updated_at;
+                    if (lastActive) {
+                      try {
+                        return new Date(lastActive).toLocaleString('zh-CN', { hour: '2-digit', minute: '2-digit' });
+                      } catch (e) {
+                        return '离线';
+                      }
                     }
-                  }
-                  return '离线';
-                })()}
+                    return '离线';
+                  })()}
+                </span>
               </div>
             ) : (
               <div className="text-sm text-red-500">已删除好友</div>
@@ -462,12 +503,12 @@ export function ChatInterface({ otherUserId, otherUserProfile: initialOtherUserP
           <form onSubmit={handleSendMessage} className="flex items-center gap-2">
             <div className="relative">
               <button
-                type="button"
-                className="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors duration-200"
-                onClick={() => setShowEmojiPicker(!showEmojiPicker)}
-              >
-                <Smile className="w-5 h-5 text-gray-600 dark:text-gray-300" />
-              </button>
+              type="button"
+              className="p-3 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors duration-200 min-w-12 min-h-12 flex items-center justify-center"
+              onClick={() => setShowEmojiPicker(!showEmojiPicker)}
+            >
+              <Smile className="w-5 h-5 text-gray-600 dark:text-gray-300" />
+            </button>
               {/* 这里可以添加表情选择器组件 */}
               {showEmojiPicker && (
                 <div className="absolute bottom-full left-0 mb-2 bg-white dark:bg-gray-800 rounded-lg shadow-lg p-2 w-64 md:w-80 max-h-48 overflow-y-auto">
@@ -502,13 +543,13 @@ export function ChatInterface({ otherUserId, otherUserProfile: initialOtherUserP
             </div>
             <button
               type="submit"
-              className="p-3 rounded-full bg-gradient-to-r from-pink-400 to-blue-500 text-white hover:from-pink-500 hover:to-blue-600 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed shadow-md hover:shadow-lg dark:from-pink-500 dark:to-blue-600 dark:hover:from-pink-600 dark:hover:to-blue-700"
+              className="p-3 sm:p-3.5 rounded-full bg-gradient-to-r from-pink-400 to-blue-500 text-white hover:from-pink-500 hover:to-blue-600 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed shadow-md hover:shadow-lg dark:from-pink-500 dark:to-blue-600 dark:hover:from-pink-600 dark:hover:to-blue-700 min-w-12 min-h-12 flex items-center justify-center"
               disabled={!newMessage.trim() || sending}
             >
               {sending ? (
                 <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
               ) : (
-                <Send className="w-5 h-5" />
+                <Send className="w-5 h-5 sm:w-6 sm:h-6" />
               )}
             </button>
           </form>
