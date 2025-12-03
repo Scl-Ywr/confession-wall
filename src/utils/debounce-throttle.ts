@@ -4,7 +4,7 @@
  * @param wait 等待时间（毫秒）
  * @returns 防抖处理后的函数
  */
-export function debounce<T extends (...args: any[]) => any>(
+export function debounce<T extends (...args: unknown[]) => unknown>(
   func: T,
   wait: number
 ): (...args: Parameters<T>) => void {
@@ -21,7 +21,7 @@ export function debounce<T extends (...args: any[]) => any>(
  * @param limit 时间限制（毫秒）
  * @returns 节流处理后的函数
  */
-export function throttle<T extends (...args: any[]) => any>(
+export function throttle<T extends (...args: unknown[]) => unknown>(
   func: T,
   limit: number
 ): (...args: Parameters<T>) => void {

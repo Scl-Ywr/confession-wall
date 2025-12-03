@@ -3,10 +3,11 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { chatService } from '@/services/chatService';
 import { ChatMessage, Profile } from '@/types/chat';
-import { MessageSquare, Send, Smile, Trash2, Search } from 'lucide-react';
+import { MessageSquare, Send, Smile, Trash2, Search, Image as ImageIcon, Film, Paperclip } from 'lucide-react';
 import Image from 'next/image';
 import { useAuth } from '@/context/AuthContext';
 import { supabase } from '@/lib/supabase/client';
+import MultimediaMessage from './MultimediaMessage';
 
 type ChatInterfaceProps = {
   otherUserId: string;
@@ -34,6 +35,7 @@ export function ChatInterface({ otherUserId, otherUserProfile: initialOtherUserP
   const channelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
   const [hasMore, setHasMore] = useState(true);
   const [offset, setOffset] = useState(0);
+  const [connectionStatus, setConnectionStatus] = useState<'connected' | 'connecting' | 'disconnected'>('connecting');
 
   // 滚动到最新消息
   const scrollToBottom = () => {
@@ -101,7 +103,6 @@ export function ChatInterface({ otherUserId, otherUserProfile: initialOtherUserP
   };
 
   // 添加实时消息订阅
-  // 添加实时消息订阅
   useEffect(() => {
     if (!currentUserId || !otherUserId) {
       return;
@@ -110,288 +111,102 @@ export function ChatInterface({ otherUserId, otherUserProfile: initialOtherUserP
     // 请求通知权限
     requestNotificationPermission();
 
-    // 创建实时通道，使用基于用户ID的唯一名称，避免冲突
-    const channelName = `chat-messages-${currentUserId}-${otherUserId}`;
-    
-    // 添加通道状态跟踪
-    let retryAttempts = 0;
-    const MAX_RETRY_ATTEMPTS = 5;
+    // 使用唯一的通道名称，包含当前用户和对方用户的ID
+    const channelName = `private_chat_${currentUserId}_${otherUserId}`;
+    console.log('Creating private chat channel:', channelName);
 
-    // 定义Postgres变更事件类型
-    interface PostgresChangeEvent<T> {
-      new: T;
-      old?: T;
-      eventType: string;
-      table: string;
-      schema: string;
-      commit_timestamp: string;
-    }
-    
-    // 处理新消息
-    const handleRealtimeMessage = async (payload: PostgresChangeEvent<ChatMessage>) => {
-      try {
-        
-        // 检查是否是当前对话的消息
-        const isCurrentChat = 
-          (payload.new.sender_id === currentUserId && payload.new.receiver_id === otherUserId) ||
-          (payload.new.sender_id === otherUserId && payload.new.receiver_id === currentUserId);
-        
-        if (isCurrentChat) {
-          
-          // 获取发送者资料
-          let senderProfile = null;
-          try {
-            const { data } = await supabase
-              .from('profiles')
-              .select('id, username, display_name, avatar_url')
-              .eq('id', payload.new.sender_id)
-              .single();
-            senderProfile = data;
-          } catch {
-            // ignore error
+    // 使用最简单的方式创建实时订阅，不使用过滤条件
+    const channel = supabase
+      .channel(channelName, {
+        config: {
+          broadcast: {
+            self: true
           }
-          
-          // 构造完整的消息对象
-          const completeMessage = {
-            ...payload.new,
-            sender_profile: senderProfile || null
-          } as ChatMessage;
-          
-          // 显示通知的内部函数
-          const showNotification = () => {
-            if ('Notification' in window && Notification.permission === 'granted') {
-              // 获取发送者名称
-              const senderName = senderProfile?.display_name || senderProfile?.username || '用户';
-              
-              // 显示通知
-              new Notification(`${senderName}`, {
-                body: completeMessage.content,
-                icon: senderProfile?.avatar_url || undefined,
-                tag: `private_${otherUserId}`,
-                badge: '/favicon.ico'
-              });
-            }
-          };
-          
-          // 更新消息列表
-          setMessages(prev => {
-            // 高效检查消息是否已经存在，避免重复
-            const messageExists = prev.find(msg => msg.id === completeMessage.id);
-            if (messageExists) {
-              return prev;
-            }
-            
-            // 直接将新消息添加到消息列表的末尾
-            const newMessages = [...prev, completeMessage];
-            
-            return newMessages;
-          });
-          
-          // 滚动到最新消息
-          scrollToBottom();
-          
-          // 只有当页面不可见时才显示通知
-          if (document.visibilityState !== 'visible') {
-            showNotification();
-          }
-          
-          // 如果消息是发给当前用户的，标记为已读
-          if (payload.new.receiver_id === currentUserId) {
-            try {
-              await supabase
-                .from('chat_messages')
-                .update({ is_read: true })
-                .eq('id', payload.new.id);
-              
-              // 触发自定义事件，通知好友列表更新未读消息数量
-              window.dispatchEvent(new CustomEvent('privateMessagesRead', { detail: { friendId: otherUserId } }));
-            } catch {
-              // ignore error
-            }
-          }
-        } else {
         }
-      } catch {
-        // ignore error
-      }
-    };
-
-    // 处理消息更新
-    const handleRealtimeUpdate = async (payload: PostgresChangeEvent<ChatMessage>) => {
-      try {
-        // 更新消息状态，例如已读状态
-        setMessages(prev => {
-          return prev.map(msg => {
-            if (msg.id === payload.new.id) {
-              return {
-                ...msg,
-                ...payload.new
-              };
-            }
-            return msg;
-          });
-        });
-      } catch {
-        // ignore error
-      }
-    };
-
-    // 处理消息删除
-    const handleRealtimeDelete = async (payload: PostgresChangeEvent<ChatMessage>) => {
-      try {
-        // 从消息列表中移除被删除的消息
-        setMessages(prev => {
-          const updatedMessages = prev.filter(msg => msg.id !== payload.old?.id);
-          return updatedMessages;
-        });
-      } catch {
-        // ignore error
-      }
-    };
-    
-    // 创建更可靠的通道配置
-    const channel = supabase.channel(channelName);
-    
-    // 定义与Supabase on方法匹配的类型接口
-    interface RealtimeChannelOnMethod {
-      on<T>(
-        type: string,
-        filter: {
-          event: string;
-          schema: string;
-          table: string;
-          filter: string;
+      })
+      .on(
+        'postgres_changes',
+        {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'chat_messages'
         },
-        callback: (payload: PostgresChangeEvent<T>) => void
-      ): typeof channel;
-    }
-    
-    // 使用类型断言，避免直接使用any
-    const typedChannel = channel as unknown as RealtimeChannelOnMethod;
-    
-    // INSERT listeners - 拆分为两个简单过滤器以确保兼容性
-    typedChannel.on('postgres_changes', {
-      event: 'INSERT',
-      schema: 'public',
-      table: 'chat_messages',
-      filter: `receiver_id=eq.${currentUserId}`
-    }, handleRealtimeMessage);
-    
-    typedChannel.on('postgres_changes', {
-      event: 'INSERT',
-      schema: 'public',
-      table: 'chat_messages',
-      filter: `sender_id=eq.${currentUserId}`
-    }, handleRealtimeMessage);
-    
-    // UPDATE listeners
-    typedChannel.on('postgres_changes', {
-      event: 'UPDATE',
-      schema: 'public',
-      table: 'chat_messages',
-      filter: `receiver_id=eq.${currentUserId}`
-    }, handleRealtimeUpdate);
-    
-    typedChannel.on('postgres_changes', {
-      event: 'UPDATE',
-      schema: 'public',
-      table: 'chat_messages',
-      filter: `sender_id=eq.${currentUserId}`
-    }, handleRealtimeUpdate);
-    
-    // DELETE listeners
-    typedChannel.on('postgres_changes', {
-      event: 'DELETE',
-      schema: 'public',
-      table: 'chat_messages',
-      filter: `receiver_id=eq.${currentUserId}`
-    }, handleRealtimeDelete);
-    
-    typedChannel.on('postgres_changes', {
-      event: 'DELETE',
-      schema: 'public',
-      table: 'chat_messages',
-      filter: `sender_id=eq.${currentUserId}`
-    }, handleRealtimeDelete);
-    
-    // 定义好友关系类型
-    interface Friendship {
-      user_id: string;
-      friend_id: string;
-      created_at: string;
-    }
-    
-    // 处理好友关系删除事件
-    typedChannel.on('postgres_changes', {
-      event: 'DELETE',
-      schema: 'public',
-      table: 'friendships',
-      filter: `or(user_id.eq.${currentUserId},friend_id.eq.${currentUserId})`
-    }, (payload: PostgresChangeEvent<Friendship>) => {
-      try {
-        // 检查是否是当前好友关系被删除
-        const isCurrentFriendship = 
-          (payload.old?.user_id === currentUserId && payload.old?.friend_id === otherUserId) ||
-          (payload.old?.user_id === otherUserId && payload.old?.friend_id === currentUserId);
+        async (payload) => {
+          console.log('New message received in channel', channelName, ':', payload);
           
-        if (isCurrentFriendship) {
-          // 立即更新好友关系状态
-          setFriendshipStatus('none');
-          setShowFriendDeletedAlert(true);
+          // 手动过滤当前对话的消息
+          if (
+            (payload.new.sender_id === currentUserId && payload.new.receiver_id === otherUserId) ||
+            (payload.new.sender_id === otherUserId && payload.new.receiver_id === currentUserId)
+          ) {
+            console.log('Filtered message is for current chat:', payload.new);
+            
+            try {
+              // 过滤掉自己发送的消息，因为乐观UI已经添加了
+              if (payload.new.sender_id === currentUserId) {
+                console.log('Skipping own message from realtime, already added via optimistic UI:', payload.new.id);
+                return;
+              }
+              
+              // 构造完整的消息对象
+              const completeMessage = {
+                ...payload.new,
+                sender_profile: payload.new.sender_id === currentUserId ? 
+                  { id: currentUserId, username: user?.email || '', display_name: user?.email || '', avatar_url: null } : 
+                  otherUserProfile
+              } as ChatMessage;
+              
+              // 更新消息列表，确保消息唯一
+              setMessages(prev => {
+                // 检查消息是否已存在
+                if (prev.some(msg => msg.id === payload.new.id)) {
+                  console.log('Message already exists, skipping:', payload.new.id);
+                  return prev;
+                }
+                
+                const updatedMessages = [...prev, completeMessage];
+                // 确保消息按时间排序
+                updatedMessages.sort((a, b) => 
+                  new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+                );
+                // 移除重复消息
+                const uniqueMessages = Array.from(new Map(updatedMessages.map(msg => [msg.id, msg])).values());
+                return uniqueMessages;
+              });
+              
+              // 滚动到最新消息
+              scrollToBottom();
+              
+              // 标记为已读，因为消息是发给当前用户的
+              try {
+                await supabase
+                  .from('chat_messages')
+                  .update({ is_read: true })
+                  .eq('id', payload.new.id);
+                
+                // 触发自定义事件，通知好友列表更新未读消息数量
+                window.dispatchEvent(new CustomEvent('privateMessagesRead', { detail: { friendId: otherUserId } }));
+              } catch (error) {
+                console.error('Error marking message as read:', error);
+              }
+            } catch (error) {
+              console.error('Error processing new message:', error);
+            }
+          }
         }
-      } catch {
-        // ignore error
-      }
-    });
-    
-    // 处理好友资料更新事件
-    typedChannel.on('postgres_changes', {
-      event: 'UPDATE',
-      schema: 'public',
-      table: 'profiles',
-      filter: `id.eq.${otherUserId}`
-    }, (payload: PostgresChangeEvent<Profile>) => {
-      try {
-        // 更新好友在线状态
-        setOtherUserProfile(prev => ({
-          ...prev,
-          online_status: payload.new.online_status,
-          last_seen: payload.new.last_seen
-        }));
-      } catch {
-        // ignore error
-      }
-    });
-    
-    // 启动订阅
-    channel.subscribe(status => {
-        
-        // 处理不同的订阅状态
+      )
+      .subscribe((status) => {
+        console.log('Channel', channelName, 'status:', status);
         switch (status) {
           case 'SUBSCRIBED':
-            retryAttempts = 0;
+            setConnectionStatus('connected');
             break;
           case 'CHANNEL_ERROR':
-            // 尝试重新订阅
-            if (retryAttempts < MAX_RETRY_ATTEMPTS) {
-              retryAttempts++;
-              setTimeout(() => {
-                channel.subscribe();
-              }, 1000 * Math.pow(2, retryAttempts)); // 指数退避
-            }
-            break;
           case 'TIMED_OUT':
-            // 尝试重新订阅
-            if (retryAttempts < MAX_RETRY_ATTEMPTS) {
-              retryAttempts++;
-              setTimeout(() => {
-                channel.subscribe();
-              }, 1000 * Math.pow(2, retryAttempts)); // 指数退避
-            }
+            setConnectionStatus('connecting');
             break;
           case 'CLOSED':
-            break;
-          default:
+            setConnectionStatus('disconnected');
             break;
         }
       });
@@ -400,17 +215,11 @@ export function ChatInterface({ otherUserId, otherUserProfile: initialOtherUserP
     
     // 组件卸载时取消订阅
     return () => {
-      if (channel) {
-        // 使用try-catch确保取消订阅不会失败
-        try {
-          supabase.removeChannel(channel);
-          channelRef.current = null;
-        } catch {
-          // ignore error
-        }
-      }
+      console.log('Removing channel:', channelName);
+      supabase.removeChannel(channel);
+      channelRef.current = null;
     };
-  }, [currentUserId, otherUserId]);
+  }, [currentUserId, otherUserId, user, otherUserProfile]);
 
   // 初始加载消息和检查好友关系
   useEffect(() => {
@@ -491,7 +300,75 @@ export function ChatInterface({ otherUserId, otherUserProfile: initialOtherUserP
     };
   }, [hasMore, loadingMore, loading, fetchMessages]);
 
-  // 发送消息
+  // 处理文件选择
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || sending) return;
+
+    setSending(true);
+    
+    try {
+      let fileType: 'image' | 'video' | 'file' = 'file';
+      let fileUrl: string;
+      
+      // 检查文件类型和大小
+      if (file.type.startsWith('image/')) {
+        // 图片文件，最大5MB
+        if (file.size > 5 * 1024 * 1024) {
+          // 压缩图片
+          const compressedFile = await chatService.compressImage(file, 5);
+          fileUrl = await chatService.uploadFile(compressedFile, 'chat_images');
+        } else {
+          fileUrl = await chatService.uploadFile(file, 'chat_images');
+        }
+        fileType = 'image';
+      } else if (file.type.startsWith('video/')) {
+        // 视频文件，最大50MB
+        if (file.size > 50 * 1024 * 1024) {
+          alert('视频文件大小不能超过50MB');
+          setSending(false);
+          return;
+        }
+        fileUrl = await chatService.uploadFile(file, 'chat_videos');
+        fileType = 'video';
+      } else {
+        // 其他文件，暂时不支持
+        alert('暂不支持该文件类型');
+        setSending(false);
+        return;
+      }
+      
+      // 发送消息
+      const sentMessage = await chatService.sendPrivateMessage(otherUserId, fileUrl, fileType);
+      
+      // 直接添加到消息列表末尾
+      setMessages(prev => {
+        // 检查消息是否已存在
+        if (prev.some(msg => msg.id === sentMessage.id)) {
+          console.log('Private message already exists, skipping:', sentMessage.id);
+          return prev;
+        }
+        // 添加到末尾
+        const updatedMessages = [...prev, sentMessage];
+        // 确保消息按时间排序
+        updatedMessages.sort((a, b) => 
+          new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+        );
+        return updatedMessages;
+      });
+      
+      scrollToBottom();
+    } catch (error) {
+      console.error('Error sending file message:', error);
+      alert('发送文件失败，请重试');
+    } finally {
+      setSending(false);
+      // 重置文件输入
+      e.target.value = '';
+    }
+  };
+
+  // 发送消息 - 支持多种类型
   const handleSendMessage = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newMessage.trim() || sending) return;
@@ -501,96 +378,28 @@ export function ChatInterface({ otherUserId, otherUserProfile: initialOtherUserP
     setNewMessage('');
 
     try {
-      // 优化：使用乐观 UI，立即显示消息
-      const tempMessage: Partial<ChatMessage> = {
-        id: `temp-${Date.now()}`,
-        sender_id: currentUserId || '',
-        receiver_id: otherUserId,
-        content: messageContent,
-        type: 'text',
-        is_read: false,
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString()
-      };
-
-      // 立即添加到消息列表的正确位置
+      // 发送文本消息
+      const sentMessage = await chatService.sendPrivateMessage(otherUserId, messageContent, 'text');
+      
+      // 直接添加到消息列表末尾
       setMessages(prev => {
-        // 找到临时消息应该插入的位置
-        const tempMessageTime = new Date(tempMessage.created_at as string).getTime();
-        const insertIndex = prev.findIndex(msg => 
-          new Date(msg.created_at).getTime() > tempMessageTime
-        );
-        
-        // 创建新的消息数组
-        const newMessages = [...prev];
-        
-        if (insertIndex === -1) {
-          // 如果临时消息是最新的，直接添加到末尾
-          newMessages.push(tempMessage as ChatMessage);
-        } else {
-          // 否则插入到正确位置
-          newMessages.splice(insertIndex, 0, tempMessage as ChatMessage);
+        // 检查消息是否已存在
+        if (prev.some(msg => msg.id === sentMessage.id)) {
+          console.log('Private message already exists, skipping:', sentMessage.id);
+          return prev;
         }
-        
-        return newMessages;
+        // 添加到末尾
+        const updatedMessages = [...prev, sentMessage];
+        // 确保消息按时间排序
+        updatedMessages.sort((a, b) => 
+          new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+        );
+        return updatedMessages;
       });
       
       scrollToBottom();
-
-      // 发送实际消息
-      const sentMessage = await chatService.sendPrivateMessage(otherUserId, messageContent);
-      
-      // 替换临时消息为实际消息
-      setMessages(prev => {
-        // 找到临时消息的位置
-        const tempIndex = prev.findIndex(msg => msg.id === tempMessage.id);
-        
-        if (tempIndex !== -1) {
-          // 创建新的消息数组
-          const newMessages = [...prev];
-          // 移除临时消息
-          newMessages.splice(tempIndex, 1);
-          
-          // 找到实际消息应该插入的位置
-          const sentMessageTime = new Date(sentMessage.created_at).getTime();
-          const insertIndex = newMessages.findIndex(msg => 
-            new Date(msg.created_at).getTime() > sentMessageTime
-          );
-          
-          if (insertIndex === -1) {
-            // 如果实际消息是最新的，直接添加到末尾
-            newMessages.push(sentMessage);
-          } else {
-            // 否则插入到正确位置
-            newMessages.splice(insertIndex, 0, sentMessage);
-          }
-          
-          return newMessages;
-        }
-        
-        // 如果临时消息不存在，直接添加实际消息到正确位置
-        // 找到实际消息应该插入的位置
-        const sentMessageTime = new Date(sentMessage.created_at).getTime();
-        const insertIndex = prev.findIndex(msg => 
-          new Date(msg.created_at).getTime() > sentMessageTime
-        );
-        
-        // 创建新的消息数组
-        const newMessages = [...prev];
-        
-        if (insertIndex === -1) {
-          // 如果实际消息是最新的，直接添加到末尾
-          newMessages.push(sentMessage);
-        } else {
-          // 否则插入到正确位置
-          newMessages.splice(insertIndex, 0, sentMessage);
-        }
-        
-        return newMessages;
-      });
     } catch {
-      // 发送失败，移除临时消息并恢复输入
-      setMessages(prev => prev.filter(msg => !msg.id.startsWith('temp-')));
+      // 发送失败，恢复输入
       setNewMessage(messageContent);
     } finally {
       setSending(false);
@@ -637,14 +446,15 @@ export function ChatInterface({ otherUserId, otherUserProfile: initialOtherUserP
     }
   };
 
-  // 渲染消息气泡
-  const renderMessageBubble = (message: ChatMessage) => {
-    const isCurrentUser = message.sender_id === currentUserId;
-    const isSelected = selectedMessages.includes(message.id);
-
+  // 渲染消息气泡 - 使用React.memo优化渲染
+  const MessageBubble = React.memo(({ message, isCurrentUser, isSelected, onToggleSelection }: {
+    message: ChatMessage;
+    isCurrentUser: boolean;
+    isSelected: boolean;
+    onToggleSelection: (messageId: string) => void;
+  }) => {
     return (
       <div
-        key={message.id}
         className={`flex ${isCurrentUser ? 'justify-end' : 'justify-start'} mb-4`}
       >
         <div className="flex items-end gap-2">
@@ -667,17 +477,27 @@ export function ChatInterface({ otherUserId, otherUserProfile: initialOtherUserP
           )}
           <div
             className={`relative p-2 sm:p-3 rounded-lg max-w-[95%] sm:max-w-[80%] mx-auto ${isCurrentUser ? 'bg-gradient-to-r from-blue-400 to-pink-500 text-white rounded-tr-none' : 'bg-gray-200 dark:bg-gray-700 text-gray-800 dark:text-white rounded-tl-none'} cursor-pointer inline-block`}
-            onClick={() => toggleMessageSelection(message.id)}
+            onClick={() => onToggleSelection(message.id)}
           >
             {isSelected && (
               <div className="absolute -top-3 -left-3 w-6 h-6 rounded-full bg-purple-500 border-2 border-white dark:border-gray-800 flex items-center justify-center shadow-lg hover:shadow-xl transition-all duration-200">
                 <span className="text-sm font-bold text-white">✓</span>
               </div>
             )}
-            <div className="flex flex-col">
+            <div className="flex flex-col gap-2">
+              {/* 非文本消息单独一行显示 */}
+              {message.type !== 'text' && (
+                <div className="w-full">
+                  <MultimediaMessage message={message} isCurrentUser={isCurrentUser} />
+                </div>
+              )}
+              
+              {/* 文本消息与时间戳在同一行 */}
               <div className="flex items-end gap-1">
-                <p className="flex-grow">{message.content}</p>
-                <span className="text-xs opacity-70 ml-2">
+                {message.type === 'text' && (
+                  <p className="flex-grow">{message.content}</p>
+                )}
+                <span className="text-xs opacity-70">
                   {new Date(message.created_at).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })}
                 </span>
               </div>
@@ -691,6 +511,25 @@ export function ChatInterface({ otherUserId, otherUserProfile: initialOtherUserP
           )}
         </div>
       </div>
+    );
+  });
+
+  // 添加displayName以通过lint检查
+  MessageBubble.displayName = 'MessageBubble';
+
+  // 渲染消息气泡的包装函数
+  const renderMessageBubble = (message: ChatMessage) => {
+    const isCurrentUser = message.sender_id === currentUserId;
+    const isSelected = selectedMessages.includes(message.id);
+
+    return (
+      <MessageBubble
+        key={message.id}
+        message={message}
+        isCurrentUser={isCurrentUser}
+        isSelected={isSelected}
+        onToggleSelection={toggleMessageSelection}
+      />
     );
   };
 
@@ -719,21 +558,29 @@ export function ChatInterface({ otherUserId, otherUserProfile: initialOtherUserP
               {otherUserProfile.display_name || otherUserProfile.username}
             </div>
             {friendshipStatus === 'accepted' ? (
-              <div className="flex items-center gap-1 text-sm">
-                <span className={`w-2 h-2 rounded-full ${otherUserProfile.online_status === 'online' ? 'bg-green-500' : otherUserProfile.online_status === 'away' ? 'bg-yellow-500' : 'bg-gray-500'}`}></span>
-                <span className={otherUserProfile.online_status === 'online' ? 'text-green-500' : otherUserProfile.online_status === 'away' ? 'text-yellow-500' : 'text-gray-500'}>
-                  {otherUserProfile.online_status === 'online' ? '在线' : otherUserProfile.online_status === 'away' ? '离开' : (() => {
-                    const lastActive = otherUserProfile.last_seen || otherUserProfile.updated_at;
-                    if (lastActive) {
-                      try {
-                    return new Date(lastActive).toLocaleString('zh-CN', { hour: '2-digit', minute: '2-digit' });
-                  } catch {
-                    return '离线';
-                  }
+              <div className="flex flex-col">
+                <div className="flex items-center gap-1 text-sm">
+                  <span className={`w-2 h-2 rounded-full ${otherUserProfile.online_status === 'online' ? 'bg-green-500' : otherUserProfile.online_status === 'away' ? 'bg-yellow-500' : 'bg-gray-500'}`}></span>
+                  <span className={otherUserProfile.online_status === 'online' ? 'text-green-500' : otherUserProfile.online_status === 'away' ? 'text-yellow-500' : 'text-gray-500'}>
+                    {otherUserProfile.online_status === 'online' ? '在线' : otherUserProfile.online_status === 'away' ? '离开' : (() => {
+                      const lastActive = otherUserProfile.last_seen || otherUserProfile.updated_at;
+                      if (lastActive) {
+                        try {
+                      return new Date(lastActive).toLocaleString('zh-CN', { hour: '2-digit', minute: '2-digit' });
+                    } catch {
+                      return '离线';
                     }
-                    return '离线';
-                  })()}
-                </span>
+                      }
+                      return '离线';
+                    })()}
+                  </span>
+                </div>
+                <div className="flex items-center gap-1 text-xs mt-1">
+                  <span className={`w-1.5 h-1.5 rounded-full ${connectionStatus === 'connected' ? 'bg-green-500' : connectionStatus === 'connecting' ? 'bg-yellow-500' : 'bg-red-500'}`}></span>
+                  <span className={connectionStatus === 'connected' ? 'text-green-500' : connectionStatus === 'connecting' ? 'text-yellow-500' : 'text-red-500'}>
+                    {connectionStatus === 'connected' ? '实时连接' : connectionStatus === 'connecting' ? '连接中...' : '连接断开'}
+                  </span>
+                </div>
               </div>
             ) : (
               <div className="text-sm text-red-500">已删除好友</div>
@@ -810,6 +657,28 @@ export function ChatInterface({ otherUserId, otherUserProfile: initialOtherUserP
         {friendshipStatus === 'accepted' ? (
           <form onSubmit={handleSendMessage} className="flex items-center gap-2">
             <div className="relative">
+              {/* 隐藏的文件输入 */}
+              <input
+                type="file"
+                accept="image/*,video/*"
+                onChange={handleFileChange}
+                disabled={sending}
+                className="hidden"
+                id="file-upload"
+              />
+              
+              {/* 图片上传按钮 */}
+              <button
+                type="button"
+                className="p-3 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors duration-200 min-w-12 min-h-12 flex items-center justify-center"
+                onClick={() => document.getElementById('file-upload')?.click()}
+                disabled={sending}
+              >
+                <ImageIcon className="w-5 h-5 text-gray-600 dark:text-gray-300" />
+              </button>
+            </div>
+            
+            <div className="relative">
               <button
               type="button"
               className="p-3 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors duration-200 min-w-12 min-h-12 flex items-center justify-center"
@@ -817,7 +686,7 @@ export function ChatInterface({ otherUserId, otherUserProfile: initialOtherUserP
             >
               <Smile className="w-5 h-5 text-gray-600 dark:text-gray-300" />
             </button>
-              {/* 这里可以添加表情选择器组件 */}
+              {/* 表情选择器组件 */}
               {showEmojiPicker && (
                 <div className="absolute bottom-full left-0 mb-2 bg-white dark:bg-gray-800 rounded-lg shadow-lg p-2 w-64 md:w-80 max-h-48 overflow-y-auto">
                   <div className="grid grid-cols-8 md:grid-cols-10 gap-2">

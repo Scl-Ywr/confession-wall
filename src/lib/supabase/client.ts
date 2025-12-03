@@ -13,6 +13,10 @@ export const supabase = createClient(
       autoRefreshToken: true,
       // 确保在服务器端渲染时不会出错
       detectSessionInUrl: true,
+    },
+    realtime: {
+      // 设置心跳间隔
+      heartbeatIntervalMs: 30000
     }
   }
 );

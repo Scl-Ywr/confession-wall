@@ -115,6 +115,120 @@ const createNotification = async (
 };
 
 export const chatService = {
+  // 上传文件到Supabase Storage
+  uploadFile: async (file: File, folder: string = 'chat_files'): Promise<string> => {
+    try {
+      const user = await supabase.auth.getUser();
+      if (user.error || !user.data.user?.id) {
+        throw new Error('User not authenticated');
+      }
+
+      const userId = user.data.user.id;
+      const timestamp = Date.now();
+      const fileExtension = file.name.split('.').pop();
+      const fileName = `${userId}_${timestamp}_${Math.random().toString(36).substr(2, 9)}.${fileExtension}`;
+      const filePath = `${folder}/${fileName}`;
+
+      // 上传文件
+      const { data: uploadData, error: uploadError } = await supabase
+        .storage
+        .from('confession_images')
+        .upload(filePath, file, {
+          cacheControl: '3600',
+          upsert: false
+        });
+
+      if (uploadError) {
+        throw uploadError;
+      }
+
+      // 获取公共URL
+      const { data: urlData } = supabase
+        .storage
+        .from('confession_images')
+        .getPublicUrl(filePath);
+
+      return urlData.publicUrl;
+    } catch (error) {
+      console.error('Error uploading file:', error);
+      throw error;
+    }
+  },
+
+  // 压缩图片
+  compressImage: async (file: File, maxSizeMB: number = 5): Promise<File> => {
+    const maxSizeBytes = maxSizeMB * 1024 * 1024;
+    
+    // 如果文件已经小于最大尺寸，直接返回
+    if (file.size <= maxSizeBytes) {
+      return file;
+    }
+
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.readAsDataURL(file);
+      reader.onload = (event) => {
+        const img = new Image();
+        img.src = event.target?.result as string;
+        img.onload = () => {
+          // 创建Canvas并设置压缩参数
+          const canvas = document.createElement('canvas');
+          let width = img.width;
+          let height = img.height;
+          
+          // 计算缩放比例以保持宽高比
+          const aspectRatio = width / height;
+          if (width > height && width > 1920) {
+            width = 1920;
+            height = width / aspectRatio;
+          } else if (height > 1920) {
+            height = 1920;
+            width = height * aspectRatio;
+          }
+          
+          canvas.width = width;
+          canvas.height = height;
+          
+          // 绘制图像到Canvas
+          const ctx = canvas.getContext('2d');
+          if (!ctx) {
+            reject(new Error('Could not get canvas context'));
+            return;
+          }
+          ctx.drawImage(img, 0, 0, width, height);
+          
+          // 压缩图像
+          let quality = 0.9;
+          let compressedDataUrl = canvas.toDataURL(file.type, quality);
+          
+          // 调整质量直到文件大小符合要求
+          while (compressedDataUrl.length > maxSizeBytes && quality > 0.1) {
+            quality -= 0.1;
+            compressedDataUrl = canvas.toDataURL(file.type, quality);
+          }
+          
+          // 将DataURL转换为File对象
+          const byteString = atob(compressedDataUrl.split(',')[1]);
+          const mimeString = compressedDataUrl.split(',')[0].split(':')[1].split(';')[0];
+          const ab = new ArrayBuffer(byteString.length);
+          const ia = new Uint8Array(ab);
+          for (let i = 0; i < byteString.length; i++) {
+            ia[i] = byteString.charCodeAt(i);
+          }
+          const blob = new Blob([ab], { type: mimeString });
+          const compressedFile = new File([blob], file.name, { type: mimeString });
+          
+          resolve(compressedFile);
+        };
+        img.onerror = () => {
+          reject(new Error('Could not load image'));
+        };
+      };
+      reader.onerror = () => {
+        reject(new Error('Could not read file'));
+      };
+    });
+  },
   // 用户搜索功能
   searchUsers: async (keyword: string): Promise<UserSearchResult[]> => {
     const { data, error } = await supabase
@@ -396,7 +510,7 @@ export const chatService = {
   },
 
   // 发送一对一消息
-  sendPrivateMessage: async (receiverId: string, content: string): Promise<ChatMessage> => {
+  sendPrivateMessage: async (receiverId: string, content: string, type: 'text' | 'image' | 'video' | 'file' = 'text'): Promise<ChatMessage> => {
     try {
       // 获取当前认证用户，检查是否有错误
       const user = await supabase.auth.getUser();
@@ -412,8 +526,6 @@ export const chatService = {
         throw new Error('User not authenticated');
       }
 
-
-      
       // 检查好友关系状态
       const friendshipStatus = await chatService.checkFriendshipStatus(receiverId);
       if (friendshipStatus !== 'accepted') {
@@ -438,7 +550,7 @@ export const chatService = {
           sender_id: senderId,
           receiver_id: receiverId,
           content,
-          type: 'text',
+          type,
           is_read: false
         })
         .select('*')
@@ -448,13 +560,27 @@ export const chatService = {
         throw error;
       }
 
-
-      
-      // 返回包含发送者资料的消息
-      return {
+      // 构造完整的消息对象
+      const completeMessage = {
         ...data,
         sender_profile: senderProfile
       } as ChatMessage;
+
+      // 导入缓存工具函数（动态导入避免循环依赖）
+      const { updateCache, getChatCacheKey } = await import('../utils/cache');
+      
+      // 更新缓存，将新消息添加到缓存中
+      const cacheKey = getChatCacheKey(senderId, receiverId, false);
+      updateCache<ChatMessage[]>(cacheKey, (cachedMessages) => {
+        // 确保缓存中没有重复消息
+        if (!cachedMessages.some(msg => msg.id === completeMessage.id)) {
+          return [...cachedMessages, completeMessage];
+        }
+        return cachedMessages;
+      });
+
+      // 返回包含发送者资料的消息
+      return completeMessage;
     } catch (error) {
       throw error;
     }
@@ -463,8 +589,6 @@ export const chatService = {
   // 获取聊天消息
   getChatMessages: async (otherUserId: string, limit: number = 50, offset: number = 0): Promise<ChatMessage[]> => {
     try {
-
-      
       // 获取当前认证用户
       const user = await supabase.auth.getUser();
       
@@ -474,7 +598,19 @@ export const chatService = {
       }
       
       const userId = user.data.user.id;
-
+      
+      // 导入缓存工具函数（动态导入避免循环依赖）
+      const { getCache, setCache, getChatCacheKey } = await import('../utils/cache');
+      
+      // 如果是初始加载（offset为0），尝试从缓存获取消息
+      let cachedMessages: ChatMessage[] = [];
+      if (offset === 0) {
+        const cacheKey = getChatCacheKey(userId, otherUserId, false);
+        const cachedData = getCache<ChatMessage[]>(cacheKey);
+        if (cachedData) {
+          cachedMessages = cachedData;
+        }
+      }
 
       // 在数据库查询时就过滤出当前对话的消息，使用and和or组合条件
       // 确保只返回当前用户和指定用户之间的消息
@@ -486,11 +622,9 @@ export const chatService = {
         .range(offset, offset + limit - 1);
 
       if (messagesError) {
-        // 尝试直接返回空数组，不中断聊天功能
-        return [];
+        // 如果从服务器获取失败，返回缓存消息（如果有）
+        return cachedMessages;
       }
-
-
 
       // 确保 messages 是数组
       const chatMessages = messages || [];
@@ -502,16 +636,13 @@ export const chatService = {
         (message.sender_id === otherUserId && message.receiver_id === userId)
       );
 
-
-
       // 如果没有消息，直接返回空数组
       if (filteredMessages.length === 0) {
-        return [] as ChatMessage[];
+        return cachedMessages;
       }
 
       // 获取所有发送者的 ID
       const senderIds = [...new Set(filteredMessages.map(message => message.sender_id))];
-
 
       // 查询所有发送者的资料，包含在线状态
       const { data: sendersProfiles, error: profilesError } = await supabase
@@ -521,10 +652,14 @@ export const chatService = {
 
       if (profilesError) {
         // 即使获取资料失败，也返回消息数据
-        return filteredMessages as ChatMessage[];
+        const result = filteredMessages as ChatMessage[];
+        // 如果是初始加载，缓存结果
+        if (offset === 0) {
+          const cacheKey = getChatCacheKey(userId, otherUserId, false);
+          setCache(cacheKey, result);
+        }
+        return result;
       }
-
-
 
       // 将发送者资料合并到消息中
       const messagesWithProfiles = filteredMessages.map(message => {
@@ -535,6 +670,11 @@ export const chatService = {
         };
       });
 
+      // 如果是初始加载，缓存结果
+      if (offset === 0) {
+        const cacheKey = getChatCacheKey(userId, otherUserId, false);
+        setCache(cacheKey, messagesWithProfiles);
+      }
 
       return messagesWithProfiles as ChatMessage[];
     } catch {
@@ -997,7 +1137,7 @@ export const chatService = {
   },
 
   // 发送群消息
-  sendGroupMessage: async (groupId: string, content: string): Promise<ChatMessage> => {
+  sendGroupMessage: async (groupId: string, content: string, type: 'text' | 'image' | 'video' | 'file' = 'text'): Promise<ChatMessage> => {
     const user = await supabase.auth.getUser();
     const senderId = user.data.user?.id;
 
@@ -1012,7 +1152,7 @@ export const chatService = {
         sender_id: senderId,
         group_id: groupId,
         content,
-        type: 'text',
+        type,
         is_read: false
       })
       .select('*')
@@ -1057,36 +1197,77 @@ export const chatService = {
       .eq('id', senderId)
       .single();
 
-    // 返回包含发送者资料的消息
-    return {
+    // 构造完整的消息对象
+    const completeMessage = {
       ...data,
       sender_profile: senderProfile || null
     } as ChatMessage;
+
+    // 导入缓存工具函数（动态导入避免循环依赖）
+    const { updateCache, getChatCacheKey } = await import('../utils/cache');
+    
+    // 更新缓存，将新消息添加到缓存中
+    const cacheKey = getChatCacheKey(senderId, groupId, true);
+    updateCache<ChatMessage[]>(cacheKey, (cachedMessages) => {
+      // 确保缓存中没有重复消息
+      if (!cachedMessages.some(msg => msg.id === completeMessage.id)) {
+        return [...cachedMessages, completeMessage];
+      }
+      return cachedMessages;
+    });
+
+    // 返回包含发送者资料的消息
+    return completeMessage;
   },
 
   // 获取群消息
   getGroupMessages: async (groupId: string, limit: number = 50, offset: number = 0): Promise<ChatMessage[]> => {
     try {
-      // 简化查询，先获取消息基本信息
-      const { data: messages, error } = await supabase
+      // 获取当前认证用户
+      const user = await supabase.auth.getUser();
+      if (user.error || !user.data.user?.id) {
+        return [];
+      }
+      
+      const userId = user.data.user.id;
+      
+      // 导入缓存工具函数（动态导入避免循环依赖）
+      const { getCache, setCache, getChatCacheKey } = await import('../utils/cache');
+      
+      // 如果是初始加载（offset为0），尝试从缓存获取消息
+      let cachedMessages: ChatMessage[] = [];
+      if (offset === 0) {
+        const cacheKey = getChatCacheKey(userId, groupId, true);
+        const cachedData = getCache<ChatMessage[]>(cacheKey);
+        if (cachedData) {
+          cachedMessages = cachedData;
+        }
+      }
+      
+      // 使用与私聊相同的查询方式，返回所有字段
+      const { data: messages, error: messagesError } = await supabase
         .from('chat_messages')
-        .select('id, sender_id, group_id, content, created_at, updated_at, is_read, type')
+        .select('*')
         .eq('group_id', groupId)
         .order('created_at', { ascending: false })
         .range(offset, offset + limit - 1);
 
-      if (error) {
-        console.error('Error getting group messages:', error.message || JSON.stringify(error));
-        return [];
+      if (messagesError) {
+        console.error('Error getting group messages:', messagesError.message || JSON.stringify(messagesError));
+        // 如果从服务器获取失败，返回缓存消息（如果有）
+        return cachedMessages;
       }
 
+      // 确保 messages 是数组
+      const chatMessages = messages || [];
+
       // 如果没有消息，直接返回空数组
-      if (!messages || messages.length === 0) {
-        return [];
+      if (chatMessages.length === 0) {
+        return cachedMessages;
       }
 
       // 获取所有发送者的ID
-      const senderIds = [...new Set(messages.map(msg => msg.sender_id))];
+      const senderIds = [...new Set(chatMessages.map(msg => msg.sender_id))];
 
       // 单独获取发送者的资料，包含在线状态
       const { data: profiles, error: profilesError } = await supabase
@@ -1097,18 +1278,31 @@ export const chatService = {
       if (profilesError) {
         console.error('Error getting sender profiles:', profilesError.message || JSON.stringify(profilesError));
         // 即使获取不到资料，也返回消息
-        return messages as ChatMessage[];
+        const result = chatMessages as ChatMessage[];
+        // 如果是初始加载，缓存结果
+        if (offset === 0) {
+          const cacheKey = getChatCacheKey(userId, groupId, true);
+          setCache(cacheKey, result);
+        }
+        return result;
       }
 
       // 将发送者资料合并到消息中
-      const messagesWithProfiles = messages.map(msg => {
+      const messagesWithProfiles = chatMessages.map(msg => {
         const senderProfile = profiles?.find(profile => profile.id === msg.sender_id);
         return {
           ...msg,
-          sender_profile: senderProfile || null
+          sender_profile: senderProfile
         };
       });
 
+      // 如果是初始加载，缓存结果
+      if (offset === 0) {
+        const cacheKey = getChatCacheKey(userId, groupId, true);
+        setCache(cacheKey, messagesWithProfiles);
+      }
+
+      // 与私聊一致，不反转消息顺序，保持API返回的顺序
       return messagesWithProfiles as ChatMessage[];
     } catch (error) {
       console.error('Error in getGroupMessages:', error instanceof Error ? error.message : JSON.stringify(error));
@@ -1778,6 +1972,57 @@ export const chatService = {
         return;
       }
       
+      // 更新 chat_messages 表中对应消息的 is_read 字段
+      if (messageIds && messageIds.length > 0) {
+        // 如果提供了消息ID列表，只更新这些消息
+        // 更新 chat_messages 表
+        const { error: updateError } = await supabase
+          .from('chat_messages')
+          .update({ is_read: true })
+          .eq('group_id', groupId)
+          .in('id', messageIds);
+        
+        if (updateError) {
+          console.error('Error updating message is_read status:', updateError);
+        }
+        
+        // 同时更新 group_message_read_status 表
+        const { error: statusUpdateError } = await supabase
+          .from('group_message_read_status')
+          .update({ is_read: true })
+          .eq('group_id', groupId)
+          .eq('user_id', userId)
+          .in('message_id', messageIds);
+        
+        if (statusUpdateError) {
+          console.error('Error updating group_message_read_status:', statusUpdateError);
+        }
+      } else {
+        // 否则只更新未读消息，而不是所有消息，优化性能并避免权限问题
+        // 更新 chat_messages 表，只更新未读消息
+        const { error: updateError } = await supabase
+          .from('chat_messages')
+          .update({ is_read: true })
+          .eq('group_id', groupId)
+          .eq('is_read', false);
+        
+        if (updateError) {
+          console.error('Error updating unread messages is_read status:', updateError.message || JSON.stringify(updateError));
+        }
+        
+        // 同时更新 group_message_read_status 表，只更新未读消息
+        const { error: statusUpdateError } = await supabase
+          .from('group_message_read_status')
+          .update({ is_read: true })
+          .eq('group_id', groupId)
+          .eq('user_id', userId)
+          .eq('is_read', false);
+        
+        if (statusUpdateError) {
+          console.error('Error updating unread group_message_read_status:', statusUpdateError.message || JSON.stringify(statusUpdateError));
+        }
+      }
+      
       let latestMessageId: string | undefined;
       
       if (messageIds && messageIds.length > 0) {
@@ -1828,7 +2073,15 @@ export const chatService = {
         );
       
       if (error) {
-        console.error('Error updating group read counter:', error);
+        // 改进错误日志，显示更详细的错误信息
+        console.error('Error updating group read counter:', {
+          error: error,
+          errorMessage: error?.message || 'Unknown error',
+          errorCode: error?.code || 'No code',
+          groupId,
+          userId,
+          latestMessageId
+        });
         // 继续执行，不抛出错误
       } else {
         console.log('Successfully updated group read counter:', { groupId, userId, latestMessageId });

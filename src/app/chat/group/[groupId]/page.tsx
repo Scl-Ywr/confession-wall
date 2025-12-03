@@ -8,7 +8,8 @@ import Link from 'next/link';
 import Image from 'next/image';
 import Navbar from '@/components/Navbar';
 import MessageToast from '@/components/MessageToast';
-import { MessageCircleIcon, UsersIcon, PlusIcon, XIcon, TrashIcon, SendIcon } from 'lucide-react';
+import MultimediaMessage from '@/components/MultimediaMessage';
+import { MessageCircleIcon, UsersIcon, PlusIcon, XIcon, TrashIcon, SendIcon, Image as ImageIcon, Smile } from 'lucide-react';
 import { supabase } from '@/lib/supabase/client';
 
 const GroupChatPage = ({ params }: { params: Promise<{ groupId: string }> }) => {
@@ -57,8 +58,15 @@ const GroupChatPage = ({ params }: { params: Promise<{ groupId: string }> }) => 
   // 删除成员确认
   const [showRemoveMemberConfirm, setShowRemoveMemberConfirm] = useState(false);
   const [memberToRemove, setMemberToRemove] = useState<string | null>(null);
+  // 连接状态 - 暂时注释，因为目前未使用
+  // const [connectionStatus, setConnectionStatus] = useState<'connected' | 'connecting' | 'disconnected'>('connecting');
+  
+  // 多媒体消息相关
+  const [showEmojiPicker, setShowEmojiPicker] = useState(false);
   
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  // 实时通道引用，与私聊实现一致
+  const channelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
   
   // 获取本地已删除消息ID
   const getDeletedMessageIds = useCallback((): string[] => {
@@ -146,118 +154,71 @@ const GroupChatPage = ({ params }: { params: Promise<{ groupId: string }> }) => 
 
     fetchGroupInfo();
 
-    // 监听群成员变化
-    const groupMembersChannel = supabase
-      .channel(`group_members_${groupId}`)
-      .on(
-        'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'group_members',
-          filter: `group_id.eq.${groupId}`
-        },
-        () => {
-          chatService.getGroupMembers(groupId)
-            .then(membersData => {
-              setGroupMembers(membersData);
-              // 更新当前用户在群聊中的角色和群内个人信息
-              if (user) {
-                const currentMember = membersData.find(member => member.user_id === user.id);
-                if (currentMember) {
-                  setCurrentUserRole(currentMember.role as 'owner' | 'admin' | 'member');
-                  // 更新群内昵称和头像
-                  setGroupNickname(currentMember.group_nickname || '');
-                  setGroupAvatar(currentMember.group_avatar_url);
-                } else {
-                  setCurrentUserRole(null);
-                }
-              }
-            })
-            .catch(() => {});
-        }
-      )
-      .subscribe();
+    // 创建统一的群相关通道，合并所有群相关事件监听
+    const groupChannel = supabase.channel(`group_${groupId}`);
 
-    // 监听群成员在线状态变化
-    const getMemberUserIds = () => {
-      // 使用函数内的局部变量，避免依赖外部的groupMembers
-      const members = groupMembers;
-      return members.map(member => member.user_id);
-    };
-
-    // 当群成员列表更新时，重新订阅用户状态变化
-    const subscribeToUserStatusChanges = () => {
-      const userIds = getMemberUserIds();
-      if (userIds.length === 0) return;
-
-      // 创建用户状态变化通道
-      const userStatusChannel = supabase
-        .channel(`user_status_${groupId}`)
-        .on(
-          'postgres_changes',
-          {
-            event: 'UPDATE',
-            schema: 'public',
-            table: 'profiles',
-            filter: `id=in.(${userIds.join(',')})`
-          },
-          () => {
-            // 刷新群成员列表，获取最新的在线状态
-            chatService.getGroupMembers(groupId)
-              .then(membersData => {
-                setGroupMembers(membersData);
-              })
-              .catch(() => {});
+    // 监听群成员变化（包括插入、更新、删除）
+    groupChannel.on(
+      'postgres_changes',
+      {
+        event: '*',
+        schema: 'public',
+        table: 'group_members',
+        filter: `group_id.eq.${groupId}`
+      },
+      async () => {
+        try {
+          const membersData = await chatService.getGroupMembers(groupId);
+          setGroupMembers(membersData);
+          
+          // 更新当前用户在群聊中的角色和群内个人信息
+          if (user) {
+            const currentMember = membersData.find(member => member.user_id === user.id);
+            if (currentMember) {
+              setCurrentUserRole(currentMember.role as 'owner' | 'admin' | 'member');
+              // 更新群内昵称和头像
+              setGroupNickname(currentMember.group_nickname || '');
+              setGroupAvatar(currentMember.group_avatar_url);
+            } else {
+              setCurrentUserRole(null);
+            }
           }
-        )
-        .subscribe();
-
-      return userStatusChannel;
-    };
-
-    // 初始订阅用户状态变化
-    let userStatusChannel = subscribeToUserStatusChanges();
-
-    // 当群成员列表变化时，重新订阅用户状态变化
-    const updateUserStatusSubscription = () => {
-      if (userStatusChannel) {
-        supabase.removeChannel(userStatusChannel);
+        } catch {
+          // ignore error
+        }
       }
-      userStatusChannel = subscribeToUserStatusChanges();
-    };
+    );
 
-    // 监听群成员列表变化，更新用户状态订阅
-    const groupMembersSubscription = supabase
-      .channel(`group_members_update_${groupId}`)
-      .on(
-        'postgres_changes',
-        {
-          event: 'INSERT',
-          schema: 'public',
-          table: 'group_members',
-          filter: `group_id.eq.${groupId}`
-        },
-        updateUserStatusSubscription
-      )
-      .on(
-        'postgres_changes',
-        {
-          event: 'DELETE',
-          schema: 'public',
-          table: 'group_members',
-          filter: `group_id.eq.${groupId}`
-        },
-        updateUserStatusSubscription
-      )
-      .subscribe();
+    // 监听群成员在线状态变化 - 不使用groupMembers变量，避免stale closure
+    groupChannel.on(
+      'postgres_changes',
+      {
+        event: 'UPDATE',
+        schema: 'public',
+        table: 'profiles'
+      },
+      async (payload) => {
+        try {
+          // 检查更新的用户是否是群成员
+          const membersData = await chatService.getGroupMembers(groupId);
+          const isGroupMember = membersData.some(member => member.user_id === payload.new.id);
+          
+          if (isGroupMember) {
+            // 刷新群成员列表，获取最新的在线状态
+            setGroupMembers(membersData);
+          }
+        } catch {
+          // ignore error
+        }
+      }
+    );
+
+    // 启动订阅
+    groupChannel.subscribe();
 
     return () => {
-      supabase.removeChannel(groupMembersChannel);
-      if (userStatusChannel) {
-        supabase.removeChannel(userStatusChannel);
-      }
-      supabase.removeChannel(groupMembersSubscription);
+      // 移除所有群相关监听器
+      supabase.removeChannel(groupChannel);
     };
   }, [user, groupId, getDeletedMessageIds]);
 
@@ -287,12 +248,15 @@ const GroupChatPage = ({ params }: { params: Promise<{ groupId: string }> }) => 
         const deletedIds = getDeletedMessageIds();
         // 过滤掉本地已删除的消息
         const filteredMessages = groupMessages.filter(msg => !deletedIds.includes(msg.id));
-        // 确保消息ID唯一，避免重复
-        const uniqueMessages = Array.from(new Map(filteredMessages.map(msg => [msg.id, msg])).values());
-        setMessages(uniqueMessages.reverse());
+        // 与私聊完全一致：服务返回倒序消息，组件调用reverse()显示正序
+        const sortedMessages = filteredMessages.reverse();
+        setMessages(sortedMessages);
         
         // 标记所有消息为已读
         await markMessagesAsRead();
+        
+        // 初始加载完成后滚动到底部
+        messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
       } catch {
         // 即使获取失败，也要设置 loadingMessages 为 false，避免页面一直加载
         setLoadingMessages(false);
@@ -312,213 +276,99 @@ const GroupChatPage = ({ params }: { params: Promise<{ groupId: string }> }) => 
 
     // 请求通知权限
     requestNotificationPermission();
+  }, [user?.id, groupId, getDeletedMessageIds, markMessagesAsRead]);
 
-    // 监听新消息
-    const channelName = `group_messages_${groupId}`;
-    
-    // 创建更可靠的通道配置
-    const messagesChannel = supabase.channel(channelName);
-    
-    // 定义消息事件处理函数
-    // 定义Postgres变更事件类型
-    interface PostgresChangeEvent<T> {
-      new: T;
-      old?: T;
-      eventType: string;
-      table: string;
-      schema: string;
-      commit_timestamp: string;
+  // 实时消息订阅 - 完全复制私聊实现，仅修改过滤条件
+  useEffect(() => {
+    if (!user?.id || !groupId) {
+      return;
     }
-    
-    // 使用ChatMessage类型而不是any
-    const handleInsertEvent = async (payload: PostgresChangeEvent<ChatMessage>) => {
-      try {
-        const deletedIds = getDeletedMessageIds();
-        
-        // 如果新消息不在已删除列表中，则添加到消息列表
-        if (!deletedIds.includes(payload.new.id)) {
-          // 检查消息的群组ID是否与当前群组ID匹配
+
+    // 使用唯一的通道名称
+    const channelName = `group_chat_${groupId}_${user.id}`;
+    console.log('Creating group chat channel:', channelName);
+
+    // 完全复制私聊的通道创建方式
+    const channel = supabase
+      .channel(channelName)
+      .on(
+        'postgres_changes',
+        {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'chat_messages'
+        },
+        async (payload) => {
+          console.log('New group message received in channel', channelName, ':', payload);
+          
+          // 只处理当前群组的消息
           if (payload.new.group_id === groupId) {
-            // 获取发送者资料
-            const { data: senderProfile } = await supabase
-              .from('profiles')
-              .select('id, username, display_name, avatar_url')
-              .eq('id', payload.new.sender_id)
-              .single();
+            console.log('Filtered message is for current group:', payload.new);
             
-            // 构造完整的消息对象
-            const completeMessage = {
-              ...payload.new,
-              sender_profile: senderProfile || null
-            } as ChatMessage;
-            
-            // 更新消息列表
-            setMessages(prev => {
-              // 高效检查消息是否已存在
-              const messageExists = prev.find(msg => msg.id === completeMessage.id);
-              if (messageExists) {
-                return prev;
+            try {
+              // 从数据库获取发送者完整资料
+              const { data: senderProfile } = await supabase
+                .from('profiles')
+                .select('id, username, display_name, avatar_url')
+                .eq('id', payload.new.sender_id)
+                .single();
+              
+              // 构造完整的消息对象
+              const completeMessage = {
+                ...payload.new,
+                sender_profile: senderProfile || {
+                  id: payload.new.sender_id,
+                  username: '未知用户',
+                  display_name: '未知用户',
+                  avatar_url: undefined
+                }
+              } as ChatMessage;
+              
+              // 过滤掉自己发送的消息，因为乐观UI已经添加了
+              if (payload.new.sender_id === user.id) {
+                console.log('Skipping own message from realtime, already added via optimistic UI:', payload.new.id);
+                return;
               }
-              // 直接将新消息添加到消息列表的末尾
-              return [...prev, completeMessage];
-            });
-            
-            // 显示消息通知的内部函数
-            const showNotification = () => {
-              if ('Notification' in window && Notification.permission === 'granted') {
-                // 获取群聊信息
-                const groupName = group?.name || '群聊';
-                // 获取发送者名称
-                const senderName = senderProfile?.display_name || senderProfile?.username || '用户';
-                
-                // 显示通知
-                new Notification(`${groupName} - ${senderName}`, {
-                  body: completeMessage.content,
-                  icon: senderProfile?.avatar_url || undefined,
-                  tag: `group_${groupId}`,
-                  badge: '/favicon.ico'
-                });
+              
+              // 直接添加到消息列表末尾，不重新排序（与私聊一致）
+              setMessages(prev => {
+                // 检查消息是否已存在
+                if (prev.some(msg => msg.id === completeMessage.id)) {
+                  console.log('Group message already exists, skipping:', completeMessage.id);
+                  return prev;
+                }
+                // 直接添加到末尾，不重新排序
+                return [...prev, completeMessage];
+              });
+              
+              // 立即滚动到最新消息
+              messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+              
+              // 标记为已读
+              try {
+                await chatService.markGroupMessagesAsRead(groupId, [payload.new.id]);
+              } catch (error) {
+                console.error('Error marking message as read:', error);
               }
-            };
-            
-            // 只有当页面不可见时才显示通知
-            if (document.visibilityState !== 'visible') {
-              showNotification();
+            } catch (error) {
+              console.error('Error processing group message:', error);
             }
-            
-            // 如果当前用户是消息接收者，标记该消息为已读
-            if (payload.new.sender_id !== user.id) {
-              await chatService.markGroupMessagesAsRead(groupId, [payload.new.id]);
-            }
-            
-            // 触发群聊列表页面更新未读消息数量
-            window.dispatchEvent(new CustomEvent('groupMessagesReceived', { detail: { groupId } }));
           }
         }
-      } catch {
-        // ignore error
-      }
-    };
-    
-    const handleUpdateEvent = (payload: PostgresChangeEvent<ChatMessage>) => {
-      try {
-        // 更新消息状态，例如已读状态
-        setMessages(prev => {
-          return prev.map(msg => {
-            if (msg.id === payload.new.id) {
-              return {
-                ...msg,
-                ...payload.new
-              };
-            }
-            return msg;
-          });
-        });
-      } catch {
-        // ignore error
-      }
-    };
-    
-    const handleDeleteEvent = (payload: PostgresChangeEvent<ChatMessage>) => {
-      try {
-        // 从消息列表中移除被删除的消息
-        setMessages(prev => {
-          return prev.filter(msg => msg.id !== payload.old?.id);
-        });
-        
-        // 添加到本地已删除消息列表
-        if (payload.old?.id) {
-          addDeletedMessageId(payload.old.id);
-        }
-      } catch {
-        // ignore error
-      }
-    };
-    
-    // 注册事件监听器 - 使用类型接口解决Supabase Realtime JS v2.86.0的TypeScript重载问题
+      )
+      .subscribe((status) => {
+        console.log('Group channel', channelName, 'status:', status);
+      });
 
+    channelRef.current = channel;
     
-    // 定义与Supabase on方法匹配的类型接口
-    interface RealtimeChannelOnMethod {
-      on(
-        type: string,
-        filter: {
-          event: string;
-          schema: string;
-          table: string;
-          filter: string;
-        },
-        callback: (payload: PostgresChangeEvent<ChatMessage>) => void
-      ): typeof messagesChannel;
-    }
-    
-    // 使用类型断言，避免直接使用any
-    const typedChannel = messagesChannel as unknown as RealtimeChannelOnMethod;
-    
-    typedChannel.on('postgres_changes', {
-      event: 'INSERT',
-      schema: 'public',
-      table: 'chat_messages',
-      filter: `group_id.eq.${groupId}`
-    }, handleInsertEvent);
-    
-    typedChannel.on('postgres_changes', {
-      event: 'UPDATE',
-      schema: 'public',
-      table: 'chat_messages',
-      filter: `group_id.eq.${groupId}`
-    }, handleUpdateEvent);
-    
-    typedChannel.on('postgres_changes', {
-      event: 'DELETE',
-      schema: 'public',
-      table: 'chat_messages',
-      filter: `group_id.eq.${groupId}`
-    }, handleDeleteEvent);
-    
-    // 启动订阅
-    
-    // 改进的订阅状态处理
-    messagesChannel.subscribe(status => {
-      
-      switch (status) {
-        case 'SUBSCRIBED':
-          break;
-        case 'CHANNEL_ERROR':
-          // 自动重连由 Supabase 客户端内部处理
-          break;
-        case 'TIMED_OUT':
-          break;
-        case 'CLOSED':
-          break;
-        default:
-          break;
-      }
-    });
-    
-    // 添加页面可见性变化处理，确保通道在页面激活时保持连接
-    const handleVisibilityChange = () => {
-      if (document.visibilityState === 'visible') {
-        // 确保通道处于活跃状态
-        messagesChannel.subscribe();
-      }
-    };
-    
-    // 监听页面可见性变化
-    document.addEventListener('visibilitychange', handleVisibilityChange);
-    
-    
+    // 组件卸载时取消订阅
     return () => {
-      // 移除页面可见性监听器
-      document.removeEventListener('visibilitychange', handleVisibilityChange);
-      // 取消订阅通道
-      try {
-        supabase.removeChannel(messagesChannel);
-      } catch {
-        // ignore error
-      }
+      console.log('Removing group channel:', channelName);
+      supabase.removeChannel(channel);
+      channelRef.current = null;
     };
-  }, [user?.id, groupId, getDeletedMessageIds, markMessagesAsRead, addDeletedMessageId]);
+  }, [user?.id, groupId]);
 
   // 当组件挂载或消息列表更新时，标记消息为已读
   useEffect(() => {
@@ -535,26 +385,116 @@ const GroupChatPage = ({ params }: { params: Promise<{ groupId: string }> }) => 
 
   // 自动滚动到底部
   useEffect(() => {
+    console.log('Messages updated, scrolling to bottom');
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages]);
+  }, [messages.length]);
 
-  // 发送群消息
+  // 监听新消息通知，确保滚动到底部
+  useEffect(() => {
+    const handleGroupMessagesReceived = () => {
+      console.log('Group messages received event, scrolling to bottom');
+      messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    };
+
+    window.addEventListener('groupMessagesReceived', handleGroupMessagesReceived);
+    return () => {
+      window.removeEventListener('groupMessagesReceived', handleGroupMessagesReceived);
+    };
+  }, []);
+
+  // 处理文件选择
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || sending) return;
+
+    setSending(true);
+    
+    try {
+      let fileType: 'image' | 'video' | 'file' = 'file';
+      let fileUrl: string;
+      
+      // 检查文件类型和大小
+      if (file.type.startsWith('image/')) {
+        // 图片文件，最大5MB
+        if (file.size > 5 * 1024 * 1024) {
+          // 压缩图片
+          const compressedFile = await chatService.compressImage(file, 5);
+          fileUrl = await chatService.uploadFile(compressedFile, 'chat_images');
+        } else {
+          fileUrl = await chatService.uploadFile(file, 'chat_images');
+        }
+        fileType = 'image';
+      } else if (file.type.startsWith('video/')) {
+        // 视频文件，最大50MB
+        if (file.size > 50 * 1024 * 1024) {
+          setToastMessage('视频文件大小不能超过50MB');
+          setToastType('error');
+          setSending(false);
+          return;
+        }
+        fileUrl = await chatService.uploadFile(file, 'chat_videos');
+        fileType = 'video';
+      } else {
+        // 其他文件，暂时不支持
+        setToastMessage('暂不支持该文件类型');
+        setToastType('error');
+        setSending(false);
+        return;
+      }
+      
+      // 发送消息
+      const sentMessage = await chatService.sendGroupMessage(groupId, fileUrl, fileType);
+      
+      // 直接添加到消息列表末尾
+      setMessages(prev => {
+        // 检查消息是否已存在
+        if (prev.some(msg => msg.id === sentMessage.id)) {
+          console.log('Group message already exists, skipping:', sentMessage.id);
+          return prev;
+        }
+        return [...prev, sentMessage];
+      });
+      
+      // 滚动到最新消息
+      messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    } catch (error) {
+      console.error('Error sending file message:', error);
+      setToastMessage('发送文件失败，请重试');
+      setToastType('error');
+    } finally {
+      setSending(false);
+      // 重置文件输入
+      e.target.value = '';
+    }
+  };
+
+  // 发送群消息 - 支持多种类型
   const handleSendMessage = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!user || !group || !newMessage.trim() || sending) return;
 
+    setSending(true);
+    const messageContent = newMessage.trim();
+    setNewMessage('');
+
     try {
-      setSending(true);
-      const message = await chatService.sendGroupMessage(groupId, newMessage.trim());
-      // 确保不会添加重复的消息
+      // 发送文本消息
+      const sentMessage = await chatService.sendGroupMessage(groupId, messageContent, 'text');
+      
+      // 直接添加到消息列表末尾
       setMessages(prev => {
-        if (!prev.some(m => m.id === message.id)) {
-          return [...prev, message];
+        // 检查消息是否已存在
+        if (prev.some(msg => msg.id === sentMessage.id)) {
+          console.log('Group message already exists, skipping:', sentMessage.id);
+          return prev;
         }
-        return prev;
+        return [...prev, sentMessage];
       });
-      setNewMessage('');
+      
+      // 滚动到最新消息
+      messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
     } catch {
+      setNewMessage(messageContent);
       setToastMessage('发送消息失败，请重试');
       setToastType('error');
     } finally {
@@ -797,8 +737,8 @@ const GroupChatPage = ({ params }: { params: Promise<{ groupId: string }> }) => 
     fileInputRef.current?.click();
   };
 
-  // 处理文件选择
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  // 处理头像文件选择
+  const handleAvatarFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
       // 检查文件类型
@@ -1066,14 +1006,27 @@ const GroupChatPage = ({ params }: { params: Promise<{ groupId: string }> }) => 
                             
                             {/* 消息气泡 */}
                             <div className="relative inline-block bg-gray-200 dark:bg-gray-700 text-gray-800 dark:text-white rounded-lg p-3 rounded-tl-none">
-                              {/* 消息文本 */}
-                              <p className="text-sm">
-                                {message.content}
-                                {/* 时间戳 - 显示在最后一个字后面 */}
-                                <span className="text-xs opacity-70 ml-1">
-                                  {new Date(message.created_at).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })}
-                                </span>
-                              </p>
+                              {/* 消息内容 */}
+                              <div className="flex flex-col gap-2">
+                                {/* 非文本消息单独一行显示 */}
+                                {message.type !== 'text' && (
+                                  <div className="w-full">
+                                    <MultimediaMessage message={message} isCurrentUser={isCurrentUser} />
+                                  </div>
+                                )}
+                                
+                                {/* 文本消息与时间戳在同一行 */}
+                                <div className="flex items-end gap-1">
+                                  {message.type === 'text' && (
+                                    <p className="text-sm">
+                                      {message.content}
+                                    </p>
+                                  )}
+                                  <span className="text-xs opacity-70">
+                                    {new Date(message.created_at).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })}
+                                  </span>
+                                </div>
+                              </div>
                             </div>
                           </div>
                         </div>
@@ -1086,15 +1039,28 @@ const GroupChatPage = ({ params }: { params: Promise<{ groupId: string }> }) => 
                           <div className="flex flex-col items-end">
                             {/* 消息气泡 */}
                             <div className="relative inline-block bg-gradient-to-r from-purple-400 to-pink-500 text-white rounded-lg p-3 rounded-tr-none group">
-                              {/* 消息文本 */}
-                              <p className="text-sm">
-                                {message.content}
-                                {/* 时间戳 - 显示在最后一个字后面 */}
-                                <span className="text-xs opacity-70 ml-1">
-                                  {new Date(message.created_at).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })}
-                                </span>
-                              </p>
-                               
+                              {/* 消息内容 */}
+                              <div className="flex flex-col gap-2">
+                                {/* 非文本消息单独一行显示 */}
+                                {message.type !== 'text' && (
+                                  <div className="w-full">
+                                    <MultimediaMessage message={message} isCurrentUser={isCurrentUser} />
+                                  </div>
+                                )}
+                                
+                                {/* 文本消息与时间戳在同一行 */}
+                                <div className="flex items-end gap-1">
+                                  {message.type === 'text' && (
+                                    <p className="text-sm">
+                                      {message.content}
+                                    </p>
+                                  )}
+                                  <span className="text-xs opacity-70">
+                                    {new Date(message.created_at).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })}
+                                  </span>
+                                </div>
+                              </div>
+                                
                               {/* 删除消息按钮 - 只有当前用户发送的消息才显示 */}
                               <button
                                 onClick={() => handleOpenDeleteMessageConfirm(message.id)}
@@ -1140,6 +1106,62 @@ const GroupChatPage = ({ params }: { params: Promise<{ groupId: string }> }) => 
           {/* 消息输入框 */}
           <form onSubmit={handleSendMessage} className="p-4 border-t border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800">
             <div className="flex gap-2">
+              <div className="relative">
+                {/* 隐藏的文件输入 */}
+                <input
+                  type="file"
+                  accept="image/*,video/*"
+                  onChange={handleFileChange}
+                  disabled={sending}
+                  className="hidden"
+                  id="group-file-upload"
+                />
+                
+                {/* 图片上传按钮 */}
+                <button
+                  type="button"
+                  className="p-3 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors duration-200 min-w-12 min-h-12 flex items-center justify-center"
+                  onClick={() => document.getElementById('group-file-upload')?.click()}
+                  disabled={sending}
+                >
+                  <ImageIcon className="w-5 h-5 text-gray-600 dark:text-gray-300" />
+                </button>
+              </div>
+              
+              <div className="relative">
+                {/* 表情选择器按钮 */}
+                <button
+                  type="button"
+                  className="p-3 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors duration-200 min-w-12 min-h-12 flex items-center justify-center"
+                  onClick={() => setShowEmojiPicker(!showEmojiPicker)}
+                  disabled={sending}
+                >
+                  <Smile className="w-5 h-5 text-gray-600 dark:text-gray-300" />
+                </button>
+                
+                {/* 表情选择器 */}
+                {showEmojiPicker && (
+                  <div className="absolute bottom-full left-0 mb-2 bg-white dark:bg-gray-800 rounded-lg shadow-lg p-2 w-64 md:w-80 max-h-48 overflow-y-auto z-50">
+                    <div className="grid grid-cols-8 md:grid-cols-10 gap-2">
+                      {/* 简单的表情示例 */}
+                      {['😊', '😂', '❤️', '👍', '👎', '😢', '😮', '😡', '😀', '😃', '😄', '😁', '😆', '😅', '🤣', '🥲', '☺️', '😇', '🙂', '🙃', '😉', '😌', '😍', '🥰', '😘', '😗', '😙', '😚', '😋', '😛', '😝', '😜', '🤪', '🤨', '🧐', '🤓', '😎', '🥸', '🤩', '🥳', '😏', '😒', '😞', '😔', '😟', '😕', '🙁', '☹️', '😣', '😖', '😫', '😩', '🥺', '😭', '😤', '😠', '🤬', '🤯', '😳', '🥵', '🥶', '😱', '😨', '😰', '😥', '😓', '🤗', '🤔', '🤭', '🤫', '🤥', '😶', '😐', '😑', '😬', '🙄', '😯', '😦', '😧', '😲', '🥱', '😴', '🤤', '😪', '😵', '🤐', '🥴', '🤢', '🤮', '🤧', '😷', '🤒', '🤕', '🤑'].map((emoji, index) => (
+                        <button
+                          key={index}
+                          type="button"
+                          className="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors duration-200 text-xl"
+                          onClick={() => {
+                            setNewMessage(prev => prev + emoji);
+                            setShowEmojiPicker(false);
+                          }}
+                        >
+                          {emoji}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+              
               <div className="flex-grow relative">
                 <input
                   type="text"
@@ -1549,7 +1571,7 @@ const GroupChatPage = ({ params }: { params: Promise<{ groupId: string }> }) => 
                   ref={fileInputRef}
                   type="file"
                   accept="image/*"
-                  onChange={handleFileChange}
+                  onChange={handleAvatarFileChange}
                   className="hidden"
                 />
                 
