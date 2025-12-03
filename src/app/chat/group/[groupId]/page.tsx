@@ -42,7 +42,6 @@ const GroupChatPage = ({ params }: { params: Promise<{ groupId: string }> }) => 
   const [showGroupProfileModal, setShowGroupProfileModal] = useState(false);
   const [groupNickname, setGroupNickname] = useState<string>('');
   const [groupAvatar, setGroupAvatar] = useState<string | undefined>('');
-  const [isEditingGroupProfile, setIsEditingGroupProfile] = useState(false);
   // 群设置相关
   const [showGroupSettingsModal, setShowGroupSettingsModal] = useState(false);
   const [newGroupName, setNewGroupName] = useState<string>(group?.name || '');
@@ -63,11 +62,11 @@ const GroupChatPage = ({ params }: { params: Promise<{ groupId: string }> }) => 
   
   // 获取本地已删除消息ID
   const getDeletedMessageIds = useCallback((): string[] => {
-    if (!user) return [];
+    if (!user?.id) return [];
     const key = `deleted_messages_${user.id}_${groupId}`;
     const deletedIds = localStorage.getItem(key);
     return deletedIds ? JSON.parse(deletedIds) : [];
-  }, [user, groupId]);
+  }, [user?.id, groupId]);
 
   // 处理头像点击，显示用户信息
   const handleAvatarClick = (senderProfile: Profile) => {
@@ -84,15 +83,15 @@ const GroupChatPage = ({ params }: { params: Promise<{ groupId: string }> }) => 
   };
   
   // 添加本地已删除消息ID
-  const addDeletedMessageId = (messageId: string) => {
-    if (!user) return;
+  const addDeletedMessageId = useCallback((messageId: string) => {
+    if (!user?.id) return;
     const key = `deleted_messages_${user.id}_${groupId}`;
     const deletedIds = getDeletedMessageIds();
     if (!deletedIds.includes(messageId)) {
       deletedIds.push(messageId);
       localStorage.setItem(key, JSON.stringify(deletedIds));
     }
-  };
+  }, [user?.id, groupId, getDeletedMessageIds]);
   
   // 删除本地已删除消息ID（暂时未使用）
   // const removeDeletedMessageId = (messageId: string) => {
@@ -106,7 +105,7 @@ const GroupChatPage = ({ params }: { params: Promise<{ groupId: string }> }) => 
   // 获取群信息
   useEffect(() => {
     const fetchGroupInfo = async () => {
-      if (!user || !groupId) return;
+      if (!user?.id || !groupId) return;
 
       try {
         // 使用新添加的 getGroup 方法获取群信息，而不是从群列表中查找
@@ -126,8 +125,7 @@ const GroupChatPage = ({ params }: { params: Promise<{ groupId: string }> }) => 
         } else {
           setCurrentUserRole(null);
         }
-      } catch (err) {
-        console.error('Failed to fetch group info:', err);
+      } catch {
         // 即使获取失败，也要创建一个模拟的群对象，避免页面崩溃
         setGroup({
           id: groupId,
@@ -157,7 +155,7 @@ const GroupChatPage = ({ params }: { params: Promise<{ groupId: string }> }) => 
           event: '*',
           schema: 'public',
           table: 'group_members',
-          filter: `group_id=eq.${groupId}`
+          filter: `group_id.eq.${groupId}`
         },
         () => {
           chatService.getGroupMembers(groupId)
@@ -176,14 +174,16 @@ const GroupChatPage = ({ params }: { params: Promise<{ groupId: string }> }) => 
                 }
               }
             })
-            .catch(err => console.error('Failed to refresh group members:', err));
+            .catch(() => {});
         }
       )
       .subscribe();
 
     // 监听群成员在线状态变化
     const getMemberUserIds = () => {
-      return groupMembers.map(member => member.user_id);
+      // 使用函数内的局部变量，避免依赖外部的groupMembers
+      const members = groupMembers;
+      return members.map(member => member.user_id);
     };
 
     // 当群成员列表更新时，重新订阅用户状态变化
@@ -208,7 +208,7 @@ const GroupChatPage = ({ params }: { params: Promise<{ groupId: string }> }) => 
               .then(membersData => {
                 setGroupMembers(membersData);
               })
-              .catch(err => console.error('Failed to refresh group members on status change:', err));
+              .catch(() => {});
           }
         )
         .subscribe();
@@ -236,7 +236,7 @@ const GroupChatPage = ({ params }: { params: Promise<{ groupId: string }> }) => 
           event: 'INSERT',
           schema: 'public',
           table: 'group_members',
-          filter: `group_id=eq.${groupId}`
+          filter: `group_id.eq.${groupId}`
         },
         updateUserStatusSubscription
       )
@@ -246,7 +246,7 @@ const GroupChatPage = ({ params }: { params: Promise<{ groupId: string }> }) => 
           event: 'DELETE',
           schema: 'public',
           table: 'group_members',
-          filter: `group_id=eq.${groupId}`
+          filter: `group_id.eq.${groupId}`
         },
         updateUserStatusSubscription
       )
@@ -263,7 +263,7 @@ const GroupChatPage = ({ params }: { params: Promise<{ groupId: string }> }) => 
 
   // 自动标记消息为已读
   const markMessagesAsRead = useCallback(async () => {
-    if (!user || !groupId) return;
+    if (!user?.id || !groupId) return;
 
     try {
       await chatService.markGroupMessagesAsRead(groupId);
@@ -271,16 +271,16 @@ const GroupChatPage = ({ params }: { params: Promise<{ groupId: string }> }) => 
       // 触发群聊列表页面更新未读消息数量
       // 通过发送自定义事件来通知其他组件
       window.dispatchEvent(new CustomEvent('groupMessagesRead', { detail: { groupId } }));
-    } catch (err) {
-      console.error('Failed to mark group messages as read:', err);
+    } catch {
+      // ignore error
     }
-  }, [user, groupId]);
+  }, [user?.id, groupId]);
 
   // 获取群消息
   useEffect(() => {
-    const fetchMessages = async () => {
-      if (!user || !groupId) return;
+    if (!user?.id || !groupId) return;
 
+    const fetchMessages = async () => {
       try {
         setLoadingMessages(true);
         const groupMessages = await chatService.getGroupMessages(groupId, 50, 0);
@@ -293,8 +293,7 @@ const GroupChatPage = ({ params }: { params: Promise<{ groupId: string }> }) => 
         
         // 标记所有消息为已读
         await markMessagesAsRead();
-      } catch (err) {
-        console.error('Failed to fetch messages:', err);
+      } catch {
         // 即使获取失败，也要设置 loadingMessages 为 false，避免页面一直加载
         setLoadingMessages(false);
       } finally {
@@ -311,44 +310,35 @@ const GroupChatPage = ({ params }: { params: Promise<{ groupId: string }> }) => 
       }
     };
 
-    // 显示通知
-    const showNotification = async (message: ChatMessage) => {
-      if ('Notification' in window && Notification.permission === 'granted') {
-        // 获取群聊信息
-        const groupName = group?.name || '群聊';
-        // 获取发送者名称
-        const senderName = message.sender_profile?.display_name || 
-                          message.sender_profile?.username || 
-                          '用户';
-        
-        // 显示通知
-        new Notification(`${groupName} - ${senderName}`, {
-          body: message.content,
-          icon: message.sender_profile?.avatar_url || undefined,
-          tag: `group_${groupId}`,
-          badge: '/favicon.ico'
-        });
-      }
-    };
-
     // 请求通知权限
     requestNotificationPermission();
 
     // 监听新消息
-    const messagesChannel = supabase
-      .channel(`group_messages_${groupId}`)
-      .on(
-        'postgres_changes',
-        {
-          event: 'INSERT',
-          schema: 'public',
-          table: 'chat_messages',
-          filter: `group_id.eq.${groupId}`
-        },
-        async (payload) => {
-          const deletedIds = getDeletedMessageIds();
-          // 如果新消息不在已删除列表中，且不在当前消息列表中，则添加到消息列表
-          if (!deletedIds.includes(payload.new.id)) {
+    const channelName = `group_messages_${groupId}`;
+    
+    // 创建更可靠的通道配置
+    const messagesChannel = supabase.channel(channelName);
+    
+    // 定义消息事件处理函数
+    // 定义Postgres变更事件类型
+    interface PostgresChangeEvent<T> {
+      new: T;
+      old?: T;
+      eventType: string;
+      table: string;
+      schema: string;
+      commit_timestamp: string;
+    }
+    
+    // 使用ChatMessage类型而不是any
+    const handleInsertEvent = async (payload: PostgresChangeEvent<ChatMessage>) => {
+      try {
+        const deletedIds = getDeletedMessageIds();
+        
+        // 如果新消息不在已删除列表中，则添加到消息列表
+        if (!deletedIds.includes(payload.new.id)) {
+          // 检查消息的群组ID是否与当前群组ID匹配
+          if (payload.new.group_id === groupId) {
             // 获取发送者资料
             const { data: senderProfile } = await supabase
               .from('profiles')
@@ -362,19 +352,42 @@ const GroupChatPage = ({ params }: { params: Promise<{ groupId: string }> }) => 
               sender_profile: senderProfile || null
             } as ChatMessage;
             
+            // 更新消息列表
             setMessages(prev => {
-              // 检查消息是否已存在
-              if (!prev.some(msg => msg.id === completeMessage.id)) {
-                return [...prev, completeMessage];
+              // 高效检查消息是否已存在
+              const messageExists = prev.find(msg => msg.id === completeMessage.id);
+              if (messageExists) {
+                return prev;
               }
-              return prev;
+              // 直接将新消息添加到消息列表的末尾
+              return [...prev, completeMessage];
             });
             
-            // 显示消息通知
-            showNotification(completeMessage);
+            // 显示消息通知的内部函数
+            const showNotification = () => {
+              if ('Notification' in window && Notification.permission === 'granted') {
+                // 获取群聊信息
+                const groupName = group?.name || '群聊';
+                // 获取发送者名称
+                const senderName = senderProfile?.display_name || senderProfile?.username || '用户';
+                
+                // 显示通知
+                new Notification(`${groupName} - ${senderName}`, {
+                  body: completeMessage.content,
+                  icon: senderProfile?.avatar_url || undefined,
+                  tag: `group_${groupId}`,
+                  badge: '/favicon.ico'
+                });
+              }
+            };
+            
+            // 只有当页面不可见时才显示通知
+            if (document.visibilityState !== 'visible') {
+              showNotification();
+            }
             
             // 如果当前用户是消息接收者，标记该消息为已读
-            if (user && payload.new.sender_id !== user.id) {
+            if (payload.new.sender_id !== user.id) {
               await chatService.markGroupMessagesAsRead(groupId, [payload.new.id]);
             }
             
@@ -382,13 +395,130 @@ const GroupChatPage = ({ params }: { params: Promise<{ groupId: string }> }) => 
             window.dispatchEvent(new CustomEvent('groupMessagesReceived', { detail: { groupId } }));
           }
         }
-      )
-      .subscribe();
+      } catch {
+        // ignore error
+      }
+    };
+    
+    const handleUpdateEvent = (payload: PostgresChangeEvent<ChatMessage>) => {
+      try {
+        // 更新消息状态，例如已读状态
+        setMessages(prev => {
+          return prev.map(msg => {
+            if (msg.id === payload.new.id) {
+              return {
+                ...msg,
+                ...payload.new
+              };
+            }
+            return msg;
+          });
+        });
+      } catch {
+        // ignore error
+      }
+    };
+    
+    const handleDeleteEvent = (payload: PostgresChangeEvent<ChatMessage>) => {
+      try {
+        // 从消息列表中移除被删除的消息
+        setMessages(prev => {
+          return prev.filter(msg => msg.id !== payload.old?.id);
+        });
+        
+        // 添加到本地已删除消息列表
+        if (payload.old?.id) {
+          addDeletedMessageId(payload.old.id);
+        }
+      } catch {
+        // ignore error
+      }
+    };
+    
+    // 注册事件监听器 - 使用类型接口解决Supabase Realtime JS v2.86.0的TypeScript重载问题
+
+    
+    // 定义与Supabase on方法匹配的类型接口
+    interface RealtimeChannelOnMethod {
+      on(
+        type: string,
+        filter: {
+          event: string;
+          schema: string;
+          table: string;
+          filter: string;
+        },
+        callback: (payload: PostgresChangeEvent<ChatMessage>) => void
+      ): typeof messagesChannel;
+    }
+    
+    // 使用类型断言，避免直接使用any
+    const typedChannel = messagesChannel as unknown as RealtimeChannelOnMethod;
+    
+    typedChannel.on('postgres_changes', {
+      event: 'INSERT',
+      schema: 'public',
+      table: 'chat_messages',
+      filter: `group_id.eq.${groupId}`
+    }, handleInsertEvent);
+    
+    typedChannel.on('postgres_changes', {
+      event: 'UPDATE',
+      schema: 'public',
+      table: 'chat_messages',
+      filter: `group_id.eq.${groupId}`
+    }, handleUpdateEvent);
+    
+    typedChannel.on('postgres_changes', {
+      event: 'DELETE',
+      schema: 'public',
+      table: 'chat_messages',
+      filter: `group_id.eq.${groupId}`
+    }, handleDeleteEvent);
+    
+    // 启动订阅
+    
+    // 改进的订阅状态处理
+    messagesChannel.subscribe(status => {
+      
+      switch (status) {
+        case 'SUBSCRIBED':
+          break;
+        case 'CHANNEL_ERROR':
+          // 自动重连由 Supabase 客户端内部处理
+          break;
+        case 'TIMED_OUT':
+          break;
+        case 'CLOSED':
+          break;
+        default:
+          break;
+      }
+    });
+    
+    // 添加页面可见性变化处理，确保通道在页面激活时保持连接
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        // 确保通道处于活跃状态
+        messagesChannel.subscribe();
+      }
+    };
+    
+    // 监听页面可见性变化
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    
     
     return () => {
-      supabase.removeChannel(messagesChannel);
+      // 移除页面可见性监听器
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      // 取消订阅通道
+      try {
+        supabase.removeChannel(messagesChannel);
+      } catch {
+        // ignore error
+      }
     };
-  }, [user, groupId, getDeletedMessageIds, markMessagesAsRead]);
+  }, [user?.id, groupId, getDeletedMessageIds, markMessagesAsRead, addDeletedMessageId]);
 
   // 当组件挂载或消息列表更新时，标记消息为已读
   useEffect(() => {
@@ -424,8 +554,7 @@ const GroupChatPage = ({ params }: { params: Promise<{ groupId: string }> }) => 
         return prev;
       });
       setNewMessage('');
-    } catch (err) {
-      console.error('Failed to send message:', err);
+    } catch {
       setToastMessage('发送消息失败，请重试');
       setToastType('error');
     } finally {
@@ -445,8 +574,8 @@ const GroupChatPage = ({ params }: { params: Promise<{ groupId: string }> }) => 
         !groupMembers.some(member => member.user_id === user.id)
       );
       setSearchResults(filteredResults);
-    } catch (err) {
-      console.error('Failed to search users:', err);
+    } catch {
+      // ignore error
     } finally {
       setSearching(false);
     }
@@ -481,7 +610,6 @@ const GroupChatPage = ({ params }: { params: Promise<{ groupId: string }> }) => 
       setToastMessage('邀请发送成功！');
       setToastType('success');
     } catch (err) {
-      console.error('Failed to invite members:', err);
       const errorMessage = err instanceof Error ? err.message : '邀请失败，请重试';
       setToastMessage(errorMessage);
       setToastType('error');
@@ -505,7 +633,6 @@ const GroupChatPage = ({ params }: { params: Promise<{ groupId: string }> }) => 
         window.location.href = '/chat';
       }, 1500);
     } catch (err) {
-      console.error('Failed to leave group:', err);
       const errorMessage = err instanceof Error ? err.message : '退出群聊失败，请重试';
       setToastMessage(errorMessage);
       setToastType('error');
@@ -524,7 +651,6 @@ const GroupChatPage = ({ params }: { params: Promise<{ groupId: string }> }) => 
         window.location.href = '/chat';
       }, 1500);
     } catch (err) {
-      console.error('Failed to delete group:', err);
       const errorMessage = err instanceof Error ? err.message : '删除群聊失败，请重试';
       setToastMessage(errorMessage);
       setToastType('error');
@@ -533,6 +659,22 @@ const GroupChatPage = ({ params }: { params: Promise<{ groupId: string }> }) => 
   
   // 打开删除消息确认对话框
   const handleOpenDeleteMessageConfirm = (messageId: string) => {
+    // 检查消息发送时间是否超过两分钟
+    const messageToDelete = messages.find(msg => msg.id === messageId);
+    if (messageToDelete) {
+      const messageTime = new Date(messageToDelete.created_at);
+      const now = new Date();
+      const timeDiff = now.getTime() - messageTime.getTime();
+      const twoMinutes = 2 * 60 * 1000;
+      
+      if (timeDiff > twoMinutes) {
+        // 超过两分钟，不允许删除
+        setToastMessage('消息发送超过两分钟，无法删除');
+        setToastType('error');
+        return;
+      }
+    }
+    
     setSelectedMessageId(messageId);
     setShowDeleteMessageConfirm(true);
   };
@@ -570,7 +712,6 @@ const GroupChatPage = ({ params }: { params: Promise<{ groupId: string }> }) => 
       setToastMessage('消息已删除');
       setToastType('success');
     } catch (err) {
-      console.error('Failed to delete message:', err);
       const errorMessage = err instanceof Error ? err.message : '删除消息失败，请重试';
       setToastMessage(errorMessage);
       setToastType('error');
@@ -611,7 +752,6 @@ const GroupChatPage = ({ params }: { params: Promise<{ groupId: string }> }) => 
       setToastMessage('成员已删除');
       setToastType('success');
     } catch (err) {
-      console.error('Failed to remove group member:', err);
       const errorMessage = err instanceof Error ? err.message : '删除成员失败，请重试';
       setToastMessage(errorMessage);
       setToastType('error');
@@ -637,7 +777,6 @@ const GroupChatPage = ({ params }: { params: Promise<{ groupId: string }> }) => 
       setAvatarFile(null);
       setAvatarPreview(undefined);
       setShowGroupProfileModal(false);
-      setIsEditingGroupProfile(false);
       
       setToastMessage('群内个人信息已更新');
       setToastType('success');
@@ -650,7 +789,6 @@ const GroupChatPage = ({ params }: { params: Promise<{ groupId: string }> }) => 
 
   // 处理当前用户头像点击
   const handleCurrentUserAvatarClick = () => {
-    setIsEditingGroupProfile(true);
     setShowGroupProfileModal(true);
   };
 
@@ -724,7 +862,7 @@ const GroupChatPage = ({ params }: { params: Promise<{ groupId: string }> }) => 
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
+      <div className="min-h-screen">
         <Navbar />
         <div className="flex justify-center items-center h-[calc(100vh-80px)]">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary-500"></div>
@@ -735,7 +873,7 @@ const GroupChatPage = ({ params }: { params: Promise<{ groupId: string }> }) => 
 
   if (!group) {
     return (
-      <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
+      <div className="min-h-screen">
         <Navbar />
         <div className="max-w-7xl mx-auto px-4 py-6">
           <div className="glass-card rounded-2xl p-6 text-center">
@@ -758,7 +896,7 @@ const GroupChatPage = ({ params }: { params: Promise<{ groupId: string }> }) => 
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
+    <div className="min-h-screen">
       <Navbar />
       <main className="max-w-7xl mx-auto px-4 py-6">
         <div className="glass-card rounded-2xl overflow-hidden">
@@ -947,7 +1085,7 @@ const GroupChatPage = ({ params }: { params: Promise<{ groupId: string }> }) => 
                           {/* 消息内容 */}
                           <div className="flex flex-col items-end">
                             {/* 消息气泡 */}
-                            <div className="relative inline-block bg-gradient-to-r from-purple-400 to-pink-500 text-white rounded-lg p-3 rounded-tr-none">
+                            <div className="relative inline-block bg-gradient-to-r from-purple-400 to-pink-500 text-white rounded-lg p-3 rounded-tr-none group">
                               {/* 消息文本 */}
                               <p className="text-sm">
                                 {message.content}
@@ -956,11 +1094,11 @@ const GroupChatPage = ({ params }: { params: Promise<{ groupId: string }> }) => 
                                   {new Date(message.created_at).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })}
                                 </span>
                               </p>
-                              
+                               
                               {/* 删除消息按钮 - 只有当前用户发送的消息才显示 */}
                               <button
                                 onClick={() => handleOpenDeleteMessageConfirm(message.id)}
-                                className="absolute -top-1 -right-1 bg-white dark:bg-gray-800 p-1 rounded-full text-red-500 opacity-0 hover:opacity-100 transition-opacity duration-200 shadow-md"
+                                className="absolute -top-1 -right-1 bg-white dark:bg-gray-800 p-1 rounded-full text-red-500 opacity-0 group-hover:opacity-100 transition-opacity duration-200 shadow-md"
                                 aria-label="删除消息"
                               >
                                 <TrashIcon className="h-3 w-3" />
@@ -1362,9 +1500,8 @@ const GroupChatPage = ({ params }: { params: Promise<{ groupId: string }> }) => 
                 <h3 className="text-lg font-semibold text-gray-900 dark:text-white">群内个人信息</h3>
                 <button
                   onClick={() => {
-                    setShowGroupProfileModal(false);
-                    setIsEditingGroupProfile(false);
-                  }}
+                  setShowGroupProfileModal(false);
+                }}
                   className="text-gray-500 hover:text-gray-700 dark:hover:text-gray-300"
                 >
                   <XIcon className="h-5 w-5" />
@@ -1433,9 +1570,8 @@ const GroupChatPage = ({ params }: { params: Promise<{ groupId: string }> }) => 
               <div className="mt-6 flex gap-3">
                 <button
                   onClick={() => {
-                    setShowGroupProfileModal(false);
-                    setIsEditingGroupProfile(false);
-                  }}
+                  setShowGroupProfileModal(false);
+                }}
                   className="flex-1 px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 transition-all dark:border-gray-600 dark:text-gray-300 dark:hover:bg-gray-700"
                 >
                   取消

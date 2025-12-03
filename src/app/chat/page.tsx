@@ -104,15 +104,15 @@ const ChatListPage = () => {
           for (const membership of groupMemberships) {
             const groupId = membership.group_id;
             try {
-              const { count, error: countError } = await supabase
-                .from('group_message_read_status')
-                .select('*', { count: 'exact', head: true })
-                .eq('group_id', groupId)
-                .eq('user_id', currentUser.id)
-                .eq('is_read', false);
+              const { count, error } = await supabase
+                  .from('group_message_read_status')
+                  .select('id', { count: 'exact', head: true })
+                  .eq('group_id', groupId)
+                  .eq('user_id', user.id)
+                  .eq('is_read', false);
               
-              if (countError) {
-                console.error(`Error getting unread count for group ${groupId}:`, countError);
+              if (error) {
+                console.error(`Error getting unread count for group ${groupId}:`, error);
                 groupUnreadCounts[groupId] = 0;
               } else {
                 groupUnreadCounts[groupId] = count || 0;
@@ -162,7 +162,7 @@ const ChatListPage = () => {
     
     // 添加实时订阅监听好友在线状态变化和消息状态变化
     if (user) {
-      const channels: any[] = [];
+      const channels: ReturnType<typeof supabase.channel>[] = [];
       
       // 监听好友在线状态变化
       if (friends.length > 0) {
@@ -362,9 +362,9 @@ const ChatListPage = () => {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
+    <div className="min-h-screen">
       <Navbar />
-      <main className="max-w-7xl mx-auto px-4 py-6">
+      <main className="w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         <div className="mb-6">
           <h1 className="text-2xl font-bold text-gray-800 dark:text-white flex items-center gap-2">
             <MessageCircleIcon className="h-6 w-6 text-primary-500" />

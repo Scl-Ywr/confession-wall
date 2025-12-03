@@ -136,14 +136,12 @@ export const chatService = {
     
     // 检查是否有错误获取用户信息
     if (user.error) {
-      console.error('Auth error in sendFriendRequest:', user.error.message || JSON.stringify(user.error));
       throw new Error('User not authenticated');
     }
     
     const senderId = user.data?.user?.id;
 
     if (!senderId) {
-      console.error('No sender ID in sendFriendRequest');
       throw new Error('User not authenticated');
     }
     
@@ -164,7 +162,6 @@ export const chatService = {
       .single();
 
     if (error) {
-      console.error('Error inserting friend request:', error.message || JSON.stringify(error));
       throw error;
     }
     
@@ -198,8 +195,7 @@ export const chatService = {
         'friend_request_sent',
         data.id
       );
-    } catch (notificationError) {
-      console.error('Error creating notification:', notificationError instanceof Error ? notificationError.message : JSON.stringify(notificationError));
+    } catch {
       // 继续执行，不中断好友请求流程
     }
 
@@ -278,8 +274,7 @@ export const chatService = {
           status === 'accepted' ? 'friend_accepted' : 'friend_rejected',
           updatedRequest.id
         );
-      } catch (notificationError) {
-        console.error('Error creating notification:', notificationError instanceof Error ? notificationError.message : JSON.stringify(notificationError));
+      } catch {
         // 继续执行，不中断好友请求处理流程
       }
 
@@ -328,7 +323,6 @@ export const chatService = {
         .order('updated_at', { ascending: false });
 
       if (friendshipsError) {
-        console.error('Supabase error in friendships query:', friendshipsError);
         throw new Error(`Failed to fetch friends: ${friendshipsError.message || 'Unknown error'}`);
       }
 
@@ -357,12 +351,12 @@ export const chatService = {
             .single();
           
           if (profileError) {
-            console.error(`Error fetching profile for friend ${friendId}:`, profileError);
+            // ignore error
           } else if (profile) {
             friendsProfiles[friendId] = profile;
           }
-        } catch (singleProfileError) {
-          console.error(`Exception fetching profile for friend ${friendId}:`, singleProfileError);
+        } catch {
+          // ignore error
         }
       }
 
@@ -395,8 +389,7 @@ export const chatService = {
 
 
       return friendsWithProfiles as Friendship[];
-    } catch (error) {
-      console.error('Error in getFriends:', error);
+    } catch {
       // 发生错误时返回空数组，避免整个聊天页面崩溃
       return [] as Friendship[];
     }
@@ -410,7 +403,6 @@ export const chatService = {
       
       // 检查认证错误
       if (user.error) {
-        console.error('Auth error in sendPrivateMessage:', user.error);
         throw new Error('User not authenticated');
       }
       
@@ -436,7 +428,7 @@ export const chatService = {
         .single();
 
       if (profileError) {
-        console.error('Error fetching sender profile:', profileError);
+        // ignore error
       }
 
       // 发送消息
@@ -453,7 +445,6 @@ export const chatService = {
         .single();
 
       if (error) {
-        console.error('Error inserting message:', error);
         throw error;
       }
 
@@ -465,7 +456,6 @@ export const chatService = {
         sender_profile: senderProfile
       } as ChatMessage;
     } catch (error) {
-      console.error('Unexpected error in sendPrivateMessage:', error);
       throw error;
     }
   },
@@ -480,7 +470,6 @@ export const chatService = {
       
       // 检查认证错误
       if (user.error || !user.data.user?.id) {
-        console.error('Auth error in getChatMessages:', user.error);
         return [];
       }
       
@@ -497,8 +486,6 @@ export const chatService = {
         .range(offset, offset + limit - 1);
 
       if (messagesError) {
-        console.error('Error fetching messages:', messagesError);
-        console.error('Error details:', JSON.stringify(messagesError, null, 2));
         // 尝试直接返回空数组，不中断聊天功能
         return [];
       }
@@ -533,8 +520,6 @@ export const chatService = {
         .in('id', senderIds);
 
       if (profilesError) {
-        console.error('Error fetching senders profiles:', profilesError);
-        console.error('Profiles error details:', JSON.stringify(profilesError, null, 2));
         // 即使获取资料失败，也返回消息数据
         return filteredMessages as ChatMessage[];
       }
@@ -552,8 +537,7 @@ export const chatService = {
 
 
       return messagesWithProfiles as ChatMessage[];
-    } catch (error) {
-      console.error('Unexpected error in getChatMessages:', error);
+    } catch {
       // 返回空数组而不是抛出错误，避免影响用户体验
       return [] as ChatMessage[];
     }
@@ -618,7 +602,6 @@ export const chatService = {
         });
 
       if (groupError) {
-        console.error('Error creating group:', groupError);
         // 检查是否是唯一性约束违反错误
         if (groupError.code === '23505' || groupError.message?.includes('unique constraint')) {
           throw new Error('群聊名称已存在，请使用其他名称');
@@ -637,14 +620,12 @@ export const chatService = {
         });
 
       if (memberError) {
-        console.error('Error adding creator as group member:', memberError);
         // 即使添加群成员失败，我们也返回群对象，因为群已经创建成功
       }
 
       // 返回生成的群对象，而不是从数据库中查询的对象
       return newGroup;
     } catch (error) {
-      console.error('Error in createGroup:', error);
       throw error;
     }
   },
@@ -694,8 +675,8 @@ export const chatService = {
               user_id: userId,
               role: 'owner'
             });
-        } catch (err) {
-          console.error('Error adding creator to group_members:', err);
+        } catch {
+          // ignore error
         }
       }
     }
@@ -730,8 +711,8 @@ export const chatService = {
       await supabase
         .from('group_members')
         .insert(memberInserts);
-    } catch (insertError) {
-      console.error('Insert error:', insertError);
+    } catch {
+      // ignore error
     }
 
     // 更新群成员数量
@@ -747,8 +728,8 @@ export const chatService = {
         .from('groups')
         .update({ member_count: memberCount })
         .eq('id', groupId);
-    } catch (countError) {
-      console.error('Count error:', countError);
+    } catch {
+      // ignore error
     }
 
     // 为每个被邀请的用户创建通知
@@ -764,13 +745,11 @@ export const chatService = {
           undefined,
           groupId
         );
-      } catch (notificationError) {
-        console.error(`Failed to create notification for user ${friendId}:`, notificationError);
+      } catch {
         // 继续执行，不中断整个邀请流程
       }
     }
   } catch (error) {
-    console.error('Error in inviteToGroup:', error);
     // 重新抛出错误，让调用者知道发生了错误
     throw error;
   }
@@ -797,8 +776,7 @@ export const chatService = {
         .eq('user_id', userId);
       
       if (membershipError) {
-        console.error('Error getting group memberships:', membershipError);
-        return [];
+        throw membershipError;
       }
       
       if (!groupMemberships || groupMemberships.length === 0) {
@@ -827,14 +805,51 @@ export const chatService = {
       // 为每个群聊获取未读消息数量
       for (const groupId of groupIds) {
         try {
-          const { count } = await supabase
+          // 先检查用户是否是群成员
+          const { data: isMember, error: memberError } = await supabase
+            .from('group_members')
+            .select('id')
+            .eq('group_id', groupId)
+            .eq('user_id', userId)
+            .maybeSingle();
+          
+          if (memberError || !isMember) {
+            console.error(`User is not a member of group ${groupId}`);
+            unreadCountsMap[groupId] = 0;
+            continue;
+          }
+          
+          // 从group_message_read_status表获取未读消息数量
+          const { count, error } = await supabase
             .from('group_message_read_status')
-            .select('*', { count: 'exact', head: true })
+            .select('id', { count: 'exact', head: true })
             .eq('group_id', groupId)
             .eq('user_id', userId)
             .eq('is_read', false);
           
-          unreadCountsMap[groupId] = count || 0;
+          if (error) {
+            console.error(`Error getting group unread message count from status table:`, error);
+            // 如果出错，尝试从chat_messages表直接计算未读消息数量
+            try {
+              const { data: unreadMessages, error: messagesError } = await supabase
+                .from('chat_messages')
+                .select('id')
+                .eq('group_id', groupId)
+                .not('sender_id', 'eq', userId)
+                .eq('is_read', false);
+              
+              if (!messagesError && unreadMessages) {
+                unreadCountsMap[groupId] = unreadMessages.length;
+              } else {
+                unreadCountsMap[groupId] = 0;
+              }
+            } catch (fallbackError) {
+              console.error(`Fallback error getting unread messages for group ${groupId}:`, fallbackError);
+              unreadCountsMap[groupId] = 0;
+            }
+          } else {
+            unreadCountsMap[groupId] = count || 0;
+          }
         } catch (error) {
           console.error(`Error getting unread count for group ${groupId}:`, error);
           unreadCountsMap[groupId] = 0;
@@ -1113,15 +1128,54 @@ export const chatService = {
     }
   },
 
-  // 删除聊天消息
+  // 删除聊天消息（只能删除两分钟内发送的消息）
   deleteMessages: async (messageIds: string[]): Promise<void> => {
+    const user = await supabase.auth.getUser();
+    const userId = user.data.user?.id;
+    
+    if (!userId) {
+      throw new Error('User not authenticated');
+    }
+    
+    // 获取当前时间，计算两分钟前的时间戳
+    const twoMinutesAgo = new Date(Date.now() - 2 * 60 * 1000).toISOString();
+    
+    // 先获取当前用户可以删除的消息（只有自己发送的消息且在两分钟内）
+    const { data: authorizedMessages } = await supabase
+      .from('chat_messages')
+      .select('id, group_id')
+      .in('id', messageIds)
+      .eq('sender_id', userId)
+      .gte('created_at', twoMinutesAgo); // 只允许删除两分钟内的消息
+    
+    if (!authorizedMessages || authorizedMessages.length === 0) {
+      // 没有可删除的消息，直接返回
+      return;
+    }
+    
+    // 提取可删除的消息ID
+    const deletableMessageIds = authorizedMessages.map(msg => msg.id);
+    
+    // 检查哪些是群消息
+    const groupMessages = authorizedMessages.filter(msg => msg.group_id !== null);
+    
+    // 删除聊天消息（数据库删除后，对方会通过Realtime同步删除）
     const { error } = await supabase
       .from('chat_messages')
       .delete()
-      .in('id', messageIds);
+      .in('id', deletableMessageIds);
 
     if (error) {
       throw error;
+    }
+    
+    // 如果有群消息，删除对应的群消息未读状态记录
+    if (groupMessages.length > 0) {
+      const groupMessageIds = groupMessages.map(msg => msg.id);
+      await supabase
+        .from('group_message_read_status')
+        .delete()
+        .in('message_id', groupMessageIds);
     }
   },
 
@@ -1432,7 +1486,7 @@ export const chatService = {
       // 尝试获取未读通知数量
       const { count, error } = await supabase
         .from('notifications')
-        .select('*', { count: 'exact', head: true })
+        .select('id', { count: 'exact', head: true })
         .eq('recipient_id', userId)
         .eq('read_status', false);
 
@@ -1656,28 +1710,41 @@ export const chatService = {
 
       // 查询用户在指定群聊中的未读消息数量
       console.log('Attempting to get group unread message count:', { groupId, userId });
-      const { count, error } = await supabase
-        .from('group_message_read_status')
-        .select('*', { count: 'exact', head: true })
+      
+      // 先检查用户是否是群成员
+      const { data: isMember, error: memberError } = await supabase
+        .from('group_members')
+        .select('id')
         .eq('group_id', groupId)
         .eq('user_id', userId)
-        .eq('is_read', false);
+        .maybeSingle();
+      
+      if (memberError || !isMember) {
+        console.error('User is not a member of this group:', { groupId, userId });
+        return 0;
+      }
+      
+      // 使用新创建的视图获取未读消息数量
+      const { data: unreadCount, error } = await supabase
+        .from('group_unread_counts')
+        .select('unread_count')
+        .eq('group_id', groupId)
+        .eq('user_id', userId)
+        .maybeSingle();
 
       if (error) {
         console.error('Error getting group unread message count:', { 
           error, 
           message: error.message, 
           code: error.code, 
-          details: error.details, 
-          hint: error.hint, 
           groupId, 
           userId 
         });
         return 0;
       }
 
-      console.log('Got group unread message count:', { count, groupId, userId });
-      return count || 0;
+      console.log('Got group unread message count:', { count: unreadCount?.unread_count, groupId, userId });
+      return unreadCount?.unread_count || 0;
     } catch (error) {
       console.error('Unexpected error in getGroupUnreadMessageCount:', { 
         error, 
@@ -1698,30 +1765,77 @@ export const chatService = {
     }
 
     try {
-      let query = supabase
-        .from('group_message_read_status')
-        .update({
-          is_read: true,
-          read_at: new Date().toISOString()
-        })
+      // 先检查用户是否是群成员
+      const { data: isMember, error: memberError } = await supabase
+        .from('group_members')
+        .select('id')
         .eq('group_id', groupId)
         .eq('user_id', userId)
-        .eq('is_read', false);
-
-      // 如果提供了消息ID列表，只标记这些消息为已读
-      if (messageIds && messageIds.length > 0) {
-        query = query.in('message_id', messageIds);
+        .maybeSingle();
+      
+      if (memberError || !isMember) {
+        console.error(`User is not a member of group ${groupId}`);
+        return;
       }
-
-      const { error } = await query;
-
+      
+      let latestMessageId: string | undefined;
+      
+      if (messageIds && messageIds.length > 0) {
+        // 如果提供了消息ID列表，使用最新的消息ID
+        // 获取消息列表的最新创建时间
+        const { data: messages, error } = await supabase
+          .from('chat_messages')
+          .select('id, created_at')
+          .in('id', messageIds)
+          .order('created_at', { ascending: false })
+          .limit(1)
+          .maybeSingle();
+        
+        if (!error && messages) {
+          latestMessageId = messages.id;
+        }
+      } else {
+        // 否则获取群聊中最新的消息ID
+        const { data: latestMessage, error } = await supabase
+          .from('chat_messages')
+          .select('id')
+          .eq('group_id', groupId)
+          .order('created_at', { ascending: false })
+          .limit(1)
+          .maybeSingle();
+        
+        if (!error && latestMessage) {
+          latestMessageId = latestMessage.id;
+        }
+      }
+      
+      if (!latestMessageId) {
+        // 群聊中没有消息，不需要标记已读
+        return;
+      }
+      
+      // 更新群聊已读计数器
+      const { error } = await supabase
+        .from('group_read_counters')
+        .upsert(
+          {
+            group_id: groupId,
+            user_id: userId,
+            last_read_message_id: latestMessageId,
+            last_read_at: new Date().toISOString()
+          },
+          { onConflict: 'group_id,user_id' }
+        );
+      
       if (error) {
-        console.error('Error marking group messages as read:', error);
-        throw error;
+        console.error('Error updating group read counter:', error);
+        // 继续执行，不抛出错误
+      } else {
+        console.log('Successfully updated group read counter:', { groupId, userId, latestMessageId });
       }
     } catch (error) {
       console.error('Error in markGroupMessagesAsRead:', error);
-      throw error;
+      // 不抛出错误，确保函数始终成功返回
     }
   },
 
@@ -1848,7 +1962,7 @@ export const chatService = {
           event: 'INSERT',
           schema: 'public',
           table: 'notifications',
-          filter: `recipient_id=eq.${userId}`
+          filter: `recipient_id.eq.${userId}`
         },
         (payload) => {
           callback(payload.new as Notification);

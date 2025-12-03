@@ -19,14 +19,14 @@ export interface ProfileUpdateData {
 
 export const profileService = {
   // Get current user's profile
-  getCurrentProfile: async (): Promise<Profile | null> => {
+  getCurrentProfile: async (): Promise<Profile> => {
     // Get current user first
     const userResult = await supabase.auth.getUser();
     const user = userResult.data.user;
     const userId = user?.id;
     
-    if (!userId || !user?.email) {
-      return null;
+    if (!userId) {
+      throw new Error('User not authenticated');
     }
     
     // Try to get existing profile
@@ -40,8 +40,31 @@ export const profileService = {
       throw error;
     }
     
-    // If profile doesn't exist, return null instead of creating one
-    return data as Profile | null;
+    // If profile exists, return it
+    if (data) {
+      return data as Profile;
+    }
+    
+    // If profile doesn't exist, create a default one
+    const defaultUsername = user?.email?.split('@')[0] || `user_${userId.substring(0, 8)}`;
+    const defaultDisplayName = user?.email?.split('@')[0] || `User ${userId.substring(0, 8)}`;
+    
+    const { data: newProfile, error: createError } = await supabase
+      .from('profiles')
+      .insert({
+        id: userId,
+        username: defaultUsername,
+        display_name: defaultDisplayName,
+        avatar_url: undefined
+      })
+      .select('*')
+      .single();
+    
+    if (createError) {
+      throw createError;
+    }
+    
+    return newProfile as Profile;
   },
 
   // Get a user's profile by ID

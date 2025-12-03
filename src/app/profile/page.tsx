@@ -300,7 +300,7 @@ const ProfilePage: React.FC = () => {
       <div className="absolute top-20 left-10 w-72 h-72 bg-purple-300/20 rounded-full mix-blend-multiply filter blur-3xl opacity-50 animate-blob dark:bg-purple-900/20"></div>
       <div className="absolute bottom-20 right-10 w-80 h-80 bg-blue-300/20 rounded-full mix-blend-multiply filter blur-3xl opacity-50 animate-blob animation-delay-2000 dark:bg-blue-900/20"></div>
 
-      <main className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-8 relative z-10">
+      <main className="w-full max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-8 relative z-10">
         <div className="text-center mb-10 animate-fade-in">
           <h1 className="text-4xl font-bold text-gray-900 dark:text-white mb-3 flex items-center justify-center gap-3">
             <span className="text-4xl">👤</span> 个人资料

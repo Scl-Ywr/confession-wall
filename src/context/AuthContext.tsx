@@ -24,11 +24,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   // 更新用户在线状态的辅助函数
   const updateOnlineStatus = async (userId: string, status: 'online' | 'offline' | 'away') => {
     try {
-      // 检查当前状态中是否还有用户，如果没有则跳过更新
-      if (!state.user) {
-        return;
-      }
-      
+      // 移除对state.user的依赖，确保即使用户已登出也能更新状态
       const { error } = await supabase
         .from('profiles')
         .update({
@@ -36,18 +32,23 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
           last_seen: new Date().toISOString()
         })
         .eq('id', userId);
-      if (error) {
+      if (error && Object.keys(error).length > 0) {
         console.error('Error updating online status:', error);
       }
     } catch (error) {
       // 忽略网络请求错误，例如用户已离线或会话过期
-      console.error('Unexpected error updating online status:', error);
+      const errorObj = error as Error;
+      if (errorObj.message) {
+        console.error('Unexpected error updating online status:', error);
+      }
     }
   };
 
   useEffect(() => {
     // 跟踪认证检查是否已完成
     let isAuthChecked = false;
+    // 保存当前登录用户的ID到闭包变量，用于登出时更新状态
+    let currentUserId: string | null = null;
     
     // Check if user is already logged in
     const checkUser = async () => {
@@ -56,18 +57,20 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         if (user) {
           // 用户已登录，设置在线状态
           await updateOnlineStatus(user.id, 'online');
+          // 保存userId到闭包变量
+          currentUserId = user.id;
         }
         isAuthChecked = true;
-        setState(prev => ({ 
-          ...prev, 
+        setState(prev => ({
+          ...prev,
           user: user ? {
             id: user.id,
             email: user.email || '',
             email_confirmed_at: user.email_confirmed_at,
             created_at: user.created_at,
             updated_at: user.updated_at
-          } as User : null, 
-          loading: false 
+          } as User : null,
+          loading: false
         }));
       } catch (error) {
         console.error('Error checking user:', error);
@@ -83,11 +86,15 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       if (session?.user) {
         // 用户登录或会话恢复，设置在线状态
         updateOnlineStatus(session.user.id, 'online');
+        // 保存userId到闭包变量
+        currentUserId = session.user.id;
       } else if (event === 'SIGNED_OUT') {
         // 用户主动退出登录，设置离线状态
-        const userId = state.user?.id;
-        if (userId) {
-          updateOnlineStatus(userId, 'offline');
+        // 使用闭包变量中的userId，而不是state.user
+        if (currentUserId) {
+          updateOnlineStatus(currentUserId, 'offline');
+          // 清空闭包变量
+          currentUserId = null;
         }
       }
       
@@ -110,27 +117,34 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
     // 监听页面关闭或刷新事件，设置离线状态
     const handleBeforeUnload = () => {
-      const userId = state.user?.id;
-      if (userId) {
+      // 使用闭包变量中的userId
+      if (currentUserId) {
         // 直接调用updateOnlineStatus函数
-        updateOnlineStatus(userId, 'offline');
+        updateOnlineStatus(currentUserId, 'offline');
       }
     };
 
     // 监听页面可见性变化，当页面隐藏时设置为离开，显示时设置为在线
     const handleVisibilityChange = async () => {
-      const userId = state.user?.id;
-      if (userId) {
+      // 使用闭包变量中的userId
+      if (currentUserId) {
         const status = document.hidden ? 'away' : 'online';
-        await updateOnlineStatus(userId, status);
+        await updateOnlineStatus(currentUserId, status);
       }
     };
 
     // 添加心跳机制，定期更新在线状态
+    // 只有当用户实际登录时才运行心跳机制
     const heartbeatInterval = setInterval(async () => {
-      const userId = state.user?.id;
-      if (userId) {
-        await updateOnlineStatus(userId, 'online');
+      // 使用闭包变量中的userId
+      if (currentUserId) {
+        try {
+          // 直接更新在线状态，不获取最新的user对象，避免user对象频繁变化
+          await updateOnlineStatus(currentUserId, 'online');
+        } catch (error) {
+          // 忽略心跳更新失败，这可能是网络问题或用户已离线
+          // 不要在catch块中再次调用updateOnlineStatus，避免潜在的无限循环
+        }
       }
     }, 30000); // 每30秒发送一次心跳
 
@@ -143,12 +157,12 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       document.removeEventListener('visibilitychange', handleVisibilityChange);
       clearInterval(heartbeatInterval);
       // 组件卸载时也设置为离线
-      const userId = state.user?.id;
-      if (userId) {
-        updateOnlineStatus(userId, 'offline');
+      // 使用闭包变量中的userId
+      if (currentUserId) {
+        updateOnlineStatus(currentUserId, 'offline');
       }
     };
-  }, [state.user?.id]);
+  }, []);
 
   const register = async (email: string, password: string) => {
     setState(prev => ({ ...prev, loading: true, error: null }));
@@ -247,6 +261,12 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   const logout = async () => {
     setState(prev => ({ ...prev, loading: true, error: null }));
     try {
+      // 在登出前手动更新状态为离线
+      const userId = state.user?.id;
+      if (userId) {
+        await updateOnlineStatus(userId, 'offline');
+      }
+      
       const { error } = await supabase.auth.signOut();
 
       if (error) {

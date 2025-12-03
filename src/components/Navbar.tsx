@@ -127,9 +127,9 @@ const Navbar: React.FC = () => {
         const { data: groupUnreadMessages, error: groupError } = await supabase
           .from('group_message_read_status')
           .select('id')
-          .in('group_id', groupIds)
           .eq('user_id', user.id)
-          .eq('is_read', false);
+          .eq('is_read', false)
+          .in('group_id', groupIds);
         
         if (groupError) {
           console.error('Error fetching group unread messages:', groupError);
