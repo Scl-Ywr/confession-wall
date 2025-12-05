@@ -189,26 +189,42 @@ const GroupChatPage = ({ params }: { params: Promise<{ groupId: string }> }) => 
       }
     );
 
-    // 监听群成员在线状态变化 - 不使用groupMembers变量，避免stale closure
+    // 监听群成员在线状态变化
     groupChannel.on(
       'postgres_changes',
       {
         event: 'UPDATE',
         schema: 'public',
-        table: 'profiles'
+        table: 'profiles',
+        filter: `online_status=in.('online','offline','away')` // 只监听在线状态变化
       },
       async (payload) => {
         try {
-          // 检查更新的用户是否是群成员
-          const membersData = await chatService.getGroupMembers(groupId);
-          const isGroupMember = membersData.some(member => member.user_id === payload.new.id);
-          
-          if (isGroupMember) {
-            // 刷新群成员列表，获取最新的在线状态
-            setGroupMembers(membersData);
-          }
-        } catch {
-          // ignore error
+          // 直接更新本地状态，避免重新获取整个成员列表
+          setGroupMembers(prevMembers => {
+            // 检查更新的用户是否是群成员
+            const isGroupMember = prevMembers.some(member => member.user_id === payload.new.id);
+            
+            if (isGroupMember) {
+              // 只更新变化的成员信息
+              return prevMembers.map(member => {
+                if (member.user_id === payload.new.id && member.user_profile) {
+                  return {
+                    ...member,
+                    user_profile: {
+                      ...member.user_profile,
+                      online_status: payload.new.online_status,
+                      last_seen: payload.new.last_seen
+                    }
+                  };
+                }
+                return member;
+              });
+            }
+            return prevMembers;
+          });
+        } catch (error) {
+          console.error('Error updating member online status:', error);
         }
       }
     );
@@ -951,7 +967,7 @@ const GroupChatPage = ({ params }: { params: Promise<{ groupId: string }> }) => 
               </div>
             ) : (
               <div className="space-y-4">
-                {messages.map((message) => {
+                {messages.map((message, index) => {
                   const isCurrentUser = message.sender_id === user?.id;
                   // 获取发送者信息
                   const senderInfo = message.sender_profile;
@@ -969,11 +985,23 @@ const GroupChatPage = ({ params }: { params: Promise<{ groupId: string }> }) => 
                   
                   const senderInitial = (senderName.charAt(0) || message.sender_id.charAt(0)).toUpperCase();
                   
+                  // 日期分隔逻辑
+                  const currentDate = new Date(message.created_at).toISOString().split('T')[0];
+                  const showDateSeparator = index === 0 || new Date(messages[index - 1].created_at).toISOString().split('T')[0] !== currentDate;
+                  
                   return (
-                    <div
-                      key={message.id}
-                      className={`flex ${isCurrentUser ? 'justify-end' : 'justify-start'} mb-4`}
-                    >
+                    <div key={message.id}>
+                      {/* 日期分隔栏 */}
+                      {showDateSeparator && (
+                        <div className="flex justify-center my-4">
+                          <div className="bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 text-xs px-4 py-1 rounded-full">
+                            {currentDate}
+                          </div>
+                        </div>
+                      )}
+                      <div
+                        className={`flex ${isCurrentUser ? 'justify-end' : 'justify-start'} mb-4`}
+                      >
                       {/* 非当前用户消息 */}
                       {!isCurrentUser && (
                         <div className="flex items-start gap-2 max-w-[90%] sm:max-w-[80%]">
@@ -1011,7 +1039,7 @@ const GroupChatPage = ({ params }: { params: Promise<{ groupId: string }> }) => 
                                 {/* 非文本消息单独一行显示 */}
                                 {message.type !== 'text' && (
                                   <div className="w-full">
-                                    <MultimediaMessage message={message} isCurrentUser={isCurrentUser} />
+                                    <MultimediaMessage message={message} />
                                   </div>
                                 )}
                                 
@@ -1022,9 +1050,11 @@ const GroupChatPage = ({ params }: { params: Promise<{ groupId: string }> }) => 
                                       {message.content}
                                     </p>
                                   )}
-                                  <span className="text-xs opacity-70">
-                                    {new Date(message.created_at).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })}
-                                  </span>
+                                  <div className="flex flex-col items-end">
+                                    <span className="text-xs opacity-70">
+                                      {new Date(message.created_at).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })}
+                                    </span>
+                                  </div>
                                 </div>
                               </div>
                             </div>
@@ -1044,7 +1074,7 @@ const GroupChatPage = ({ params }: { params: Promise<{ groupId: string }> }) => 
                                 {/* 非文本消息单独一行显示 */}
                                 {message.type !== 'text' && (
                                   <div className="w-full">
-                                    <MultimediaMessage message={message} isCurrentUser={isCurrentUser} />
+                                    <MultimediaMessage message={message} />
                                   </div>
                                 )}
                                 
@@ -1055,9 +1085,11 @@ const GroupChatPage = ({ params }: { params: Promise<{ groupId: string }> }) => 
                                       {message.content}
                                     </p>
                                   )}
-                                  <span className="text-xs opacity-70">
-                                    {new Date(message.created_at).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })}
-                                  </span>
+                                  <div className="flex flex-col items-end">
+                                    <span className="text-xs opacity-70">
+                                      {new Date(message.created_at).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })}
+                                    </span>
+                                  </div>
                                 </div>
                               </div>
                                 
@@ -1095,8 +1127,9 @@ const GroupChatPage = ({ params }: { params: Promise<{ groupId: string }> }) => 
                         </div>
                       )}
                     </div>
-                  );
-                })}
+                  </div>
+                );
+              })}
 
                 <div ref={messagesEndRef} />
               </div>

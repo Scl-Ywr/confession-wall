@@ -8,11 +8,10 @@ import { Search } from 'lucide-react';
 import Image from 'next/image';
 
 interface UserSearchProps {
-  onUserSelect?: (user: UserSearchResult) => void;
   currentUserId: string;
 }
 
-export function UserSearch({ onUserSelect, currentUserId }: UserSearchProps) {
+export function UserSearch({ currentUserId }: UserSearchProps) {
   const [keyword, setKeyword] = useState('');
   const [results, setResults] = useState<UserSearchResult[]>([]);
   const [loading, setLoading] = useState(false);

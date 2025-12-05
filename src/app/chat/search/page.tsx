@@ -1,15 +1,13 @@
 'use client';
 
-import React, { useState } from 'react';
+import React from 'react';
 import { useAuth } from '@/context/AuthContext';
 import { UserSearch } from '@/components/UserSearch';
-import { Profile } from '@/types/chat';
 import Navbar from '@/components/Navbar';
 import { UserSearchIcon, MessageCircleIcon } from 'lucide-react';
 
 const UserSearchPage = () => {
   const { user } = useAuth();
-  const [selectedUser, setSelectedUser] = useState<Profile | null>(null);
 
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
@@ -31,7 +29,6 @@ const UserSearchPage = () => {
 
         <div className="glass-card rounded-2xl p-6">
           <UserSearch 
-            onUserSelect={setSelectedUser} 
             currentUserId={user?.id || ''}
           />
         </div>

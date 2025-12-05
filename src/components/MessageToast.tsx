@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useEffect } from 'react';
 
 interface MessageToastProps {
   message: string;
@@ -17,12 +17,6 @@ const MessageToast = ({ message, type = 'info', duration = 3000, onClose }: Mess
 
     return () => clearTimeout(timer);
   }, [duration, onClose]);
-
-  const bgColor = {
-    success: 'bg-green-500',
-    error: 'bg-red-500',
-    info: 'bg-blue-500'
-  }[type];
 
   const icon = {
     success: '✅',

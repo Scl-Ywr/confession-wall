@@ -85,3 +85,105 @@ body {
 ::-webkit-scrollbar-thumb:hover {
   background: rgba(156, 163, 175, 0.8);
 }
+
+/* Vidstack Player Theme Overrides */
+/* 基础颜色变量 */
+.vds-player {
+  --media-brand: #ec4899; /* pink-500 matching the theme */
+  --media-focus-ring: 0 0 0 3px rgba(236, 72, 153, 0.5);
+  --media-tooltip-bg: rgba(0, 0, 0, 0.8);
+  --media-tooltip-text: white;
+  --media-font-family: inherit;
+}
+
+/* 玻璃拟态控制栏背景 */
+.vds-controls {
+  padding: 1rem !important;
+}
+
+.vds-controls-group {
+  background-color: rgba(0, 0, 0, 0.4) !important;
+  backdrop-filter: blur(12px) !important;
+  -webkit-backdrop-filter: blur(12px) !important;
+  border: 1px solid rgba(255, 255, 255, 0.1) !important;
+  border-radius: 1rem !important;
+  padding: 0.5rem 1rem !important;
+  margin-bottom: 1rem !important;
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06) !important;
+  transition: all 0.3s ease !important;
+}
+
+.vds-controls-group:hover {
+  background-color: rgba(0, 0, 0, 0.6) !important;
+  border-color: rgba(255, 255, 255, 0.2) !important;
+}
+
+/* 进度条优化 */
+.vds-slider-track {
+  height: 6px !important;
+  border-radius: 9999px !important;
+  background-color: rgba(255, 255, 255, 0.2) !important;
+}
+
+.vds-slider-track-fill {
+  background-color: var(--media-brand) !important;
+  border-radius: 9999px !important;
+}
+
+.vds-slider-thumb {
+  width: 16px !important;
+  height: 16px !important;
+  border: 2px solid white !important;
+  background-color: var(--media-brand) !important;
+  box-shadow: 0 0 10px rgba(236, 72, 153, 0.5) !important;
+  transition: transform 0.2s ease !important;
+}
+
+.vds-slider:hover .vds-slider-thumb {
+  transform: scale(1.2) !important;
+}
+
+/* 按钮优化 */
+.vds-button {
+  transition: all 0.2s ease !important;
+  color: rgba(255, 255, 255, 0.9) !important;
+}
+
+.vds-button:hover {
+  color: white !important;
+  transform: scale(1.1) !important;
+  background-color: rgba(255, 255, 255, 0.1) !important;
+}
+
+.vds-button:active {
+  transform: scale(0.95) !important;
+}
+
+/* 播放按钮特殊样式 */
+.vds-play-button {
+  color: white !important;
+}
+
+/* 菜单样式优化 */
+.vds-menu {
+  background-color: rgba(20, 20, 20, 0.95) !important;
+  backdrop-filter: blur(16px) !important;
+  border: 1px solid rgba(255, 255, 255, 0.1) !important;
+  border-radius: 0.75rem !important;
+  padding: 0.5rem !important;
+  box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.3) !important;
+}
+
+.vds-menu-item {
+  border-radius: 0.5rem !important;
+  transition: background-color 0.2s ease !important;
+}
+
+.vds-menu-item:hover {
+  background-color: rgba(255, 255, 255, 0.1) !important;
+}
+
+/* 隐藏默认的背景渐变，使用我们自定义的玻璃拟态 */
+.vds-video-layout::after {
+  background: none !important;
+}

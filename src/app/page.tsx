@@ -11,11 +11,12 @@ import ConfessionCard from '@/components/ConfessionCard';
 import CreateConfessionForm from '@/components/CreateConfessionForm';
 import { CustomSelect } from '@/components/CustomSelect';
 import { useQuery, useInfiniteQuery, useQueryClient } from '@tanstack/react-query';
+import LoginPrompt from '@/components/LoginPrompt';
 
 export default function Home() {
   const router = useRouter();
   const { user } = useAuth();
-  const { toggleLike, likeLoading } = useLike();
+  const { toggleLike, likeLoading, showLoginPrompt } = useLike();
   const [searchKeyword, setSearchKeyword] = useState('');
   const [searchType, setSearchType] = useState<'content' | 'username'>('content');
   const queryClient = useQueryClient();
@@ -45,12 +46,9 @@ export default function Home() {
       
       // 执行实际的点赞/取消点赞操作
       await toggleLike(confessionId);
-      
-      // 刷新数据以确保准确性
-      await queryClient.invalidateQueries({ queryKey: ['confessions'] });
     } catch (error) {
       console.error('Failed to toggle like:', error);
-      // 刷新数据以恢复正确状态
+      // 出错时刷新数据以恢复正确状态
       await queryClient.invalidateQueries({ queryKey: ['confessions'] });
     }
   };
@@ -156,6 +154,9 @@ export default function Home() {
   return (
     <div className="min-h-screen pb-20">
       <Navbar />
+      
+      {/* 登录提示组件 */}
+      {showLoginPrompt && <LoginPrompt />}
       
       <main className="w-full max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         {/* Hero Section */}

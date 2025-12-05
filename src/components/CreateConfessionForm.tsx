@@ -6,6 +6,7 @@ import { ConfessionFormData } from '@/types/confession';
 import { confessionService } from '@/services/confessionService';
 import { PhotoIcon, PaperAirplaneIcon, XMarkIcon, FilmIcon } from '@heroicons/react/24/outline';
 import VideoUploader from './VideoUploader';
+import VideoPlayer from './VideoPlayer';
 
 interface CreateConfessionFormProps {
   onSuccess: () => void;
@@ -19,6 +20,7 @@ export default function CreateConfessionForm({ onSuccess, user }: CreateConfessi
     images: [],
     videoUrls: [],
   });
+  const [videoPosters, setVideoPosters] = useState<Record<string, string>>({});
   const [selectedImages, setSelectedImages] = useState<File[]>([]);
   const [previewUrls, setPreviewUrls] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
@@ -26,6 +28,7 @@ export default function CreateConfessionForm({ onSuccess, user }: CreateConfessi
   const [success, setSuccess] = useState(false);
   const [showVideoUploader, setShowVideoUploader] = useState(false);
   const [videoUrl, setVideoUrl] = useState<string | null>(null);
+  const [showConfirmModal, setShowConfirmModal] = useState(false);
 
   const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
@@ -53,11 +56,49 @@ export default function CreateConfessionForm({ onSuccess, user }: CreateConfessi
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!user) return;
+    
+    // 清除之前的错误信息
+    setError(null);
+    
+    // 检查是否有文字内容
     if (!formData.content.trim()) {
-      setError('请写点什么吧！');
+      // 没有文字内容，检查是否有视频
+      if (formData.videoUrls && formData.videoUrls.length > 0) {
+        // 有视频，显示确认提示
+        setShowConfirmModal(true);
+      } else {
+        // 没有视频，直接提示错误
+        setError('请先输入文字内容再进行发布');
+      }
       return;
     }
 
+    setLoading(true);
+    setSuccess(false);
+
+    try {
+      await confessionService.createConfession(formData);
+      // 重置表单数据，包括videoUrls
+      setFormData({ content: '', is_anonymous: false, images: [], videoUrls: [] });
+      setSelectedImages([]);
+      previewUrls.forEach(url => URL.revokeObjectURL(url));
+      setPreviewUrls([]);
+      // 重置视频相关状态
+      setVideoUrl(null);
+      setShowVideoUploader(false);
+      setSuccess(true);
+      onSuccess();
+      setTimeout(() => setSuccess(false), 3000);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : '发布表白失败');
+    } finally {
+      setLoading(false);
+    }
+  };
+  
+  // 处理直接发布
+  const handleDirectPublish = async () => {
+    setShowConfirmModal(false);
     setLoading(true);
     setError(null);
     setSuccess(false);
@@ -79,6 +120,16 @@ export default function CreateConfessionForm({ onSuccess, user }: CreateConfessi
       setError(err instanceof Error ? err.message : '发布表白失败');
     } finally {
       setLoading(false);
+    }
+  };
+  
+  // 处理输入文字后发布
+  const handleAddTextPublish = () => {
+    setShowConfirmModal(false);
+    // 焦点设置到文本框
+    const textarea = document.querySelector('textarea') as HTMLTextAreaElement;
+    if (textarea) {
+      textarea.focus();
     }
   };
 
@@ -160,8 +211,7 @@ export default function CreateConfessionForm({ onSuccess, user }: CreateConfessi
         {showVideoUploader && (
           <div className="mt-6 animate-fade-in">
             <VideoUploader 
-              user={user}
-              onUploadSuccess={(videoUrl) => {
+              onUploadSuccess={(videoUrl, posterUrl) => {
                 setVideoUrl(videoUrl);
                 setShowVideoUploader(false);
                 // Add the video URL to the confession data
@@ -169,6 +219,13 @@ export default function CreateConfessionForm({ onSuccess, user }: CreateConfessi
                   ...prev,
                   videoUrls: [...(prev.videoUrls || []), videoUrl]
                 }));
+                // Store the poster URL if provided
+                if (posterUrl) {
+                  setVideoPosters(prev => ({
+                    ...prev,
+                    [videoUrl]: posterUrl
+                  }));
+                }
               }} 
             />
           </div>
@@ -178,10 +235,9 @@ export default function CreateConfessionForm({ onSuccess, user }: CreateConfessi
         {videoUrl && (
           <div className="mt-6 animate-fade-in">
             <div className="relative rounded-xl overflow-hidden shadow-lg border border-gray-200 dark:border-gray-700">
-              <video 
-                src={videoUrl} 
-                controls 
-                className="w-full max-h-64 object-cover"
+              <VideoPlayer 
+                videoUrl={videoUrl} 
+                posterUrl={videoPosters[videoUrl]}
               />
               <button
                 type="button"
@@ -192,6 +248,12 @@ export default function CreateConfessionForm({ onSuccess, user }: CreateConfessi
                     ...prev,
                     videoUrls: prev.videoUrls?.filter(url => url !== videoUrl) || []
                   }));
+                  // Remove the poster URL if it exists
+                  setVideoPosters(prev => {
+                    const newPosters = { ...prev };
+                    delete newPosters[videoUrl];
+                    return newPosters;
+                  });
                 }}
                 className="absolute top-2 right-2 bg-black/50 hover:bg-red-500 text-white p-2 rounded-full backdrop-blur-sm transition-all transform hover:scale-110"
               >
@@ -243,10 +305,10 @@ export default function CreateConfessionForm({ onSuccess, user }: CreateConfessi
           </div>
 
           <button
-            type="submit"
-            disabled={loading || !formData.content.trim()}
-            className={`w-full sm:w-auto px-8 py-3 bg-gradient-to-r from-blue-500 to-pink-500 text-white rounded-xl font-bold shadow-lg shadow-blue-500/30 hover:shadow-pink-500/50 transform hover:-translate-y-0.5 transition-all disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none flex items-center justify-center gap-2`}
-          >
+              type="submit"
+              disabled={loading}
+              className={`w-full sm:w-auto px-8 py-3 bg-gradient-to-r from-blue-500 to-pink-500 text-white rounded-xl font-bold shadow-lg shadow-blue-500/30 hover:shadow-pink-500/50 transform hover:-translate-y-0.5 transition-all disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none flex items-center justify-center gap-2`}
+            >
             {loading ? (
               <>
                 <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
@@ -275,6 +337,42 @@ export default function CreateConfessionForm({ onSuccess, user }: CreateConfessi
           </div>
         )}
       </form>
+      
+      {/* 视频发布确认提示模态框 */}
+      {showConfirmModal && (
+        <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-200 animate-fade-in">
+          <div className="bg-white dark:bg-gray-800 rounded-2xl p-8 max-w-md w-full mx-4 shadow-2xl border border-gray-200 dark:border-gray-700">
+            <div className="text-center mb-6">
+              <div className="text-4xl mb-4">🎬</div>
+              <h3 className="text-2xl font-bold text-gray-800 dark:text-white mb-2">确认发布</h3>
+              <p className="text-gray-600 dark:text-gray-300">您当前有视频但没有文字内容，您想如何发布？</p>
+            </div>
+            
+            <div className="space-y-4">
+              <button
+                onClick={handleAddTextPublish}
+                className="w-full px-6 py-3 bg-gray-100 dark:bg-gray-700 text-gray-800 dark:text-white rounded-xl font-medium hover:bg-gray-200 dark:hover:bg-gray-600 transition-all shadow-lg hover:-translate-y-0.5"
+              >
+                输入文字后发布
+              </button>
+              
+              <button
+                onClick={handleDirectPublish}
+                className="w-full px-6 py-3 bg-gradient-to-r from-blue-500 to-pink-500 text-white rounded-xl font-bold shadow-lg shadow-blue-500/30 hover:shadow-pink-500/50 transform hover:-translate-y-0.5 transition-all"
+              >
+                直接发布
+              </button>
+            </div>
+            
+            <button
+              onClick={() => setShowConfirmModal(false)}
+              className="mt-4 w-full px-6 py-2 text-gray-600 dark:text-gray-300 hover:text-gray-800 dark:hover:text-white font-medium transition-colors"
+            >
+              取消
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -194,7 +194,8 @@ export const confessionService = {
   uploadImage: async (file: File, confessionId: string): Promise<string> => {
     const fileExt = file.name.split('.').pop();
     const fileName = `${confessionId}/${Date.now()}.${fileExt}`;
-    const filePath = `confession_images/${fileName}`;
+    // 不要在filePath中包含bucket名称，因为from()已经指定了
+    const filePath = fileName;
 
     const { error: uploadError } = await supabase.storage
       .from('confession_images')

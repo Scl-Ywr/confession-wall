@@ -1,19 +1,18 @@
 'use client';
 
 import React, { useState } from 'react';
-import { Play, Pause, Volume2, X } from 'lucide-react';
+import Image from 'next/image';
+import { Play, X } from 'lucide-react';
 import { ChatMessage } from '@/types/chat';
 
 interface MultimediaMessageProps {
   message: ChatMessage;
-  isCurrentUser: boolean;
 }
 
-const MultimediaMessage: React.FC<MultimediaMessageProps> = ({ message, isCurrentUser }) => {
+const MultimediaMessage: React.FC<MultimediaMessageProps> = ({ message }) => {
   const [isPlaying, setIsPlaying] = useState(false);
   const [showControls, setShowControls] = useState(false);
   const [isEnlarged, setIsEnlarged] = useState(false);
-  const [videoControls, setVideoControls] = useState(false);
   const videoRef = React.useRef<HTMLVideoElement>(null);
   const fullscreenVideoRef = React.useRef<HTMLVideoElement>(null);
 
@@ -27,17 +26,6 @@ const MultimediaMessage: React.FC<MultimediaMessageProps> = ({ message, isCurren
       videoElement.play();
     }
     setIsPlaying(!isPlaying);
-  };
-
-  const handleFullscreenVideoPlayPause = () => {
-    const videoElement = fullscreenVideoRef.current;
-    if (!videoElement) return;
-    
-    if (videoElement.paused) {
-      videoElement.play();
-    } else {
-      videoElement.pause();
-    }
   };
 
   const handleVideoEnded = () => {
@@ -59,13 +47,15 @@ const MultimediaMessage: React.FC<MultimediaMessageProps> = ({ message, isCurren
             {/* 缩略图 */}
             <div 
               className="relative rounded-lg overflow-hidden bg-gray-100 dark:bg-gray-800 cursor-pointer transition-all duration-300 hover:shadow-lg"
-              onClick={() => setIsEnlarged(true)}
+              onClick={(e) => {
+                e.stopPropagation();
+                setIsEnlarged(true);
+              }}
             >
               <img
                 src={message.content}
                 alt="聊天图片"
                 className="max-w-full max-h-80 object-contain transition-transform duration-300 hover:scale-[1.02]"
-                style={{ width: 'auto', height: 'auto' }}
               />
             </div>
             
@@ -92,7 +82,6 @@ const MultimediaMessage: React.FC<MultimediaMessageProps> = ({ message, isCurren
                     src={message.content}
                     alt="放大的聊天图片"
                     className="object-contain max-w-full max-h-[90vh]"
-                    style={{ width: 'auto', height: 'auto' }}
                   />
                 </div>
               </div>
@@ -192,7 +181,14 @@ const MultimediaMessage: React.FC<MultimediaMessageProps> = ({ message, isCurren
                   {message.content.split('/').pop()}
                 </p>
                 <p className="text-sm text-gray-500 dark:text-gray-400">
-                  {new Date(message.created_at).toLocaleTimeString('zh-CN')}
+                  {new Date(message.created_at).toLocaleDateString('zh-CN', {
+                    year: 'numeric',
+                    month: 'long',
+                    day: 'numeric',
+                    hour: '2-digit',
+                    minute: '2-digit',
+                    second: '2-digit'
+                  }).replace(/(\d+)年(\d+)月(\d+)日/, '$1年$2月$3日')}
                 </p>
               </div>
             </div>

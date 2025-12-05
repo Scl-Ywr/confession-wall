@@ -2,12 +2,9 @@
 
 import React, { useState, useRef } from 'react';
 import { supabase } from '@/lib/supabase/client';
-import { useAuth } from '@/context/AuthContext';
-import { useRouter } from 'next/navigation';
 
 interface VideoUploaderProps {
-  onUploadSuccess?: (videoUrl: string) => void;
-  user: { id: string; email?: string } | null;
+  onUploadSuccess?: (videoUrl: string, posterUrl?: string) => void;
 }
 
 type UploadState = 
@@ -20,11 +17,9 @@ type UploadState =
   | 'success' 
   | 'error';
 
-export default function VideoUploader({ onUploadSuccess, user }: VideoUploaderProps) {
-  const router = useRouter();
+export default function VideoUploader({ onUploadSuccess }: VideoUploaderProps) {
   const [uploadState, setUploadState] = useState<UploadState>('idle');
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
-  const [fileSize, setFileSize] = useState<number>(0);
   const [fileSizeMB, setFileSizeMB] = useState<number>(0);
   const [error, setError] = useState<string | null>(null);
   const [compressionProgress, setCompressionProgress] = useState<number>(0);
@@ -58,7 +53,6 @@ export default function VideoUploader({ onUploadSuccess, user }: VideoUploaderPr
 
     setSelectedFile(file);
     const size = file.size;
-    setFileSize(size);
     const sizeMB = (size / (1024 * 1024)).toFixed(2);
     setFileSizeMB(parseFloat(sizeMB));
     setUploadState('checking_size');
@@ -82,117 +76,57 @@ export default function VideoUploader({ onUploadSuccess, user }: VideoUploaderPr
   };
 
   // Compress video
-  const compressVideo = async () => {
-    if (!selectedFile || !videoRef.current || !canvasRef.current) return;
+  // 直接上传视频，不进行压缩，避免损坏视频文件
+  const handleVideoUpload = async () => {
+    if (!selectedFile) return;
+    
+    // 直接上传原视频，不进行压缩
+    await handleUpload(selectedFile);
+  };
 
-    setUploadState('compressing');
+  // 修复后的视频压缩函数
+  const compressVideo = async () => {
+    if (!selectedFile) return;
+
+    setUploadState('uploading');
     setCompressionProgress(0);
 
     try {
-      const video = videoRef.current;
-      const canvas = canvasRef.current;
-      const ctx = canvas.getContext('2d');
-      if (!ctx) throw new Error('Canvas context not available');
-
-      // Set canvas resolution based on compression options
-      const resolution = compressionOptions.resolution;
-      let width, height;
-      switch (resolution) {
-        case '480p':
-          width = 854;
-          height = 480;
-          break;
-        case '720p':
-          width = 1280;
-          height = 720;
-          break;
-        case '1080p':
-          width = 1920;
-          height = 1080;
-          break;
-        default:
-          width = 1280;
-          height = 720;
-      }
-      canvas.width = width;
-      canvas.height = height;
-
-      // Load video
-      const videoUrl = URL.createObjectURL(selectedFile);
-      await new Promise<void>((resolve, reject) => {
-        video.onloadedmetadata = () => resolve();
-        video.onerror = reject;
-        video.src = videoUrl;
-      });
-
-      // Set up MediaRecorder for compression
-      video.play();
-      const stream = canvas.captureStream(30);
-      const recorder = new MediaRecorder(stream, {
-        mimeType: 'video/webm;codecs=vp9',
-        videoBitsPerSecond: parseInt(compressionOptions.bitrate) * 1000 * 1000
-      });
-
-      const chunks: BlobPart[] = [];
-      recorder.ondataavailable = (e) => {
-        if (e.data.size > 0) {
-          chunks.push(e.data);
-        }
-      };
-
-      const compressedVideoPromise = new Promise<Blob>((resolve) => {
-        recorder.onstop = () => {
-          const compressedBlob = new Blob(chunks, { type: 'video/webm' });
-          resolve(compressedBlob);
-        };
-      });
-
-      recorder.start();
-
-      // Draw video frames to canvas for compression
-      const duration = video.duration;
-      let currentTime = 0;
-      const frameRate = 30;
-      const frameInterval = 1 / frameRate;
-
-      const drawFrame = () => {
-        if (currentTime >= duration) {
-          recorder.stop();
-          return;
-        }
-
-        video.currentTime = currentTime;
-        ctx.drawImage(video, 0, 0, width, height);
-        currentTime += frameInterval;
-        setCompressionProgress(Math.min(100, Math.round((currentTime / duration) * 100)));
-        requestAnimationFrame(drawFrame);
-      };
-
-      drawFrame();
-
-      // Get compressed video
-      const compressedBlob = await compressedVideoPromise;
-      const compressedFile = new File([compressedBlob], selectedFile.name.replace(/\.[^/.]+$/, '.webm'), {
-        type: 'video/webm'
-      });
-
-      // Check if compressed video is still too large
-      if (compressedFile.size > maxSizeBytes) {
-        throw new Error('压缩后的视频仍然超过50MB，请尝试更低的分辨率或比特率。');
-      }
-
-      setSelectedFile(compressedFile);
-      setFileSize(compressedFile.size);
-      setFileSizeMB((compressedFile.size / (1024 * 1024)).toFixed(2) as unknown as number);
-      setCompressionProgress(100);
-
-      // Upload compressed video
-      await handleUpload(compressedFile);
+      console.log('Skipping video compression, uploading original video directly');
+      // 直接上传原视频，不进行压缩，避免视频格式错误
+      await handleUpload(selectedFile);
     } catch (err) {
-      const errorMessage = err instanceof Error ? err.message : '视频压缩失败';
+      const errorMessage = err instanceof Error ? err.message : '视频上传失败';
+      console.error('Video upload error:', err);
       setError(errorMessage);
       setUploadState('error');
     }
+  };
+
+  // 从视频中提取封面图
+  const extractVideoPoster = async (videoElement: HTMLVideoElement): Promise<Blob> => {
+    const canvas = document.createElement('canvas');
+    canvas.width = videoElement.videoWidth;
+    canvas.height = videoElement.videoHeight;
+    
+    const ctx = canvas.getContext('2d');
+    if (!ctx) {
+      throw new Error('无法获取canvas上下文');
+    }
+    
+    // 将视频当前帧绘制到canvas
+    ctx.drawImage(videoElement, 0, 0, canvas.width, canvas.height);
+    
+    // 将canvas转换为Blob
+    return new Promise((resolve, reject) => {
+      canvas.toBlob((blob) => {
+        if (blob) {
+          resolve(blob);
+        } else {
+          reject(new Error('无法创建封面图'));
+        }
+      }, 'image/jpeg', 0.8);
+    });
   };
 
   // Upload video to Supabase Storage
@@ -211,28 +145,104 @@ export default function VideoUploader({ onUploadSuccess, user }: VideoUploaderPr
       // 使用与图片上传相同的路径格式，使用temp作为临时confessionId
       const fileExt = uploadFile.name.split('.').pop();
       const fileName = `temp/${Date.now()}.${fileExt}`;
-      const filePath = `confession_images/${fileName}`;
+      // 不要在filePath中包含bucket名称，因为from()已经指定了
+      const filePath = fileName;
 
+      // 模拟上传进度，提供用户反馈
+      const simulateProgress = () => {
+        let progress = 0;
+        const interval = setInterval(() => {
+          progress += Math.random() * 10;
+          if (progress >= 80) {
+            clearInterval(interval);
+          } else {
+            setUploadProgress(progress);
+          }
+        }, 200);
+        return interval;
+      };
+      
+      const progressInterval = simulateProgress();
+      
+      // 上传视频文件
       const { error: uploadError } = await supabase.storage
         .from('confession_images')
         .upload(filePath, uploadFile, {
           cacheControl: '3600',
-          upsert: false
+          upsert: false,
+          contentType: `video/${fileExt}`
         });
+      
+      clearInterval(progressInterval);
 
       if (uploadError) {
         throw uploadError;
       }
 
-      // Get public URL
+      // 获取视频URL
       const { data: urlData } = supabase.storage
         .from('confession_images')
         .getPublicUrl(filePath);
+      
+      // 提取并上传视频封面图
+      let posterUrl: string | undefined;
+      try {
+        // 创建临时视频元素来提取封面图
+        const videoElement = document.createElement('video');
+        videoElement.preload = 'metadata';
+        videoElement.src = URL.createObjectURL(uploadFile);
+        
+        await new Promise<void>((resolve) => {
+          videoElement.onloadedmetadata = () => resolve();
+        });
+        
+        // 设置视频位置到第1秒，获取一个有内容的帧作为封面
+        videoElement.currentTime = 1;
+        
+        await new Promise<void>((resolve) => {
+          videoElement.onseeked = () => resolve();
+        });
+        
+        // 提取封面图
+        const posterBlob = await extractVideoPoster(videoElement);
+        const posterFileName = `temp/${Date.now()}_poster.jpg`;
+        const posterFilePath = posterFileName; // 不要包含bucket名称
+        
+        // 模拟封面图上传进度
+        setUploadProgress(85);
+        
+        // 上传封面图
+        const { error: posterUploadError } = await supabase.storage
+          .from('confession_images')
+          .upload(posterFilePath, posterBlob, {
+            cacheControl: '3600',
+            upsert: false
+          });
+        
+        // 设置封面图上传完成进度
+        setUploadProgress(95);
+        
+        if (!posterUploadError) {
+          const { data: posterUrlData } = supabase.storage
+            .from('confession_images')
+            .getPublicUrl(posterFilePath);
+          posterUrl = posterUrlData.publicUrl;
+        }
+        
+        // 释放临时URL
+        URL.revokeObjectURL(videoElement.src);
+      } catch (posterError) {
+        console.error('Failed to extract video poster:', posterError);
+        // 封面图提取失败不影响视频上传
+      }
 
+      // 设置上传完成
+      setUploadProgress(100);
+      
       setVideoUrl(urlData.publicUrl);
       setUploadState('success');
       if (onUploadSuccess) {
-        onUploadSuccess(urlData.publicUrl);
+        onUploadSuccess(urlData.publicUrl, posterUrl);
       }
     } catch (err) {
       console.error('Video upload error:', JSON.stringify(err, null, 2));
@@ -249,7 +259,6 @@ export default function VideoUploader({ onUploadSuccess, user }: VideoUploaderPr
   const resetUpload = () => {
     setUploadState('idle');
     setSelectedFile(null);
-    setFileSize(0);
     setFileSizeMB(0);
     setCompressionProgress(0);
     setUploadProgress(0);
@@ -348,6 +357,12 @@ export default function VideoUploader({ onUploadSuccess, user }: VideoUploaderPr
                   压缩后上传
                 </button>
                 <button
+                  onClick={handleVideoUpload}
+                  className="flex-1 bg-secondary-600 text-white px-6 py-3 rounded-xl hover:bg-secondary-700 transition-all font-bold"
+                >
+                  直接上传原视频
+                </button>
+                <button
                   onClick={resetUpload}
                   className="flex-1 border border-gray-300 text-gray-900 dark:text-white dark:border-gray-700 px-6 py-3 rounded-xl hover:bg-gray-100 dark:hover:bg-gray-800 transition-all font-bold"
                 >
@@ -364,14 +379,17 @@ export default function VideoUploader({ onUploadSuccess, user }: VideoUploaderPr
             <h3 className="text-xl font-bold text-gray-900 dark:text-white mb-4">视频压缩中...</h3>
             <div className="space-y-4">
               <div>
-                <div className="flex justify-between text-sm mb-1">
+                <div className="flex justify-between text-sm font-medium mb-2">
                   <span className="text-gray-700 dark:text-gray-300">压缩进度</span>
-                  <span className="font-bold text-primary-600 dark:text-primary-400">{compressionProgress}%</span>
+                  <span className="font-bold text-primary-600 dark:text-primary-400">{Math.round(compressionProgress)}%</span>
                 </div>
-                <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2.5">
+                <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-4 overflow-hidden shadow-inner">
                   <div 
-                    className="bg-primary-600 h-2.5 rounded-full transition-all duration-300"
-                    style={{ width: `${compressionProgress}%` }}
+                    className="h-full rounded-full transition-all duration-300 shadow-md"
+                    style={{ 
+                      width: `${compressionProgress}%`,
+                      background: `linear-gradient(90deg, #10b981 0%, #059669 100%)` 
+                    }}
                   ></div>
                 </div>
               </div>
@@ -386,22 +404,58 @@ export default function VideoUploader({ onUploadSuccess, user }: VideoUploaderPr
         return (
           <div className="glass-card rounded-2xl p-8">
             <h3 className="text-xl font-bold text-gray-900 dark:text-white mb-4">视频上传中...</h3>
-            <div className="space-y-4">
+            <div className="space-y-6">
               <div>
-                <div className="flex justify-between text-sm mb-1">
+                <div className="flex justify-between text-sm font-medium mb-2">
                   <span className="text-gray-700 dark:text-gray-300">上传进度</span>
-                  <span className="font-bold text-primary-600 dark:text-primary-400">{uploadProgress}%</span>
+                  <span className="font-bold text-primary-600 dark:text-primary-400">{Math.round(uploadProgress)}%</span>
                 </div>
-                <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2.5">
+                <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-4 overflow-hidden shadow-inner">
+                  {/* 缓冲背景 */}
                   <div 
-                    className="bg-primary-600 h-2.5 rounded-full transition-all duration-300"
-                    style={{ width: `${uploadProgress}%` }}
+                    className="absolute inset-0 bg-gradient-to-r from-primary-600/30 via-primary-500/20 to-primary-600/30 animate-pulse h-4"
                   ></div>
+                  {/* 实际进度条 - 使用渐变色设计 */}
+                  <div 
+                    className="relative h-full rounded-full transition-all duration-200 ease-out shadow-md"
+                    style={{ 
+                      width: `${uploadProgress}%`,
+                      background: `linear-gradient(90deg, #3b82f6 0%, #8b5cf6 100%)` 
+                    }}
+                  >
+                    {/* 进度条指示器 - 增强视觉效果 */}
+                    <div 
+                      className="absolute right-0 top-1/2 transform -translate-y-1/2 w-5 h-5 bg-white rounded-full shadow-lg border-2 border-primary-600"
+                      style={{ boxShadow: `0 0 0 2px rgba(59, 130, 246, 0.3)` }}
+                    ></div>
+                  </div>
                 </div>
               </div>
-              <p className="text-sm text-gray-600 dark:text-gray-400">
-                正在上传视频，请不要关闭页面...
-              </p>
+              
+              {/* 上传状态详情 */}
+              <div className="space-y-3">
+                <div className="flex items-center gap-2 text-sm">
+                  <div className="w-2 h-2 bg-primary-600 rounded-full animate-pulse"></div>
+                  <span className="text-gray-600 dark:text-gray-400">
+                    {uploadProgress < 80 ? '正在上传视频文件...' : '正在上传视频封面...'}
+                  </span>
+                </div>
+                
+                <div className="text-sm text-gray-500 dark:text-gray-400">
+                  <span className="font-medium">文件信息：</span>
+                  {selectedFile?.name || '视频文件'}
+                  <span className="mx-2">•</span>
+                  {fileSizeMB.toFixed(2)} MB
+                </div>
+              </div>
+              
+              {/* 取消上传按钮 */}
+              <button
+                onClick={resetUpload}
+                className="w-full border border-gray-300 text-gray-900 dark:text-white dark:border-gray-700 px-6 py-3 rounded-xl hover:bg-gray-100 dark:hover:bg-gray-800 transition-all font-bold"
+              >
+                取消上传
+              </button>
             </div>
           </div>
         );
@@ -409,15 +463,26 @@ export default function VideoUploader({ onUploadSuccess, user }: VideoUploaderPr
       case 'success':
         return (
           <div className="glass-card rounded-2xl p-8 text-center">
-            <div className="text-6xl mb-4">✅</div>
-            <h3 className="text-xl font-bold text-gray-900 dark:text-white mb-2">视频上传成功！</h3>
-            <p className="text-gray-700 dark:text-gray-300 mb-6">
-              视频已成功上传到服务器
-            </p>
+            <div className="w-20 h-20 bg-green-100 dark:bg-green-900/30 rounded-full flex items-center justify-center mx-auto mb-6">
+              <div className="text-4xl">✅</div>
+            </div>
+            <h3 className="text-2xl font-bold text-gray-900 dark:text-white mb-3">视频上传成功！</h3>
+            <div className="space-y-4 text-gray-700 dark:text-gray-300 mb-8">
+              <p className="max-w-md mx-auto">
+                视频已成功上传到服务器，您可以继续下一步操作。
+              </p>
+              {selectedFile && (
+                <div className="bg-gray-100 dark:bg-gray-800/50 p-4 rounded-xl inline-block">
+                  <div className="text-sm font-medium">文件信息</div>
+                  <div className="font-semibold">{selectedFile.name}</div>
+                  <div className="text-xs mt-1">{fileSizeMB.toFixed(2)} MB</div>
+                </div>
+              )}
+            </div>
             <div className="flex flex-col sm:flex-row gap-4 justify-center">
               <button
                 onClick={resetUpload}
-                className="px-6 py-3 bg-primary-600 text-white rounded-xl hover:bg-primary-700 transition-all font-bold"
+                className="px-8 py-3 bg-primary-600 text-white rounded-xl hover:bg-primary-700 transition-all font-bold shadow-lg shadow-primary-500/20"
               >
                 上传新视频
               </button>
@@ -426,7 +491,7 @@ export default function VideoUploader({ onUploadSuccess, user }: VideoUploaderPr
                   href={videoUrl}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="px-6 py-3 border border-gray-300 text-gray-900 dark:text-white dark:border-gray-700 rounded-xl hover:bg-gray-100 dark:hover:bg-gray-800 transition-all font-bold"
+                  className="px-8 py-3 border border-gray-300 text-gray-900 dark:text-white dark:border-gray-700 rounded-xl hover:bg-gray-100 dark:hover:bg-gray-800 transition-all font-bold shadow-lg"
                 >
                   查看视频
                 </a>
@@ -438,15 +503,27 @@ export default function VideoUploader({ onUploadSuccess, user }: VideoUploaderPr
       case 'error':
         return (
           <div className="glass-card rounded-2xl p-8 text-center">
-            <div className="text-6xl mb-4">❌</div>
-            <h3 className="text-xl font-bold text-gray-900 dark:text-white mb-2">上传失败</h3>
-            <p className="text-red-600 dark:text-red-400 mb-6">{error || '未知错误'}</p>
-            <button
-              onClick={resetUpload}
-              className="px-6 py-3 bg-primary-600 text-white rounded-xl hover:bg-primary-700 transition-all font-bold"
-            >
-              重试
-            </button>
+            <div className="w-20 h-20 bg-red-100 dark:bg-red-900/30 rounded-full flex items-center justify-center mx-auto mb-6">
+              <div className="text-4xl">❌</div>
+            </div>
+            <h3 className="text-2xl font-bold text-gray-900 dark:text-white mb-3">上传失败</h3>
+            <div className="bg-red-50 dark:bg-red-900/20 p-4 rounded-xl mb-8 max-w-md mx-auto">
+              <p className="text-red-600 dark:text-red-400 font-medium whitespace-pre-line">{error || '未知错误'}</p>
+            </div>
+            <div className="flex flex-col sm:flex-row gap-4 justify-center">
+              <button
+                onClick={resetUpload}
+                className="px-8 py-3 bg-primary-600 text-white rounded-xl hover:bg-primary-700 transition-all font-bold shadow-lg shadow-primary-500/20"
+              >
+                重试上传
+              </button>
+              <button
+                onClick={resetUpload}
+                className="px-8 py-3 border border-gray-300 text-gray-900 dark:text-white dark:border-gray-700 rounded-xl hover:bg-gray-100 dark:hover:bg-gray-800 transition-all font-bold shadow-lg"
+              >
+                选择新文件
+              </button>
+            </div>
           </div>
         );
 

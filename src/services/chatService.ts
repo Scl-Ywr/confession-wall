@@ -130,7 +130,7 @@ export const chatService = {
       const filePath = `${folder}/${fileName}`;
 
       // 上传文件
-      const { data: uploadData, error: uploadError } = await supabase
+      const { error: uploadError } = await supabase
         .storage
         .from('confession_images')
         .upload(filePath, file, {

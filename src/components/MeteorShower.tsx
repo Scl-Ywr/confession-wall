@@ -29,24 +29,26 @@ const generateMeteors = (count: number): MeteorProps[] => {
 };
 
 const MeteorShower: React.FC<MeteorShowerProps> = ({ number = 20, className = '' }) => {
-  // 使用useState的初始值生成函数，只在组件初始化时生成一次随机数据
-  const [meteors, setMeteors] = useState<MeteorProps[]>(() => generateMeteors(number));
+  // 初始化为空数组，避免服务器端渲染与客户端不匹配
+  const [meteors, setMeteors] = useState<MeteorProps[]>([]);
 
-  // 当number属性变化时，重新生成流星数据
+  // 只在客户端挂载后生成流星数据，避免hydration mismatch
   useEffect(() => {
-    // 使用setTimeout将setState调用放入事件循环，避免级联渲染
-    const timer = setTimeout(() => {
+    const generateAndSetMeteors = () => {
       setMeteors(generateMeteors(number));
-    }, 0);
-
-    return () => clearTimeout(timer);
+    };
+    
+    // 立即生成一次
+    generateAndSetMeteors();
+    
+    // 当number属性变化时，重新生成流星数据
   }, [number]);
   
   return (
     <div className={`fixed inset-0 overflow-hidden pointer-events-none z-0 ${className}`}>
       {meteors.map((meteor, idx) => (
         <span
-          key={`${meteor.top}-${meteor.left}-${idx}`} // 使用更稳定的key
+          key={idx}
           className="absolute top-1/2 left-1/2 h-0.5 w-[100px] rounded-[9999px] bg-gradient-to-r from-slate-500 to-transparent shadow-[0_0_0_1px_#ffffff10] rotate-[215deg] animate-meteor opacity-0 dark:from-slate-200"
           style={{
             top: meteor.top,

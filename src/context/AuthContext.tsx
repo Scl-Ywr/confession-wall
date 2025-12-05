@@ -3,6 +3,7 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import { supabase } from '@/lib/supabase/client';
 import { User, AuthState } from '@/types/auth';
+import { useRouter } from 'next/navigation';
 
 interface AuthContextType extends AuthState {
   register: (email: string, password: string) => Promise<void>;
@@ -15,6 +16,7 @@ interface AuthContextType extends AuthState {
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
+  const router = useRouter();
   const [state, setState] = useState<AuthState>({
     user: null,
     loading: true,
@@ -32,14 +34,29 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
           last_seen: new Date().toISOString()
         })
         .eq('id', userId);
-      if (error && Object.keys(error).length > 0) {
-        console.error('Error updating online status:', error);
+      if (error) {
+        // 改进错误日志，提供更详细的信息
+        console.error('Error updating online status:', {
+          userId,
+          status,
+          errorMessage: error.message || JSON.stringify(error)
+        });
       }
     } catch (error) {
       // 忽略网络请求错误，例如用户已离线或会话过期
-      const errorObj = error as Error;
-      if (errorObj.message) {
-        console.error('Unexpected error updating online status:', error);
+      if (error instanceof Error) {
+        console.error('Unexpected error updating online status:', {
+          userId,
+          status,
+          errorMessage: error.message
+        });
+      } else {
+        console.error('Unexpected error updating online status:', {
+          userId,
+          status,
+          errorType: typeof error,
+          error: JSON.stringify(error)
+        });
       }
     }
   };
@@ -119,8 +136,29 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     const handleBeforeUnload = () => {
       // 使用闭包变量中的userId
       if (currentUserId) {
-        // 直接调用updateOnlineStatus函数
-        updateOnlineStatus(currentUserId, 'offline');
+        try {
+          // 使用navigator.sendBeacon发送离线状态更新，确保在页面关闭时能可靠发送
+          const formData = new FormData();
+          formData.append('userId', currentUserId);
+          formData.append('status', 'offline');
+          navigator.sendBeacon('/api/update-status', formData);
+        } catch (error) {
+          console.error('Error sending beacon:', error);
+          // 如果sendBeacon失败，尝试使用传统的fetch请求
+          fetch('/api/update-status', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+              userId: currentUserId,
+              status: 'offline'
+            }),
+            keepalive: true // 确保请求在页面关闭时仍能完成
+          }).catch(err => {
+            console.error('Error updating status on unload:', err);
+          });
+        }
       }
     };
 
@@ -143,6 +181,11 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
           await updateOnlineStatus(currentUserId, 'online');
         } catch (error) {
           // 忽略心跳更新失败，这可能是网络问题或用户已离线
+          // 但我们可以记录这个错误，方便调试
+          const errorObj = error as Error;
+          if (errorObj.message) {
+            console.error('Heartbeat update failed:', errorObj.message);
+          }
           // 不要在catch块中再次调用updateOnlineStatus，避免潜在的无限循环
         }
       }
@@ -159,7 +202,29 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       // 组件卸载时也设置为离线
       // 使用闭包变量中的userId
       if (currentUserId) {
-        updateOnlineStatus(currentUserId, 'offline');
+        try {
+          // 使用navigator.sendBeacon发送离线状态更新，确保在组件卸载时能可靠发送
+          const formData = new FormData();
+          formData.append('userId', currentUserId);
+          formData.append('status', 'offline');
+          navigator.sendBeacon('/api/update-status', formData);
+        } catch (error) {
+          console.error('Error sending beacon on cleanup:', error);
+          // 如果sendBeacon失败，尝试使用传统的fetch请求
+          fetch('/api/update-status', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+              userId: currentUserId,
+              status: 'offline'
+            }),
+            keepalive: true // 确保请求在页面关闭时仍能完成
+          }).catch(err => {
+            console.error('Error updating status on cleanup:', err);
+          });
+        }
       }
     };
   }, []);
@@ -272,6 +337,9 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       if (error) {
         throw error;
       }
+      
+      // 退出登录成功后跳转到主页
+      router.push('/');
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'An unknown error occurred';
       setState(prev => ({ ...prev, loading: false, error: errorMessage }));

@@ -5,6 +5,7 @@ import Image from 'next/image';
 import { useRouter } from 'next/navigation';
 import { Confession } from '@/types/confession';
 import CommentSection from '@/components/CommentSection';
+import VideoPlayer from '@/components/VideoPlayer';
 import { TrashIcon } from '@heroicons/react/24/outline';
 import { HeartIcon as HeartIconSolid } from '@heroicons/react/24/solid';
 
@@ -100,39 +101,33 @@ export default function ConfessionCard({
       </div>
 
       {confession.images && confession.images.length > 0 && (
-        <div className="mb-6 grid grid-cols-2 sm:grid-cols-3 gap-3">
+        <div className="mb-6 grid grid-cols-1 md:grid-cols-2 gap-4">
           {confession.images.map((media) => (
             <div
               key={media.id}
-              className={`relative group transition-all duration-500 ease-in-out ${
-                enlargedImageId === media.id ? 'col-span-full z-20' : ''
-              }`}
+              className={`relative group transition-all duration-500 ease-in-out ${enlargedImageId === media.id ? 'col-span-full z-20' : ''}`}
             >
               <div
-                className={`w-full overflow-hidden rounded-xl border border-gray-100 dark:border-gray-700 shadow-sm ${
-                  enlargedImageId === media.id ? 'aspect-auto' : 'aspect-square'
-                }`}
+                className={`w-full rounded-xl border border-gray-100 dark:border-gray-700 shadow-sm transition-all duration-500 ease-in-out ${enlargedImageId === media.id ? 'aspect-auto' : media.file_type === 'video' ? '' : 'aspect-square overflow-hidden'}`}
               >
                 {media.file_type === 'image' ? (
                   <Image
                     src={media.image_url}
                     alt="Confession image"
-                    width={enlargedImageId === media.id ? 800 : 300}
-                    height={enlargedImageId === media.id ? 600 : 300}
-                    className={`w-full h-full object-cover transition-transform duration-500 cursor-pointer ${
-                      enlargedImageId === media.id ? '' : 'group-hover:scale-110'
-                    }`}
+                    width={enlargedImageId === media.id ? 800 : 600}
+                    height={enlargedImageId === media.id ? 600 : 600}
+                    className={`w-full h-full object-cover transition-transform duration-500 cursor-pointer ${enlargedImageId === media.id ? '' : 'group-hover:scale-110'}`}
                     onClick={() => toggleImageEnlarge(media.id)}
+                  />
+                ) : media.file_type === 'video' && media.image_url ? (
+                  <VideoPlayer
+                    videoUrl={media.image_url}
+                    className={`w-full h-full transition-transform duration-500 cursor-pointer ${enlargedImageId === media.id ? '' : 'group-hover:scale-110'}`}
                   />
                 ) : (
-                  <video
-                    src={media.image_url}
-                    controls
-                    className={`w-full h-full object-cover transition-transform duration-500 cursor-pointer ${
-                      enlargedImageId === media.id ? '' : 'group-hover:scale-110'
-                    }`}
-                    onClick={() => toggleImageEnlarge(media.id)}
-                  />
+                  <div className="w-full h-full flex items-center justify-center bg-gray-900">
+                    <p className="text-white text-sm">无效的视频</p>
+                  </div>
                 )}
               </div>
             </div>

@@ -88,7 +88,7 @@ const Navbar: React.FC = () => {
   }, [user]);
 
   // 获取未读消息数量（包括私聊和群聊）
-  const fetchUnreadMessageCount = async () => {
+  const fetchUnreadMessageCount = useCallback(async () => {
     if (!user) return;
     
     try {
@@ -145,13 +145,13 @@ const Navbar: React.FC = () => {
     } catch (error) {
       console.error('Error fetching unread message count:', error);
     }
-  };
+  }, [user]);
 
   // 初始获取未读消息数量
   useEffect(() => {
     if (!user) return;
     fetchUnreadMessageCount();
-  }, [user]);
+  }, [user, fetchUnreadMessageCount]);
 
   // 实时订阅通知和未读消息
   useEffect(() => {
@@ -201,7 +201,7 @@ const Navbar: React.FC = () => {
       subscription.unsubscribe();
       supabase.removeChannel(messageChannel);
     };
-  }, [user, fetchNotifications]);
+  }, [user, fetchNotifications, fetchUnreadMessageCount]);
 
   const handleLogout = async () => {
     try {

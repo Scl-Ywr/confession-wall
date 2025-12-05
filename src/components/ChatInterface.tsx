@@ -3,7 +3,7 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { chatService } from '@/services/chatService';
 import { ChatMessage, Profile } from '@/types/chat';
-import { MessageSquare, Send, Smile, Trash2, Search, Image as ImageIcon, Film, Paperclip } from 'lucide-react';
+import { MessageSquare, Send, Smile, Trash2, Search, Image as ImageIcon } from 'lucide-react';
 import Image from 'next/image';
 import { useAuth } from '@/context/AuthContext';
 import { supabase } from '@/lib/supabase/client';
@@ -263,18 +263,28 @@ export function ChatInterface({ otherUserId, otherUserProfile: initialOtherUserP
     }
   }, [messages, loading, loadingMore]);
 
-  // 定期检查好友关系状态
+  // 定期检查好友关系状态和对方用户资料
   useEffect(() => {
-    const interval = setInterval(() => {
+    const interval = setInterval(async () => {
       checkFriendship();
+      // 定期更新对方用户资料
+      try {
+        const updatedProfile = await chatService.getUserProfile(otherUserId);
+        if (updatedProfile) {
+          setOtherUserProfile(updatedProfile);
+        }
+      } catch {
+        // ignore error
+      }
     }, 30000); // 每30秒检查一次
 
     return () => clearInterval(interval);
-  }, [checkFriendship]);
+  }, [checkFriendship, otherUserId]);
 
   // 监听消息列表顶部，实现滚动加载更多
   useEffect(() => {
-    if (!messagesStartRef.current) return;
+    const currentRef = messagesStartRef.current;
+    if (!currentRef) return;
 
     const observer = new IntersectionObserver(
       (entries) => {
@@ -291,12 +301,10 @@ export function ChatInterface({ otherUserId, otherUserProfile: initialOtherUserP
       }
     );
 
-    observer.observe(messagesStartRef.current);
+    observer.observe(currentRef);
 
     return () => {
-      if (messagesStartRef.current) {
-        observer.unobserve(messagesStartRef.current);
-      }
+      observer.unobserve(currentRef);
     };
   }, [hasMore, loadingMore, loading, fetchMessages]);
 
@@ -488,7 +496,7 @@ export function ChatInterface({ otherUserId, otherUserProfile: initialOtherUserP
               {/* 非文本消息单独一行显示 */}
               {message.type !== 'text' && (
                 <div className="w-full">
-                  <MultimediaMessage message={message} isCurrentUser={isCurrentUser} />
+                  <MultimediaMessage message={message} />
                 </div>
               )}
               
@@ -497,9 +505,11 @@ export function ChatInterface({ otherUserId, otherUserProfile: initialOtherUserP
                 {message.type === 'text' && (
                   <p className="flex-grow">{message.content}</p>
                 )}
-                <span className="text-xs opacity-70">
-                  {new Date(message.created_at).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })}
-                </span>
+                <div className="flex flex-col items-end">
+                  <span className="text-xs opacity-70">
+                    {new Date(message.created_at).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })}
+                  </span>
+                </div>
               </div>
             </div>
           </div>
@@ -646,7 +656,25 @@ export function ChatInterface({ otherUserId, otherUserProfile: initialOtherUserP
             </div>
             
             {/* 消息列表 */}
-            {messages.map(renderMessageBubble)}
+            {messages.map((message, index) => {
+              // 日期分隔逻辑
+              const currentDate = new Date(message.created_at).toISOString().split('T')[0];
+              const showDateSeparator = index === 0 || new Date(messages[index - 1].created_at).toISOString().split('T')[0] !== currentDate;
+              
+              return (
+                <div key={message.id}>
+                  {/* 日期分隔栏 */}
+                  {showDateSeparator && (
+                    <div className="flex justify-center my-4">
+                      <div className="bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 text-xs px-4 py-1 rounded-full">
+                        {currentDate}
+                      </div>
+                    </div>
+                  )}
+                  {renderMessageBubble(message)}
+                </div>
+              );
+            })}
             <div ref={messagesEndRef} />
           </>
         )}

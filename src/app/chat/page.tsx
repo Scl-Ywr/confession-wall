@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '@/context/AuthContext';
 import { chatService } from '@/services/chatService';
 import { Friendship, Group } from '@/types/chat';
@@ -24,6 +24,7 @@ const ChatListPage = () => {
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [toastType, setToastType] = useState<'success' | 'error' | 'info'>('success');
 
+  // 获取好友列表和群聊列表
   useEffect(() => {
     const fetchFriendsAndGroups = async () => {
       if (!user) return;
@@ -56,90 +57,95 @@ const ChatListPage = () => {
     };
 
     fetchFriendsAndGroups();
+  }, [user]);
 
-    // 重新获取未读消息数量的辅助函数
-    const refreshUnreadCounts = async () => {
-      if (!user) return;
+  // 刷新未读消息数量的辅助函数
+  const refreshUnreadCounts = useCallback(async () => {
+    if (!user) return;
+    
+    try {
+      const currentUser = user;
       
-      try {
-        const currentUser = user;
-        
-        // 1. 查询私聊未读消息数量
-        const { data: privateUnreadMessages, error: privateError } = await supabase
-          .from('chat_messages')
-          .select('sender_id')
-          .eq('receiver_id', currentUser.id)
-          .eq('is_read', false);
+      // 1. 查询私聊未读消息数量
+      const { data: privateUnreadMessages, error: privateError } = await supabase
+        .from('chat_messages')
+        .select('sender_id')
+        .eq('receiver_id', currentUser.id)
+        .eq('is_read', false);
 
-        if (privateError) {
-          console.error('Error fetching private unread messages:', privateError);
-          return;
-        }
+      if (privateError) {
+        console.error('Error fetching private unread messages:', privateError);
+        return;
+      }
 
-        // 计算每个好友的未读消息数量
-        const friendUnreadCounts: Record<string, number> = {};
-        if (privateUnreadMessages) {
-          privateUnreadMessages.forEach(message => {
-            const senderId = message.sender_id;
-            friendUnreadCounts[senderId] = (friendUnreadCounts[senderId] || 0) + 1;
-          });
-        }
-        
-        // 2. 查询群聊未读消息数量
-        // 先获取用户所在的所有群聊ID
-        const { data: groupMemberships, error: membershipError } = await supabase
-          .from('group_members')
-          .select('group_id')
-          .eq('user_id', currentUser.id);
-        
-        if (membershipError) {
-          console.error('Error fetching group memberships:', membershipError);
-          return;
-        }
-        
-        // 计算每个群聊的未读消息数量
-        const groupUnreadCounts: Record<string, number> = {};
-        if (groupMemberships && groupMemberships.length > 0) {
-          // 为每个群聊获取未读消息数量
-          for (const membership of groupMemberships) {
-            const groupId = membership.group_id;
-            try {
-              const { count, error } = await supabase
-                  .from('group_message_read_status')
-                  .select('id', { count: 'exact', head: true })
-                  .eq('group_id', groupId)
-                  .eq('user_id', user.id)
-                  .eq('is_read', false);
-              
-              if (error) {
-                console.error(`Error getting unread count for group ${groupId}:`, error);
-                groupUnreadCounts[groupId] = 0;
-              } else {
-                groupUnreadCounts[groupId] = count || 0;
-              }
-            } catch (error) {
+      // 计算每个好友的未读消息数量
+      const friendUnreadCounts: Record<string, number> = {};
+      if (privateUnreadMessages) {
+        privateUnreadMessages.forEach(message => {
+          const senderId = message.sender_id;
+          friendUnreadCounts[senderId] = (friendUnreadCounts[senderId] || 0) + 1;
+        });
+      }
+      
+      // 2. 查询群聊未读消息数量
+      // 先获取用户所在的所有群聊ID
+      const { data: groupMemberships, error: membershipError } = await supabase
+        .from('group_members')
+        .select('group_id')
+        .eq('user_id', currentUser.id);
+      
+      if (membershipError) {
+        console.error('Error fetching group memberships:', membershipError);
+        return;
+      }
+      
+      // 计算每个群聊的未读消息数量
+      const groupUnreadCounts: Record<string, number> = {};
+      if (groupMemberships && groupMemberships.length > 0) {
+        // 为每个群聊获取未读消息数量
+        for (const membership of groupMemberships) {
+          const groupId = membership.group_id;
+          try {
+            const { count, error } = await supabase
+                .from('group_message_read_status')
+                .select('id', { count: 'exact', head: true })
+                .eq('group_id', groupId)
+                .eq('user_id', user.id)
+                .eq('is_read', false);
+            
+            if (error) {
               console.error(`Error getting unread count for group ${groupId}:`, error);
               groupUnreadCounts[groupId] = 0;
+            } else {
+              groupUnreadCounts[groupId] = count || 0;
             }
+          } catch (error) {
+            console.error(`Error getting unread count for group ${groupId}:`, error);
+            groupUnreadCounts[groupId] = 0;
           }
         }
-
-        // 更新好友列表中的未读消息数量
-        setFriends(prev => prev.map(friendship => ({
-          ...friendship,
-          unread_count: friendUnreadCounts[friendship.friend_id] || 0
-        })));
-        
-        // 更新群聊列表中的未读消息数量
-        setGroups(prev => prev.map(group => ({
-          ...group,
-          unread_count: groupUnreadCounts[group.id] || 0
-        })));
-      } catch (error) {
-        console.error('Error refreshing unread counts:', error);
       }
-    };
 
+      // 更新好友列表中的未读消息数量
+      setFriends(prev => prev.map(friendship => ({
+        ...friendship,
+        unread_count: friendUnreadCounts[friendship.friend_id] || 0
+      })));
+      
+      // 更新群聊列表中的未读消息数量
+      setGroups(prev => prev.map(group => ({
+        ...group,
+        unread_count: groupUnreadCounts[group.id] || 0
+      })));
+    } catch (error) {
+      console.error('Error refreshing unread counts:', error);
+    }
+  }, [user]);
+
+  // 监听未读消息变化的事件和实时订阅
+  useEffect(() => {
+    if (!user) return;
+    
     // 添加自定义事件监听器，当群聊消息被标记为已读时刷新未读消息数量
     const handleGroupMessagesRead = () => {
       refreshUnreadCounts();
@@ -160,127 +166,132 @@ const ChatListPage = () => {
     window.addEventListener('groupMessagesReceived', handleGroupMessagesReceived);
     window.addEventListener('privateMessagesRead', handlePrivateMessagesRead);
     
-    // 添加实时订阅监听好友在线状态变化和消息状态变化
-    if (user) {
-      const channels: ReturnType<typeof supabase.channel>[] = [];
-      
-      // 监听好友在线状态变化
-      if (friends.length > 0) {
-        const friendIds = friends.map(f => f.friend_id).join(',');
-        if (friendIds) {
-          const profileChannel = supabase
-            .channel('friends-updates')
-            .on(
-              'postgres_changes',
-              {
-                event: 'UPDATE',
-                schema: 'public',
-                table: 'profiles',
-                filter: `id=in.(${friendIds})`
-              },
-              (payload) => {
-
-                // 更新好友列表中的在线状态
-                setFriends(prev => prev.map(friendship => {
-                  if (friendship.friend_id === payload.new.id && friendship.friend_profile) {
-                    return {
-                      ...friendship,
-                      friend_profile: {
-                        ...friendship.friend_profile,
-                        online_status: payload.new.online_status,
-                        last_seen: payload.new.last_seen
-                      }
-                    };
-                  }
-                  return friendship;
-                }));
-              }
-            )
-            .subscribe();
-            channels.push(profileChannel);
-        }
-      }
-      
-      // 监听私聊消息变化
-      const privateMessagesChannel = supabase
-        .channel('private-messages-updates')
-        .on(
-          'postgres_changes',
-          {
-            event: 'INSERT',
-            schema: 'public',
-            table: 'chat_messages',
-            filter: `receiver_id.eq.${user.id}`
-          },
-          (payload) => {
-
-            // 重新获取所有未读消息数量
-            refreshUnreadCounts();
-          }
-        )
-        .on(
-          'postgres_changes',
-          {
-            event: 'UPDATE',
-            schema: 'public',
-            table: 'chat_messages',
-            filter: `receiver_id.eq.${user.id}`
-          },
-          (payload) => {
-
-            // 重新获取所有未读消息数量
-            refreshUnreadCounts();
-          }
-        )
-        .subscribe();
-      channels.push(privateMessagesChannel);
-      
-      // 监听群聊消息状态变化
-      const groupMessagesChannel = supabase
-        .channel('group-messages-status-updates')
-        .on(
-          'postgres_changes',
-          {
-            event: 'INSERT',
-            schema: 'public',
-            table: 'group_message_read_status',
-            filter: `user_id.eq.${user.id}`
-          },
-          (payload) => {
-
-            // 重新获取所有未读消息数量
-            refreshUnreadCounts();
-          }
-        )
-        .on(
-          'postgres_changes',
-          {
-            event: 'UPDATE',
-            schema: 'public',
-            table: 'group_message_read_status',
-            filter: `user_id.eq.${user.id}`
-          },
-          (payload) => {
-
-            // 重新获取所有未读消息数量
-            refreshUnreadCounts();
-          }
-        )
-        .subscribe();
-      channels.push(groupMessagesChannel);
-      
-      return () => {
-        channels.forEach(channel => supabase.removeChannel(channel));
-      };
-    }
-    
     // 组件卸载时移除所有事件监听器
     return () => {
       window.removeEventListener('groupMessagesRead', handleGroupMessagesRead);
       window.removeEventListener('groupMessagesReceived', handleGroupMessagesReceived);
       window.removeEventListener('privateMessagesRead', handlePrivateMessagesRead);
     };
-  }, [user, friends.map(f => f.friend_id).join(',')]);
+  }, [user, refreshUnreadCounts]);
+
+  // 监听好友在线状态变化
+  useEffect(() => {
+    if (!user || friends.length === 0) return;
+    
+    const friendIds = friends.map(f => f.friend_id).join(',');
+    if (!friendIds) return;
+    
+    const profileChannel = supabase
+      .channel('friends-updates')
+      .on(
+        'postgres_changes',
+        {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'profiles',
+          filter: `id=in.(${friendIds})`
+        },
+        (payload) => {
+          // 更新好友列表中的在线状态
+          setFriends(prev => prev.map(friendship => {
+            if (friendship.friend_id === payload.new.id && friendship.friend_profile) {
+              return {
+                ...friendship,
+                friend_profile: {
+                  ...friendship.friend_profile,
+                  online_status: payload.new.online_status,
+                  last_seen: payload.new.last_seen
+                }
+              };
+            }
+            return friendship;
+          }));
+        }
+      )
+      .subscribe();
+      
+    return () => {
+      supabase.removeChannel(profileChannel);
+    };
+  }, [user, friends]);
+
+  // 监听私聊消息变化
+  useEffect(() => {
+    if (!user) return;
+    
+    const privateMessagesChannel = supabase
+      .channel('private-messages-updates')
+      .on(
+        'postgres_changes',
+        {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'chat_messages',
+          filter: `receiver_id.eq.${user.id}`
+        },
+        () => {
+          // 重新获取所有未读消息数量
+          refreshUnreadCounts();
+        }
+      )
+      .on(
+        'postgres_changes',
+        {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'chat_messages',
+          filter: `receiver_id.eq.${user.id}`
+        },
+        () => {
+          // 重新获取所有未读消息数量
+          refreshUnreadCounts();
+        }
+      )
+      .subscribe();
+    
+    return () => {
+      supabase.removeChannel(privateMessagesChannel);
+    };
+  }, [user, refreshUnreadCounts]);
+
+  // 监听群聊消息状态变化
+  useEffect(() => {
+    if (!user) return;
+    
+    const groupMessagesChannel = supabase
+      .channel('group-messages-status-updates')
+      .on(
+        'postgres_changes',
+        {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'group_message_read_status',
+          filter: `user_id.eq.${user.id}`
+        },
+        () => {
+          // 重新获取所有未读消息数量
+          refreshUnreadCounts();
+        }
+      )
+      .on(
+        'postgres_changes',
+        {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'group_message_read_status',
+          filter: `user_id.eq.${user.id}`
+        },
+        () => {
+          // 重新获取所有未读消息数量
+          refreshUnreadCounts();
+        }
+      )
+      .subscribe();
+    
+    return () => {
+      supabase.removeChannel(groupMessagesChannel);
+    };
+  }, [user, refreshUnreadCounts]);
 
   // 打开删除确认对话框
   const handleOpenDeleteConfirm = (friendId: string) => {
@@ -524,6 +535,29 @@ const ChatListPage = () => {
                                 </div>
                                 <div className="flex-1 min-w-0">
                                   <div className="flex flex-col">
+                                    {/* 显示日期（如果不是当天） */}
+                                    {friend?.online_status !== 'online' && (() => {
+                                      if (friend) {
+                                        const lastActive = friend.last_seen || friend.updated_at;
+                                        if (lastActive) {
+                                          try {
+                                            const lastActiveDate = new Date(lastActive);
+                                            const today = new Date();
+                                            const isSameDay = lastActiveDate.toDateString() === today.toDateString();
+                                            if (!isSameDay) {
+                                              return (
+                                                <span className="text-xs text-gray-500 dark:text-gray-400 mb-1">
+                                                  {lastActiveDate.toLocaleDateString('zh-CN', { year: 'numeric', month: '2-digit', day: '2-digit' })}
+                                                </span>
+                                              );
+                                            }
+                                          } catch {
+                                            // 忽略日期解析错误
+                                          }
+                                        }
+                                      }
+                                      return null;
+                                    })()}
                                     <div className="flex items-center justify-between">
                                       <h3 className="font-semibold text-gray-800 dark:text-white truncate">
                                         {friend?.display_name || friend?.username || '好友'}
@@ -538,7 +572,7 @@ const ChatListPage = () => {
                                               if (lastActive) {
                                                 try {
                                                   return new Date(lastActive).toLocaleString('zh-CN', { hour: '2-digit', minute: '2-digit' });
-                                                } catch (e) {
+                                                } catch {
                                                   return '离线';
                                                 }
                                               }

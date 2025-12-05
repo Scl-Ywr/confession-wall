@@ -3,11 +3,12 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode, useCallback } from 'react';
 import { useAuth } from './AuthContext';
 import { confessionService } from '@/services/confessionService';
-import { supabase } from '@/lib/supabase/client';
 
 interface LikeContextType {
   likeLoading: Record<string, boolean>;
   toggleLike: (confessionId: string) => Promise<void>;
+  showLoginPrompt: boolean;
+  setShowLoginPrompt: React.Dispatch<React.SetStateAction<boolean>>;
 }
 
 const LikeContext = createContext<LikeContextType | undefined>(undefined);
@@ -19,11 +20,22 @@ interface LikeProviderProps {
 export const LikeProvider: React.FC<LikeProviderProps> = ({ children }) => {
   const { user } = useAuth();
   const [likeLoading, setLikeLoading] = useState<Record<string, boolean>>({});
+  const [showLoginPrompt, setShowLoginPrompt] = useState(false);
+
+  // 当用户登录状态变化时，重置登录提示状态
+  useEffect(() => {
+    if (user) {
+      // 用户已登录，隐藏登录提示
+      setShowLoginPrompt(false);
+    }
+  }, [user]);
 
   // 切换点赞状态
   const toggleLike = useCallback(async (confessionId: string) => {
     if (!user) {
-      throw new Error('User not authenticated');
+      // 用户未登录，显示登录提示
+      setShowLoginPrompt(true);
+      return;
     }
 
     // 使用函数式更新来检查和设置loading状态，避免闭包问题
@@ -56,7 +68,9 @@ export const LikeProvider: React.FC<LikeProviderProps> = ({ children }) => {
 
   const value: LikeContextType = {
     likeLoading,
-    toggleLike
+    toggleLike,
+    showLoginPrompt,
+    setShowLoginPrompt
   };
 
   return <LikeContext.Provider value={value}>{children}</LikeContext.Provider>;
