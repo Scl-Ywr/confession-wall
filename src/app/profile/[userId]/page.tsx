@@ -130,13 +130,14 @@ const OtherUserProfilePage = () => {
           {/* Left Column: Avatar & Quick Stats */}
           <div className="md:col-span-1 space-y-6">
             <div className="glass-card p-6 rounded-2xl text-center">
-              <div className="relative inline-block mb-4">
-                <div className="w-32 h-32 rounded-full overflow-hidden border-4 border-white/50 shadow-lg mx-auto">
+              <div className="relative w-32 h-32 rounded-full overflow-hidden border-4 border-white/50 shadow-lg mx-auto mb-4">
                   {profile.avatar_url ? (
                     <Image
                       src={profile.avatar_url}
                       alt={profile.display_name || profile.username}
                       fill
+                      sizes="128px"
+                      loading="eager"
                       className="object-cover"
                     />
                   ) : (
@@ -147,7 +148,6 @@ const OtherUserProfilePage = () => {
                     </div>
                   )}
                 </div>
-              </div>
               <h2 className="text-xl font-bold text-gray-900 dark:text-white mb-1">
                 {profile.display_name || profile.username}
               </h2>

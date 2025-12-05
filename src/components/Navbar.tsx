@@ -2,6 +2,7 @@
 
 import React, { useEffect, useState, useCallback, useRef } from 'react';
 import Link from 'next/link';
+import { motion } from 'framer-motion';
 import { useAuth } from '@/context/AuthContext';
 import { useTheme } from '@/context/ThemeContext';
 import { HomeIcon, UserIcon, ArrowLeftOnRectangleIcon, UserPlusIcon, MoonIcon, SunIcon, BellIcon, TrashIcon, VideoCameraIcon, MusicalNoteIcon } from '@heroicons/react/20/solid';
@@ -332,10 +333,12 @@ const Navbar: React.FC = () => {
             <div className="flex items-center gap-3">
               {/* 消息通知按钮 */}
               <div className="relative">
-                <button
+                <motion.button
                   onClick={toggleNotifications}
                   className="flex items-center justify-center w-12 h-12 rounded-full bg-gray-100/50 hover:bg-white transition-all duration-200 transform hover:scale-110 dark:bg-gray-700/50 dark:hover:bg-gray-600 backdrop-blur-sm relative"
                   aria-label="查看通知"
+                  whileHover={{ scale: 1.1 }}
+                  whileTap={{ scale: 0.95 }}
                 >
                   <BellIcon className="w-6 h-6 text-primary-600 dark:text-primary-400" />
                   {/* 动态通知数量指示器 */}
@@ -344,7 +347,7 @@ const Navbar: React.FC = () => {
                       {unreadCount}
                     </span>
                   )}
-                </button>
+                </motion.button>
                 
                 {/* 通知列表 */}
                 {showNotifications && (
@@ -565,10 +568,12 @@ const Navbar: React.FC = () => {
             </div>
             <div className="flex items-center gap-2">
               {/* 主题切换按钮 */}
-              <button
+              <motion.button
                 onClick={toggleTheme}
                 className="flex items-center justify-center w-12 h-12 rounded-full bg-gray-100/50 hover:bg-white transition-all duration-200 transform hover:scale-110 dark:bg-gray-700/50 dark:hover:bg-gray-600 backdrop-blur-sm"
                 aria-label={isHydrated ? (isDarkMode ? '切换到浅色模式' : '切换到深色模式') : '切换到深色模式'}
+                whileHover={{ scale: 1.1 }}
+                whileTap={{ scale: 0.95 }}
               >
                 {/* 使用 isHydrated 确保客户端和服务器渲染一致 */}
                 {isHydrated ? (
@@ -581,7 +586,7 @@ const Navbar: React.FC = () => {
                   /* 服务器渲染时默认显示 MoonIcon，与初始 isDarkMode=false 匹配 */
                   <MoonIcon className="w-6 h-6 text-primary-600" />
                 )}
-              </button>
+              </motion.button>
               
               {/* 视频图标按钮 */}
               <button

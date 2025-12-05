@@ -63,26 +63,38 @@ export function ChatInterface({ otherUserId, otherUserProfile: initialOtherUserP
     }
   }, [currentUserId, otherUserId]);
 
+  // 获取本地已删除消息信息
+  const getDeletedMessages = useCallback((): Record<string, { deletedAt: number; deletedByAdmin: boolean }> => {
+    if (!currentUserId || !otherUserId) return {};
+    const key = `deleted_messages_${currentUserId}_${otherUserId}`;
+    const deletedMessagesStr = localStorage.getItem(key);
+    return deletedMessagesStr ? JSON.parse(deletedMessagesStr) : {};
+  }, [currentUserId, otherUserId]);
+
   // 获取聊天消息
   const fetchMessages = useCallback(async (isLoadMore: boolean = false) => {
     try {
       const currentOffset = isLoadMore ? offset + 50 : 0;
       const data = await chatService.getChatMessages(otherUserId, 50, currentOffset);
+      const deletedMessages = getDeletedMessages();
+      
+      // 过滤掉本地已删除的消息
+      const filteredMessages = data.filter(msg => !Object.keys(deletedMessages).includes(msg.id));
       
       if (isLoadMore) {
         // 加载更多历史消息，添加到消息列表顶部
-        setMessages(prev => [...data.reverse(), ...prev]);
+        setMessages(prev => [...filteredMessages.reverse(), ...prev]);
         setOffset(prev => prev + 50);
         setLoadingMore(false);
         // 如果返回的消息少于50条，说明没有更多历史消息了
-        if (data.length < 50) {
+        if (filteredMessages.length < 50) {
           setHasMore(false);
         }
       } else {
         // 初始加载或刷新，重置消息列表
-        setMessages(data.reverse());
+        setMessages(filteredMessages.reverse());
         setOffset(50);
-        setHasMore(data.length >= 50);
+        setHasMore(filteredMessages.length >= 50);
         setLoading(false);
       }
     } catch {
@@ -93,7 +105,7 @@ export function ChatInterface({ otherUserId, otherUserProfile: initialOtherUserP
         setLoading(false);
       }
     }
-  }, [otherUserId, offset]);
+  }, [otherUserId, offset, getDeletedMessages]);
 
   // 请求通知权限
   const requestNotificationPermission = async () => {
@@ -414,53 +426,77 @@ export function ChatInterface({ otherUserId, otherUserProfile: initialOtherUserP
     }
   };
 
-  // 选择/取消选择消息（只能选择自己发送的且在两分钟内的消息）
-  const toggleMessageSelection = (messageId: string) => {
-    // 检查消息是否属于当前用户
+  // 打开删除确认对话框
+  const handleOpenDeleteConfirm = (messageId: string) => {
     const message = messages.find(msg => msg.id === messageId);
     if (!message || message.sender_id !== currentUserId) {
-      // 不是自己的消息，不能选择
       return;
     }
-    
-    // 检查消息是否在两分钟内
-    const messageTime = new Date(message.created_at).getTime();
-    const now = Date.now();
-    const twoMinutes = 2 * 60 * 1000;
-    
-    if (now - messageTime > twoMinutes) {
-      // 消息超过两分钟，不能选择
-      return;
-    }
-    
-    setSelectedMessages(prev => {
-      if (prev.includes(messageId)) {
-        return prev.filter(id => id !== messageId);
-      } else {
-        return [...prev, messageId];
-      }
-    });
+    setSelectedMessages([messageId]);
+    setShowDeleteConfirm(true);
   };
 
   // 删除选中的消息
   const handleDeleteSelectedMessages = async () => {
     try {
-      await chatService.deleteMessages(selectedMessages);
-      setMessages(prev => prev.filter(message => !selectedMessages.includes(message.id)));
+      // 获取选中的消息
+      const selectedMessage = messages.find(msg => msg.id === selectedMessages[0]);
+      if (!selectedMessage) return;
+      
+      // 检查消息是否在两分钟内
+      const messageTime = new Date(selectedMessage.created_at).getTime();
+      const now = Date.now();
+      const twoMinutes = 2 * 60 * 1000;
+      const isWithinTwoMinutes = now - messageTime <= twoMinutes;
+      
+      if (isWithinTwoMinutes) {
+        // 两分钟内的消息：撤回
+        await chatService.deleteMessages(selectedMessages, false, otherUserId);
+        // 从消息列表中移除
+        setMessages(prev => prev.filter(message => !selectedMessages.includes(message.id)));
+      } else {
+        // 超过两分钟的消息：只删除本地
+        // 只添加到本地已删除消息列表
+        const key = `deleted_messages_${currentUserId}_${otherUserId}`;
+        let deletedMessages: Record<string, { deletedAt: number; deletedByAdmin: boolean }> = {};
+        const existingData = localStorage.getItem(key);
+        if (existingData) {
+          try {
+            deletedMessages = JSON.parse(existingData);
+          } catch {
+            deletedMessages = {};
+          }
+        }
+        
+        deletedMessages[selectedMessage.id] = {
+          deletedAt: Date.now(),
+          deletedByAdmin: false
+        };
+        
+        localStorage.setItem(key, JSON.stringify(deletedMessages));
+        // 从消息列表中移除
+        setMessages(prev => prev.filter(message => message.id !== selectedMessage.id));
+      }
+      
       setSelectedMessages([]);
       setShowDeleteConfirm(false);
-    } catch {
-      // ignore error
+    } catch (error) {
+      console.error('Error deleting message:', error);
     }
   };
 
   // 渲染消息气泡 - 使用React.memo优化渲染
-  const MessageBubble = React.memo(({ message, isCurrentUser, isSelected, onToggleSelection }: {
+  const MessageBubble = React.memo(({ message, isCurrentUser }: {
     message: ChatMessage;
     isCurrentUser: boolean;
-    isSelected: boolean;
-    onToggleSelection: (messageId: string) => void;
   }) => {
+    // 获取本地已删除消息信息
+    const deletedMessages = getDeletedMessages();
+    // 检查消息是否已删除
+    const isDeleted = Object.keys(deletedMessages).includes(message.id) || message.deleted;
+    // 获取删除信息
+    const deletionInfo = deletedMessages[message.id];
+    
     return (
       <div
         className={`flex ${isCurrentUser ? 'justify-end' : 'justify-start'} mb-4`}
@@ -484,34 +520,51 @@ export function ChatInterface({ otherUserId, otherUserProfile: initialOtherUserP
             </div>
           )}
           <div
-            className={`relative p-2 sm:p-3 rounded-lg max-w-[95%] sm:max-w-[80%] mx-auto ${isCurrentUser ? 'bg-gradient-to-r from-blue-400 to-pink-500 text-white rounded-tr-none' : 'bg-gray-200 dark:bg-gray-700 text-gray-800 dark:text-white rounded-tl-none'} cursor-pointer inline-block`}
-            onClick={() => onToggleSelection(message.id)}
+            className={`relative p-2 sm:p-3 rounded-lg max-w-[95%] sm:max-w-[80%] mx-auto ${isCurrentUser ? 'bg-gradient-to-r from-blue-400 to-pink-500 text-white rounded-tr-none' : 'bg-gray-200 dark:bg-gray-700 text-gray-800 dark:text-white rounded-tl-none'} inline-block`}
           >
-            {isSelected && (
-              <div className="absolute -top-3 -left-3 w-6 h-6 rounded-full bg-purple-500 border-2 border-white dark:border-gray-800 flex items-center justify-center shadow-lg hover:shadow-xl transition-all duration-200">
-                <span className="text-sm font-bold text-white">✓</span>
+            {/* 显示已删除消息占位符 */}
+            {isDeleted ? (
+              <div className="flex items-center justify-center py-2 text-center">
+                <span className="text-sm italic text-gray-500 dark:text-gray-400">
+                  {/* 根据删除类型显示不同提示 */}
+                  {deletionInfo?.deletedByAdmin ? 
+                   message.sender_id === currentUserId ? '你的消息被群管理员删除' : '此消息已被管理员删除' : 
+                   message.sender_id === currentUserId ? '此消息已被撤回' : '此消息已被删除'}
+                </span>
+              </div>
+            ) : (
+              <div className="flex flex-col gap-2">
+                {/* 非文本消息单独一行显示 */}
+                {message.type !== 'text' && (
+                  <div className="w-full">
+                    <MultimediaMessage message={message} />
+                  </div>
+                )}
+                
+                {/* 文本消息与时间戳在同一行 */}
+                <div className="flex items-end gap-1">
+                  {message.type === 'text' && (
+                    <p className="flex-grow">{message.content}</p>
+                  )}
+                  <div className="flex flex-col items-end">
+                    <span className="text-xs opacity-70">
+                      {new Date(message.created_at).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })}
+                    </span>
+                  </div>
+                </div>
               </div>
             )}
-            <div className="flex flex-col gap-2">
-              {/* 非文本消息单独一行显示 */}
-              {message.type !== 'text' && (
-                <div className="w-full">
-                  <MultimediaMessage message={message} />
-                </div>
-              )}
-              
-              {/* 文本消息与时间戳在同一行 */}
-              <div className="flex items-end gap-1">
-                {message.type === 'text' && (
-                  <p className="flex-grow">{message.content}</p>
-                )}
-                <div className="flex flex-col items-end">
-                  <span className="text-xs opacity-70">
-                    {new Date(message.created_at).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })}
-                  </span>
-                </div>
-              </div>
-            </div>
+            
+            {/* 删除按钮 - 仅对当前用户的未删除消息显示 */}
+            {isCurrentUser && !isDeleted && (
+              <button
+                className="absolute -top-1 -right-1 bg-white dark:bg-gray-800 p-1 rounded-full text-red-500 opacity-0 hover:opacity-100 transition-opacity duration-200 shadow-md"
+                onClick={() => handleOpenDeleteConfirm(message.id)}
+                aria-label="删除消息"
+              >
+                <Trash2 className="h-3 w-3" />
+              </button>
+            )}
           </div>
           {isCurrentUser && (
             <div className="w-8 h-8 rounded-full bg-gray-200 dark:bg-gray-700 flex items-center justify-center overflow-hidden">
@@ -530,15 +583,12 @@ export function ChatInterface({ otherUserId, otherUserProfile: initialOtherUserP
   // 渲染消息气泡的包装函数
   const renderMessageBubble = (message: ChatMessage) => {
     const isCurrentUser = message.sender_id === currentUserId;
-    const isSelected = selectedMessages.includes(message.id);
 
     return (
       <MessageBubble
         key={message.id}
         message={message}
         isCurrentUser={isCurrentUser}
-        isSelected={isSelected}
-        onToggleSelection={toggleMessageSelection}
       />
     );
   };
@@ -768,29 +818,49 @@ export function ChatInterface({ otherUserId, otherUserProfile: initialOtherUserP
       </div>
 
       {/* 删除确认弹窗 */}
-      {showDeleteConfirm && (
+      {showDeleteConfirm && selectedMessages.length > 0 && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
           <div className="bg-white dark:bg-gray-800 rounded-xl shadow-lg p-6 max-w-sm w-full">
-            <h3 className="text-xl font-semibold mb-4 text-gray-800 dark:text-white">确认删除</h3>
-            <p className="mb-6 text-gray-600 dark:text-gray-300">
-              您确定要删除选中的 {selectedMessages.length} 条消息吗？此操作不可恢复。
-            </p>
-            <div className="flex justify-end gap-3">
-              <button
-                type="button"
-                className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors duration-200"
-                onClick={() => setShowDeleteConfirm(false)}
-              >
-                取消
-              </button>
-              <button
-                type="button"
-                className="px-4 py-2 bg-red-500 text-white rounded-lg hover:bg-red-600 transition-colors duration-200"
-                onClick={handleDeleteSelectedMessages}
-              >
-                确认删除
-              </button>
-            </div>
+            {/* 获取选中的消息 */}
+            {(() => {
+              const selectedMessage = messages.find(msg => msg.id === selectedMessages[0]);
+              if (!selectedMessage) return null;
+              
+              // 检查消息是否在两分钟内
+              const messageTime = new Date(selectedMessage.created_at).getTime();
+              const now = Date.now();
+              const twoMinutes = 2 * 60 * 1000;
+              const isWithinTwoMinutes = now - messageTime <= twoMinutes;
+              
+              return (
+                <>
+                  <h3 className="text-xl font-semibold mb-4 text-gray-800 dark:text-white">
+                    {isWithinTwoMinutes ? '确认撤回消息' : '确认删除消息'}
+                  </h3>
+                  <p className="mb-6 text-gray-600 dark:text-gray-300">
+                    {isWithinTwoMinutes ? 
+                      '您确定要撤回这条消息吗？此操作不可恢复。' : 
+                      '超过两分钟的消息无法撤回，只能删除本地记录。您确定要删除本地记录吗？'}
+                  </p>
+                  <div className="flex justify-end gap-3">
+                    <button
+                      type="button"
+                      className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors duration-200"
+                      onClick={() => setShowDeleteConfirm(false)}
+                    >
+                      取消
+                    </button>
+                    <button
+                      type="button"
+                      className="px-4 py-2 bg-red-500 text-white rounded-lg hover:bg-red-600 transition-colors duration-200"
+                      onClick={handleDeleteSelectedMessages}
+                    >
+                      {isWithinTwoMinutes ? '确认撤回' : '删除本地'}
+                    </button>
+                  </div>
+                </>
+              );
+            })()}
           </div>
         </div>
       )}

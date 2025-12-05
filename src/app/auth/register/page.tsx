@@ -2,62 +2,80 @@
 
 import React, { useState } from 'react';
 import { useAuth } from '@/context/AuthContext';
-import { RegisterFormData } from '@/types/auth';
 import MeteorShower from '@/components/MeteorShower';
 import Link from 'next/link';
+import { useForm } from 'react-hook-form';
+import { zodResolver } from '@hookform/resolvers/zod';
+import { z } from 'zod';
+
+// 创建注册表单的Zod schema
+const registerSchema = z.object({
+  email: z.string()
+    .nonempty('请输入邮箱')
+    .email('请输入有效的邮箱地址'),
+  password: z.string()
+    .nonempty('请输入密码')
+    .min(6, '密码长度不能少于6个字符'),
+  confirmPassword: z.string()
+    .nonempty('请确认密码'),
+}).refine((data) => data.password === data.confirmPassword, {
+  message: '两次输入的密码不一致',
+  path: ['confirmPassword'],
+});
+
+// 创建重新发送邮件表单的Zod schema
+const resendEmailSchema = z.object({
+  resendEmail: z.string()
+    .nonempty('请输入邮箱')
+    .email('请输入有效的邮箱地址'),
+});
+
+type RegisterFormData = z.infer<typeof registerSchema>;
+type ResendEmailFormData = z.infer<typeof resendEmailSchema>;
 
 const RegisterPage: React.FC = () => {
-  const { register, resendVerificationEmail, loading, error } = useAuth();
-  const [formData, setFormData] = useState<RegisterFormData>({
-    email: '',
-    password: '',
-    confirmPassword: '',
-  });
-  const [formErrors, setFormErrors] = useState<Partial<RegisterFormData>>({});
+  const { register: registerUser, resendVerificationEmail, loading, error } = useAuth();
   const [showResendForm, setShowResendForm] = useState(false);
-  const [resendEmail, setResendEmail] = useState('');
   const [resendSuccess, setResendSuccess] = useState(false);
   const [resendError, setResendError] = useState<string | null>(null);
   const [registerSuccess, setRegisterSuccess] = useState(false);
 
-  const validateForm = () => {
-    const errors: Partial<RegisterFormData> = {};
+  // 使用react-hook-form管理注册表单
+  const {
+    register,
+    handleSubmit: handleRegisterSubmit,
+    reset,
+    formState: { errors: registerErrors },
+  } = useForm<RegisterFormData>({
+    resolver: zodResolver(registerSchema),
+    defaultValues: {
+      email: '',
+      password: '',
+      confirmPassword: '',
+    },
+  });
 
-    if (!formData.email) {
-      errors.email = '请输入邮箱';
-    } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formData.email)) {
-      errors.email = '请输入有效的邮箱地址';
-    }
+  // 使用react-hook-form管理重新发送邮件表单
+  const {
+    register: registerResend,
+    handleSubmit: handleResendSubmit,
+    reset: resetResend,
+    formState: { errors: resendErrors },
+  } = useForm<ResendEmailFormData>({
+    resolver: zodResolver(resendEmailSchema),
+    defaultValues: {
+      resendEmail: '',
+    },
+  });
 
-    if (!formData.password) {
-      errors.password = '请输入密码';
-    } else if (formData.password.length < 6) {
-      errors.password = '密码长度不能少于6个字符';
-    }
-
-    if (!formData.confirmPassword) {
-      errors.confirmPassword = '请确认密码';
-    } else if (formData.confirmPassword !== formData.password) {
-      errors.confirmPassword = '两次输入的密码不一致';
-    }
-
-    setFormErrors(errors);
-    return Object.keys(errors).length === 0;
-  };
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-
-    if (!validateForm()) {
-      return;
-    }
-
+  // 处理注册表单提交
+  const onRegisterSubmit = async (data: RegisterFormData) => {
     try {
-      await register(formData.email, formData.password);
+      await registerUser(data.email, data.password);
       // 注册成功后显示页面内提示，不直接跳转
       setRegisterSuccess(true);
       // 清空表单
-      setFormData({ email: '', password: '', confirmPassword: '' });
+      reset();
       // 3秒后隐藏成功提示
       setTimeout(() => setRegisterSuccess(false), 3000);
     } catch {
@@ -66,37 +84,17 @@ const RegisterPage: React.FC = () => {
   };
 
   // 重新发送验证邮件的处理函数
-  const handleResendVerification = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const onResendSubmit = async (data: ResendEmailFormData) => {
     setResendSuccess(false);
     setResendError(null);
 
-    // 简单验证邮箱格式
-    if (!resendEmail || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(resendEmail)) {
-      setResendError('请输入有效的邮箱地址');
-      return;
-    }
-
     try {
-      await resendVerificationEmail(resendEmail);
+      await resendVerificationEmail(data.resendEmail);
       setResendSuccess(true);
-      setResendEmail('');
+      resetResend();
       setTimeout(() => setResendSuccess(false), 3000); // 3秒后隐藏成功提示
     } catch (error) {
       setResendError(error instanceof Error ? error.message : '重新发送验证邮件失败，请重试');
-    }
-  };
-
-  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const { name, value } = e.target;
-    setFormData(prev => ({ ...prev, [name]: value }));
-    // 清除对应字段的错误信息
-    if (formErrors[name as keyof RegisterFormData]) {
-      setFormErrors(prev => {
-        const newErrors = { ...prev };
-        delete newErrors[name as keyof RegisterFormData];
-        return newErrors;
-      });
     }
   };
 
@@ -125,23 +123,20 @@ const RegisterPage: React.FC = () => {
           </p>
         </div>
 
-        <form className="mt-8 space-y-6" onSubmit={handleSubmit}>
+        <form className="mt-8 space-y-6" onSubmit={handleRegisterSubmit(onRegisterSubmit)}>
           <div className="space-y-4">
             <div className="relative group">
               <label htmlFor="email" className="sr-only">邮箱</label>
               <input
                 id="email"
-                name="email"
                 type="email"
                 autoComplete="email"
-                required
-                className={`block w-full px-5 py-4 bg-white/50 dark:bg-gray-800/50 border border-gray-200 dark:border-gray-700 rounded-xl placeholder-gray-400 text-gray-900 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent transition-all duration-200 backdrop-blur-sm dark:text-white ${formErrors.email ? 'border-red-500 focus:ring-red-500' : 'group-hover:border-primary-300 dark:group-hover:border-primary-700'}`}
-                placeholder="邮箱"
-                value={formData.email}
-                onChange={handleChange}
+                className={`block w-full px-5 py-4 bg-white/50 dark:bg-gray-800/50 border border-gray-200 dark:border-gray-700 rounded-xl placeholder-gray-400 text-gray-900 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent transition-all duration-200 backdrop-blur-sm dark:text-white ${registerErrors.email ? 'border-red-500 focus:ring-red-500' : 'group-hover:border-primary-300 dark:group-hover:border-primary-700'}`}
+                placeholder="请输入邮箱"
+                {...register('email')}
               />
-              {formErrors.email && (
-                <p className="mt-1 text-sm text-red-500 pl-1 animate-slide-up">{formErrors.email}</p>
+              {registerErrors.email && (
+                <p className="mt-1 text-sm text-red-500 pl-1 animate-slide-up">{registerErrors.email.message}</p>
               )}
             </div>
 
@@ -149,17 +144,14 @@ const RegisterPage: React.FC = () => {
               <label htmlFor="password" className="sr-only">密码</label>
               <input
                 id="password"
-                name="password"
                 type="password"
                 autoComplete="new-password"
-                required
-                className={`block w-full px-5 py-4 bg-white/50 dark:bg-gray-800/50 border border-gray-200 dark:border-gray-700 rounded-xl placeholder-gray-400 text-gray-900 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent transition-all duration-200 backdrop-blur-sm dark:text-white ${formErrors.password ? 'border-red-500 focus:ring-red-500' : 'group-hover:border-primary-300 dark:group-hover:border-primary-700'}`}
+                className={`block w-full px-5 py-4 bg-white/50 dark:bg-gray-800/50 border border-gray-200 dark:border-gray-700 rounded-xl placeholder-gray-400 text-gray-900 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent transition-all duration-200 backdrop-blur-sm dark:text-white ${registerErrors.password ? 'border-red-500 focus:ring-red-500' : 'group-hover:border-primary-300 dark:group-hover:border-primary-700'}`}
                 placeholder="密码"
-                value={formData.password}
-                onChange={handleChange}
+                {...register('password')}
               />
-              {formErrors.password && (
-                <p className="mt-1 text-sm text-red-500 pl-1 animate-slide-up">{formErrors.password}</p>
+              {registerErrors.password && (
+                <p className="mt-1 text-sm text-red-500 pl-1 animate-slide-up">{registerErrors.password.message}</p>
               )}
             </div>
 
@@ -167,17 +159,14 @@ const RegisterPage: React.FC = () => {
               <label htmlFor="confirmPassword" className="sr-only">确认密码</label>
               <input
                 id="confirmPassword"
-                name="confirmPassword"
                 type="password"
                 autoComplete="new-password"
-                required
-                className={`block w-full px-5 py-4 bg-white/50 dark:bg-gray-800/50 border border-gray-200 dark:border-gray-700 rounded-xl placeholder-gray-400 text-gray-900 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent transition-all duration-200 backdrop-blur-sm dark:text-white ${formErrors.confirmPassword ? 'border-red-500 focus:ring-red-500' : 'group-hover:border-primary-300 dark:group-hover:border-primary-700'}`}
+                className={`block w-full px-5 py-4 bg-white/50 dark:bg-gray-800/50 border border-gray-200 dark:border-gray-700 rounded-xl placeholder-gray-400 text-gray-900 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent transition-all duration-200 backdrop-blur-sm dark:text-white ${registerErrors.confirmPassword ? 'border-red-500 focus:ring-red-500' : 'group-hover:border-primary-300 dark:group-hover:border-primary-700'}`}
                 placeholder="确认密码"
-                value={formData.confirmPassword}
-                onChange={handleChange}
+                {...register('confirmPassword')}
               />
-              {formErrors.confirmPassword && (
-                <p className="mt-1 text-sm text-red-500 pl-1 animate-slide-up">{formErrors.confirmPassword}</p>
+              {registerErrors.confirmPassword && (
+                <p className="mt-1 text-sm text-red-500 pl-1 animate-slide-up">{registerErrors.confirmPassword.message}</p>
               )}
             </div>
           </div>
@@ -235,21 +224,21 @@ const RegisterPage: React.FC = () => {
           </div>
 
           {showResendForm && (
-            <form className="mt-4 space-y-4 animate-slide-up" onSubmit={handleResendVerification}>
+            <form className="mt-4 space-y-4 animate-slide-up" onSubmit={handleResendSubmit(onResendSubmit)}>
               <div className="relative group">
                 <label htmlFor="resendEmail" className="sr-only">邮箱</label>
                 <input
                   id="resendEmail"
-                  name="resendEmail"
                   type="email"
                   autoComplete="email"
-                  required
-                  className={`block w-full px-5 py-3 bg-white/50 dark:bg-gray-800/50 border border-gray-200 dark:border-gray-700 rounded-xl placeholder-gray-400 text-gray-900 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent transition-all duration-200 backdrop-blur-sm dark:text-white ${resendError ? 'border-red-500 focus:ring-red-500' : 'group-hover:border-primary-300 dark:group-hover:border-primary-700'}`}
-                  placeholder="请输入您的邮箱"
-                  value={resendEmail}
-                  onChange={(e) => setResendEmail(e.target.value)}
+                  className={`block w-full px-5 py-3 bg-white/50 dark:bg-gray-800/50 border border-gray-200 dark:border-gray-700 rounded-xl placeholder-gray-400 text-gray-900 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent transition-all duration-200 backdrop-blur-sm dark:text-white ${resendError ? 'border-red-500 focus:ring-red-500' : resendErrors.resendEmail ? 'border-red-500 focus:ring-red-500' : 'group-hover:border-primary-300 dark:group-hover:border-primary-700'}`}
+                  placeholder="请输入邮箱"
+                  {...registerResend('resendEmail')}
                 />
-                {resendError && (
+                {resendErrors.resendEmail && (
+                  <p className="mt-1 text-sm text-red-500 pl-1">{resendErrors.resendEmail.message}</p>
+                )}
+                {resendError && !resendErrors.resendEmail && (
                   <p className="mt-1 text-sm text-red-500 pl-1">{resendError}</p>
                 )}
                 {resendSuccess && (

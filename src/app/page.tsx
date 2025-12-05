@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef, useCallback } from 'react';
+import { motion } from 'framer-motion';
 import Navbar from '@/components/Navbar';
 import { useAuth } from '@/context/AuthContext';
 import { useLike } from '@/context/LikeContext';
@@ -12,6 +13,7 @@ import CreateConfessionForm from '@/components/CreateConfessionForm';
 import { CustomSelect } from '@/components/CustomSelect';
 import { useQuery, useInfiniteQuery, useQueryClient } from '@tanstack/react-query';
 import LoginPrompt from '@/components/LoginPrompt';
+import LoadingSpinner from '@/components/LoadingSpinner';
 
 export default function Home() {
   const router = useRouter();
@@ -160,15 +162,37 @@ export default function Home() {
       
       <main className="w-full max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         {/* Hero Section */}
-        <div className="text-center mb-16 pt-10 animate-fade-in">
-          <h1 className="text-4xl sm:text-5xl md:text-7xl font-bold mb-6 bg-gradient-to-r from-primary-600 via-purple-600 to-secondary-500 bg-clip-text text-transparent drop-shadow-sm">
+        <motion.div 
+          className="text-center mb-16 pt-10"
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.8 }}
+        >
+          <motion.h1 
+            className="text-4xl sm:text-5xl md:text-7xl font-bold mb-6 bg-gradient-to-r from-primary-600 via-purple-600 to-secondary-500 bg-clip-text text-transparent drop-shadow-sm"
+            initial={{ opacity: 0, scale: 0.9 }}
+            animate={{ opacity: 1, scale: 1 }}
+            transition={{ duration: 0.6, delay: 0.2 }}
+          >
             Confession Wall
-          </h1>
-          <p className="text-lg sm:text-xl text-gray-600 dark:text-gray-300 max-w-2xl mx-auto leading-relaxed">
+          </motion.h1>
+          <motion.p 
+            className="text-lg sm:text-xl text-gray-600 dark:text-gray-300 max-w-2xl mx-auto leading-relaxed"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            transition={{ duration: 0.6, delay: 0.4 }}
+          >
             一个倾诉秘密、表达爱意或发泄情绪的安全空间。
-            <span className="block mt-2 font-medium text-primary-600 dark:text-primary-400">匿名 安全 免费</span>
-          </p>
-        </div>
+            <motion.span 
+              className="block mt-2 font-medium text-primary-600 dark:text-primary-400"
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.6, delay: 0.6 }}
+            >
+              匿名 安全 免费
+            </motion.span>
+          </motion.p>
+        </motion.div>
         
         <CreateConfessionForm onSuccess={() => queryClient.invalidateQueries({ queryKey: ['confessions'] })} user={user} />
         
@@ -224,7 +248,7 @@ export default function Home() {
           
           {isLoading ? (
             <div className="text-center py-20">
-              <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary-600 mx-auto mb-4"></div>
+              <LoadingSpinner type="climbingBox" size={30} color="#f97316" className="mx-auto mb-4" />
               <p className="text-gray-500">{searchKeyword ? '搜索中...' : '加载秘密中...'}</p>
             </div>
           ) : isError ? (

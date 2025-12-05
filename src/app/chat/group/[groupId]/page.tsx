@@ -7,8 +7,9 @@ import { ChatMessage, Group, GroupMember, UserSearchResult, Profile } from '@/ty
 import Link from 'next/link';
 import Image from 'next/image';
 import Navbar from '@/components/Navbar';
-import MessageToast from '@/components/MessageToast';
 import MultimediaMessage from '@/components/MultimediaMessage';
+import { showToast } from '@/utils/toast';
+import LoadingSpinner from '@/components/LoadingSpinner';
 import { MessageCircleIcon, UsersIcon, PlusIcon, XIcon, TrashIcon, SendIcon, Image as ImageIcon, Smile } from 'lucide-react';
 import { supabase } from '@/lib/supabase/client';
 
@@ -32,8 +33,6 @@ const GroupChatPage = ({ params }: { params: Promise<{ groupId: string }> }) => 
   const [searching, setSearching] = useState(false);
   const [showDeleteMessageConfirm, setShowDeleteMessageConfirm] = useState(false);
   const [selectedMessageId, setSelectedMessageId] = useState<string | null>(null);
-  const [toastMessage, setToastMessage] = useState<string | null>(null);
-  const [toastType, setToastType] = useState<'success' | 'error' | 'info'>('success');
   const [showDeleteGroupConfirm, setShowDeleteGroupConfirm] = useState(false);
   const [currentUserRole, setCurrentUserRole] = useState<'owner' | 'admin' | 'member' | null>(null);
   // 用户信息弹窗状态
@@ -64,16 +63,24 @@ const GroupChatPage = ({ params }: { params: Promise<{ groupId: string }> }) => 
   // 多媒体消息相关
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
   
+  // 用于解决 hydration mismatch 的状态
+  const [isHydrated, setIsHydrated] = useState(false);
+  
   const messagesEndRef = useRef<HTMLDivElement>(null);
   // 实时通道引用，与私聊实现一致
   const channelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
   
-  // 获取本地已删除消息ID
-  const getDeletedMessageIds = useCallback((): string[] => {
-    if (!user?.id) return [];
+  // 组件挂载后设置为客户端已加载，避免 hydration 不匹配
+  useEffect(() => {
+    setIsHydrated(true);
+  }, []);
+  
+  // 获取本地已删除消息信息
+  const getDeletedMessages = useCallback((): Record<string, { deletedAt: number; deletedByAdmin: boolean }> => {
+    if (!user?.id) return {};
     const key = `deleted_messages_${user.id}_${groupId}`;
-    const deletedIds = localStorage.getItem(key);
-    return deletedIds ? JSON.parse(deletedIds) : [];
+    const deletedMessagesStr = localStorage.getItem(key);
+    return deletedMessagesStr ? JSON.parse(deletedMessagesStr) : {};
   }, [user?.id, groupId]);
 
   // 处理头像点击，显示用户信息
@@ -90,16 +97,19 @@ const GroupChatPage = ({ params }: { params: Promise<{ groupId: string }> }) => 
     }
   };
   
-  // 添加本地已删除消息ID
-  const addDeletedMessageId = useCallback((messageId: string) => {
+  // 添加本地已删除消息
+  const addDeletedMessage = useCallback((message: ChatMessage, deletedByAdmin: boolean) => {
     if (!user?.id) return;
     const key = `deleted_messages_${user.id}_${groupId}`;
-    const deletedIds = getDeletedMessageIds();
-    if (!deletedIds.includes(messageId)) {
-      deletedIds.push(messageId);
-      localStorage.setItem(key, JSON.stringify(deletedIds));
-    }
-  }, [user?.id, groupId, getDeletedMessageIds]);
+    const deletedMessages = getDeletedMessages();
+    
+    deletedMessages[message.id] = {
+      deletedAt: Date.now(),
+      deletedByAdmin
+    };
+    
+    localStorage.setItem(key, JSON.stringify(deletedMessages));
+  }, [user?.id, groupId, getDeletedMessages]);
   
   // 删除本地已删除消息ID（暂时未使用）
   // const removeDeletedMessageId = (messageId: string) => {
@@ -236,7 +246,7 @@ const GroupChatPage = ({ params }: { params: Promise<{ groupId: string }> }) => 
       // 移除所有群相关监听器
       supabase.removeChannel(groupChannel);
     };
-  }, [user, groupId, getDeletedMessageIds]);
+  }, [user, groupId, getDeletedMessages]);
 
   // 自动标记消息为已读
   const markMessagesAsRead = useCallback(async () => {
@@ -261,9 +271,9 @@ const GroupChatPage = ({ params }: { params: Promise<{ groupId: string }> }) => 
       try {
         setLoadingMessages(true);
         const groupMessages = await chatService.getGroupMessages(groupId, 50, 0);
-        const deletedIds = getDeletedMessageIds();
+        const deletedMessages = getDeletedMessages();
         // 过滤掉本地已删除的消息
-        const filteredMessages = groupMessages.filter(msg => !deletedIds.includes(msg.id));
+        const filteredMessages = groupMessages.filter(msg => !Object.keys(deletedMessages).includes(msg.id));
         // 与私聊完全一致：服务返回倒序消息，组件调用reverse()显示正序
         const sortedMessages = filteredMessages.reverse();
         setMessages(sortedMessages);
@@ -292,7 +302,7 @@ const GroupChatPage = ({ params }: { params: Promise<{ groupId: string }> }) => 
 
     // 请求通知权限
     requestNotificationPermission();
-  }, [user?.id, groupId, getDeletedMessageIds, markMessagesAsRead]);
+  }, [user?.id, groupId, getDeletedMessages, markMessagesAsRead]);
 
   // 实时消息订阅 - 完全复制私聊实现，仅修改过滤条件
   useEffect(() => {
@@ -443,8 +453,7 @@ const GroupChatPage = ({ params }: { params: Promise<{ groupId: string }> }) => 
       } else if (file.type.startsWith('video/')) {
         // 视频文件，最大50MB
         if (file.size > 50 * 1024 * 1024) {
-          setToastMessage('视频文件大小不能超过50MB');
-          setToastType('error');
+          showToast.error('视频文件大小不能超过50MB');
           setSending(false);
           return;
         }
@@ -452,8 +461,7 @@ const GroupChatPage = ({ params }: { params: Promise<{ groupId: string }> }) => 
         fileType = 'video';
       } else {
         // 其他文件，暂时不支持
-        setToastMessage('暂不支持该文件类型');
-        setToastType('error');
+        showToast.error('暂不支持该文件类型');
         setSending(false);
         return;
       }
@@ -475,8 +483,7 @@ const GroupChatPage = ({ params }: { params: Promise<{ groupId: string }> }) => 
       messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
     } catch (error) {
       console.error('Error sending file message:', error);
-      setToastMessage('发送文件失败，请重试');
-      setToastType('error');
+      showToast.error('发送文件失败，请重试');
     } finally {
       setSending(false);
       // 重置文件输入
@@ -511,8 +518,7 @@ const GroupChatPage = ({ params }: { params: Promise<{ groupId: string }> }) => 
       messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
     } catch {
       setNewMessage(messageContent);
-      setToastMessage('发送消息失败，请重试');
-      setToastType('error');
+      showToast.error('发送消息失败，请重试');
     } finally {
       setSending(false);
     }
@@ -563,19 +569,14 @@ const GroupChatPage = ({ params }: { params: Promise<{ groupId: string }> }) => 
       const updatedMembers = await chatService.getGroupMembers(groupId);
       setGroupMembers(updatedMembers);
       
-      setToastMessage('邀请发送成功！');
-      setToastType('success');
+      showToast.success('邀请发送成功！');
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : '邀请失败，请重试';
-      setToastMessage(errorMessage);
-      setToastType('error');
+      showToast.error(errorMessage);
     }
   };
 
-  // 关闭消息提示
-  const handleCloseToast = () => {
-    setToastMessage(null);
-  };
+
 
   // 退出群聊
   const handleLeaveGroup = async () => {
@@ -583,15 +584,13 @@ const GroupChatPage = ({ params }: { params: Promise<{ groupId: string }> }) => 
       await chatService.leaveGroup(groupId);
       setShowLeaveConfirm(false);
       // 跳转到聊天列表页
-      setToastMessage('退出群聊成功！');
-      setToastType('success');
+      showToast.success('退出群聊成功！');
       setTimeout(() => {
         window.location.href = '/chat';
       }, 1500);
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : '退出群聊失败，请重试';
-      setToastMessage(errorMessage);
-      setToastType('error');
+      showToast.error(errorMessage);
     }
   };
 
@@ -601,34 +600,47 @@ const GroupChatPage = ({ params }: { params: Promise<{ groupId: string }> }) => 
       await chatService.deleteGroup(groupId);
       setShowDeleteGroupConfirm(false);
       // 跳转到聊天列表页
-      setToastMessage('群聊已删除！');
-      setToastType('success');
+      showToast.success('群聊已删除！');
       setTimeout(() => {
         window.location.href = '/chat';
       }, 1500);
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : '删除群聊失败，请重试';
-      setToastMessage(errorMessage);
-      setToastType('error');
+      showToast.error(errorMessage);
     }
   };
   
   // 打开删除消息确认对话框
   const handleOpenDeleteMessageConfirm = (messageId: string) => {
-    // 检查消息发送时间是否超过两分钟
+    // 检查是否是群管理员或消息发送者
     const messageToDelete = messages.find(msg => msg.id === messageId);
-    if (messageToDelete) {
-      const messageTime = new Date(messageToDelete.created_at);
-      const now = new Date();
-      const timeDiff = now.getTime() - messageTime.getTime();
-      const twoMinutes = 2 * 60 * 1000;
-      
-      if (timeDiff > twoMinutes) {
-        // 超过两分钟，不允许删除
-        setToastMessage('消息发送超过两分钟，无法删除');
-        setToastType('error');
-        return;
-      }
+    if (!messageToDelete) {
+      return;
+    }
+    
+    // 群管理员可以删除任何消息，不需要时间限制
+    if (currentUserRole === 'owner' || currentUserRole === 'admin') {
+      setSelectedMessageId(messageId);
+      setShowDeleteMessageConfirm(true);
+      return;
+    }
+    
+    // 普通用户只能删除自己发送的消息，且需要时间限制
+    if (messageToDelete.sender_id !== user?.id) {
+      showToast.error('你只能删除自己发送的消息');
+      return;
+    }
+    
+    // 检查消息发送时间是否超过两分钟
+    const messageTime = new Date(messageToDelete.created_at);
+    const now = new Date();
+    const timeDiff = now.getTime() - messageTime.getTime();
+    const twoMinutes = 2 * 60 * 1000;
+    
+    if (timeDiff > twoMinutes) {
+      // 超过两分钟，不允许删除
+      showToast.error('消息发送超过两分钟，无法删除');
+      return;
     }
     
     setSelectedMessageId(messageId);
@@ -646,17 +658,25 @@ const GroupChatPage = ({ params }: { params: Promise<{ groupId: string }> }) => 
     if (!selectedMessageId) return;
     
     try {
-      // 获取要删除的消息，确保是自己发送的
+      // 获取要删除的消息
       const messageToDelete = messages.find(msg => msg.id === selectedMessageId);
-      if (!messageToDelete || messageToDelete.sender_id !== user?.id) {
-        throw new Error('你只能删除自己发送的消息');
+      if (!messageToDelete) {
+        throw new Error('消息不存在');
       }
       
-      // 调用服务端删除方法
-      await chatService.deleteMessages([selectedMessageId]);
+      // 检查权限：群管理员可以删除任何消息，普通用户只能删除自己发送的消息
+      if (currentUserRole !== 'owner' && currentUserRole !== 'admin' && messageToDelete.sender_id !== user?.id) {
+        throw new Error('你没有权限删除该消息');
+      }
+      
+      // 判断是否是管理员删除其他人的消息
+      const deletedByAdmin = (currentUserRole === 'owner' || currentUserRole === 'admin') && messageToDelete.sender_id !== user?.id;
+      
+      // 调用服务端删除方法，传递群聊标记
+      await chatService.deleteMessages([selectedMessageId], true, groupId);
       
       // 添加到本地已删除消息列表
-      addDeletedMessageId(selectedMessageId);
+      addDeletedMessage(messageToDelete, deletedByAdmin);
       
       // 从当前消息列表中移除
       setMessages(prev => prev.filter(msg => msg.id !== selectedMessageId));
@@ -665,12 +685,10 @@ const GroupChatPage = ({ params }: { params: Promise<{ groupId: string }> }) => 
       handleCloseDeleteMessageConfirm();
       
       // 显示成功提示
-      setToastMessage('消息已删除');
-      setToastType('success');
+      showToast.success(deletedByAdmin ? '已删除该消息' : '消息已撤回');
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : '删除消息失败，请重试';
-      setToastMessage(errorMessage);
-      setToastType('error');
+      showToast.error(errorMessage);
     }
   };
 
@@ -705,12 +723,10 @@ const GroupChatPage = ({ params }: { params: Promise<{ groupId: string }> }) => 
       setGroup(updatedGroup);
       
       // 显示成功提示
-      setToastMessage('成员已删除');
-      setToastType('success');
+      showToast.success('成员已删除');
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : '删除成员失败，请重试';
-      setToastMessage(errorMessage);
-      setToastType('error');
+      showToast.error(errorMessage);
     }
   };
 
@@ -734,12 +750,10 @@ const GroupChatPage = ({ params }: { params: Promise<{ groupId: string }> }) => 
       setAvatarPreview(undefined);
       setShowGroupProfileModal(false);
       
-      setToastMessage('群内个人信息已更新');
-      setToastType('success');
+      showToast.success('群内个人信息已更新');
     } catch (err) {
       console.error('Failed to update group profile:', err);
-      setToastMessage('更新群内个人信息失败，请重试');
-      setToastType('error');
+      showToast.error('更新群内个人信息失败，请重试');
     }
   };
 
@@ -759,14 +773,12 @@ const GroupChatPage = ({ params }: { params: Promise<{ groupId: string }> }) => 
     if (file) {
       // 检查文件类型
       if (!file.type.startsWith('image/')) {
-        setToastMessage('请选择图片文件');
-        setToastType('error');
+        showToast.error('请选择图片文件');
         return;
       }
       // 检查文件大小（最大5MB）
       if (file.size > 5 * 1024 * 1024) {
-        setToastMessage('图片大小不能超过5MB');
-        setToastType('error');
+        showToast.error('图片大小不能超过5MB');
         return;
       }
       
@@ -821,7 +833,12 @@ const GroupChatPage = ({ params }: { params: Promise<{ groupId: string }> }) => 
       <div className="min-h-screen">
         <Navbar />
         <div className="flex justify-center items-center h-[calc(100vh-80px)]">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary-500"></div>
+          {isHydrated ? (
+            <LoadingSpinner type="grid" size={20} color="#f97316" />
+          ) : (
+            // Use a simple server-safe loading indicator
+            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary-500"></div>
+          )}
         </div>
       </div>
     );
@@ -969,6 +986,18 @@ const GroupChatPage = ({ params }: { params: Promise<{ groupId: string }> }) => 
               <div className="space-y-4">
                 {messages.map((message, index) => {
                   const isCurrentUser = message.sender_id === user?.id;
+                  // 获取本地已删除消息信息
+                  const deletedMessages = getDeletedMessages();
+                  // 检查消息是否已删除：
+                  // 1. 本地标记删除
+                  // 2. 数据库标记删除（deleted=true）
+                  // 3. 内容被修改为删除提示
+                  const isLocallyDeleted = Object.keys(deletedMessages).includes(message.id);
+                  const isDbDeleted = message.deleted || message.content === '[你的消息被群管理员删除]';
+                  const isDeleted = isLocallyDeleted || isDbDeleted;
+                  
+                  // 获取删除信息
+                  const deletionInfo = deletedMessages[message.id];
                   // 获取发送者信息
                   const senderInfo = message.sender_profile;
                   // 查找发送者在群内的信息
@@ -988,6 +1017,9 @@ const GroupChatPage = ({ params }: { params: Promise<{ groupId: string }> }) => 
                   // 日期分隔逻辑
                   const currentDate = new Date(message.created_at).toISOString().split('T')[0];
                   const showDateSeparator = index === 0 || new Date(messages[index - 1].created_at).toISOString().split('T')[0] !== currentDate;
+                  
+                  // 检查是否有删除权限：群管理员可以删除任何消息，普通用户只能删除自己发送的消息
+                  const canDelete = (currentUserRole === 'owner' || currentUserRole === 'admin') || (isCurrentUser && new Date().getTime() - new Date(message.created_at).getTime() <= 2 * 60 * 1000);
                   
                   return (
                     <div key={message.id}>
@@ -1028,35 +1060,61 @@ const GroupChatPage = ({ params }: { params: Promise<{ groupId: string }> }) => 
                           {/* 消息内容 */}
                           <div className="flex flex-col">
                             {/* 用户名 */}
-                            <span className="text-xs text-gray-500 dark:text-gray-400 mb-1">
-                              {senderName}
-                            </span>
+                            {!isDeleted && (
+                              <span className="text-xs text-gray-500 dark:text-gray-400 mb-1">
+                                {senderName}
+                              </span>
+                            )}
                             
                             {/* 消息气泡 */}
                             <div className="relative inline-block bg-gray-200 dark:bg-gray-700 text-gray-800 dark:text-white rounded-lg p-3 rounded-tl-none">
-                              {/* 消息内容 */}
-                              <div className="flex flex-col gap-2">
-                                {/* 非文本消息单独一行显示 */}
-                                {message.type !== 'text' && (
-                                  <div className="w-full">
-                                    <MultimediaMessage message={message} />
-                                  </div>
-                                )}
-                                
-                                {/* 文本消息与时间戳在同一行 */}
-                                <div className="flex items-end gap-1">
-                                  {message.type === 'text' && (
-                                    <p className="text-sm">
-                                      {message.content}
-                                    </p>
+                              {/* 显示已删除消息占位符 */}
+                              {isDeleted ? (
+                                <div className="flex items-center justify-center py-2 text-center">
+                                  <span className="text-sm italic text-gray-500 dark:text-gray-400">
+                                    {/* 根据删除类型显示不同提示 */}
+                                    {message.content === '[你的消息被群管理员删除]' ? 
+                                      message.sender_id === user?.id ? '你的消息被群管理员删除' : '此消息已被管理员删除' :
+                                      deletionInfo?.deletedByAdmin ? 
+                                        message.sender_id === user?.id ? '你的消息被群管理员删除' : '此消息已被管理员删除' : 
+                                        message.sender_id === user?.id ? '此消息已被撤回' : '此消息已被删除'}
+                                  </span>
+                                </div>
+                              ) : (
+                                <div className="flex flex-col gap-2">
+                                  {/* 非文本消息单独一行显示 */}
+                                  {message.type !== 'text' && (
+                                    <div className="w-full">
+                                      <MultimediaMessage message={message} />
+                                    </div>
                                   )}
-                                  <div className="flex flex-col items-end">
-                                    <span className="text-xs opacity-70">
-                                      {new Date(message.created_at).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })}
-                                    </span>
+                                  
+                                  {/* 文本消息与时间戳在同一行 */}
+                                  <div className="flex items-end gap-1">
+                                    {message.type === 'text' && (
+                                      <p className="text-sm">
+                                        {message.content}
+                                      </p>
+                                    )}
+                                    <div className="flex flex-col items-end">
+                                      <span className="text-xs opacity-70">
+                                        {new Date(message.created_at).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })}
+                                      </span>
+                                    </div>
                                   </div>
                                 </div>
-                              </div>
+                              )}
+                              
+                              {/* 删除消息按钮 - 管理员或消息发送者可以删除 */}
+                              {!isDeleted && canDelete && (
+                                <button
+                                  onClick={() => handleOpenDeleteMessageConfirm(message.id)}
+                                  className="absolute -top-1 -right-1 bg-white dark:bg-gray-800 p-1 rounded-full text-red-500 opacity-0 hover:opacity-100 transition-opacity duration-200 shadow-md"
+                                  aria-label="删除消息"
+                                >
+                                  <TrashIcon className="h-3 w-3" />
+                                </button>
+                              )}
                             </div>
                           </div>
                         </div>
@@ -1069,38 +1127,50 @@ const GroupChatPage = ({ params }: { params: Promise<{ groupId: string }> }) => 
                           <div className="flex flex-col items-end">
                             {/* 消息气泡 */}
                             <div className="relative inline-block bg-gradient-to-r from-purple-400 to-pink-500 text-white rounded-lg p-3 rounded-tr-none group">
-                              {/* 消息内容 */}
-                              <div className="flex flex-col gap-2">
-                                {/* 非文本消息单独一行显示 */}
-                                {message.type !== 'text' && (
-                                  <div className="w-full">
-                                    <MultimediaMessage message={message} />
-                                  </div>
-                                )}
-                                
-                                {/* 文本消息与时间戳在同一行 */}
-                                <div className="flex items-end gap-1">
-                                  {message.type === 'text' && (
-                                    <p className="text-sm">
-                                      {message.content}
-                                    </p>
+                              {/* 显示已删除消息占位符 */}
+                              {isDeleted ? (
+                                <div className="flex items-center justify-center py-2 text-center">
+                                  <span className="text-sm italic text-gray-300">
+                                    {/* 根据删除类型显示不同提示 */}
+                                    {message.content === '[你的消息被群管理员删除]' ? '你的消息被群管理员删除' :
+                                     deletionInfo?.deletedByAdmin ? '你的消息被群管理员删除' : '此消息已被撤回'}
+                                  </span>
+                                </div>
+                              ) : (
+                                <div className="flex flex-col gap-2">
+                                  {/* 非文本消息单独一行显示 */}
+                                  {message.type !== 'text' && (
+                                    <div className="w-full">
+                                      <MultimediaMessage message={message} />
+                                    </div>
                                   )}
-                                  <div className="flex flex-col items-end">
-                                    <span className="text-xs opacity-70">
-                                      {new Date(message.created_at).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })}
-                                    </span>
+                                  
+                                  {/* 文本消息与时间戳在同一行 */}
+                                  <div className="flex items-end gap-1">
+                                    {message.type === 'text' && (
+                                      <p className="text-sm">
+                                        {message.content}
+                                      </p>
+                                    )}
+                                    <div className="flex flex-col items-end">
+                                      <span className="text-xs opacity-70">
+                                        {new Date(message.created_at).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })}
+                                      </span>
+                                    </div>
                                   </div>
                                 </div>
-                              </div>
+                              )}
                                 
-                              {/* 删除消息按钮 - 只有当前用户发送的消息才显示 */}
-                              <button
-                                onClick={() => handleOpenDeleteMessageConfirm(message.id)}
-                                className="absolute -top-1 -right-1 bg-white dark:bg-gray-800 p-1 rounded-full text-red-500 opacity-0 group-hover:opacity-100 transition-opacity duration-200 shadow-md"
-                                aria-label="删除消息"
-                              >
-                                <TrashIcon className="h-3 w-3" />
-                              </button>
+                              {/* 删除消息按钮 - 管理员或消息发送者可以删除 */}
+                              {!isDeleted && canDelete && (
+                                <button
+                                  onClick={() => handleOpenDeleteMessageConfirm(message.id)}
+                                  className="absolute -top-1 -right-1 bg-white dark:bg-gray-800 p-1 rounded-full text-red-500 opacity-0 group-hover:opacity-100 transition-opacity duration-200 shadow-md"
+                                  aria-label="删除消息"
+                                >
+                                  <TrashIcon className="h-3 w-3" />
+                                </button>
+                              )}
                             </div>
                           </div>
                           
@@ -1438,17 +1508,42 @@ const GroupChatPage = ({ params }: { params: Promise<{ groupId: string }> }) => 
       )}
       
       {/* 删除消息确认 */}
-      {showDeleteMessageConfirm && (
+      {showDeleteMessageConfirm && selectedMessageId && (
         <div className="fixed inset-0 bg-gradient-to-br from-orange-500 to-red-500 opacity-50 backdrop-blur-sm flex items-center justify-center z-50">
           <div className="bg-white dark:bg-gray-800 rounded-2xl p-6 max-w-sm w-full mx-4 shadow-xl">
             <div className="text-center mb-4">
               <div className="text-4xl mb-2">🗑️</div>
-              <h3 className="text-xl font-bold text-gray-900 dark:text-white mb-2">
-                确认删除消息
-              </h3>
-              <p className="text-gray-600 dark:text-gray-300">
-                确定要删除这条消息吗？此操作只会删除你设备上的记录，不会影响其他成员。
-              </p>
+              {(() => {
+                const messageToDelete = messages.find(msg => msg.id === selectedMessageId);
+                const isAdminDeletingOther = messageToDelete && (currentUserRole === 'owner' || currentUserRole === 'admin') && messageToDelete.sender_id !== user?.id;
+                
+                if (isAdminDeletingOther) {
+                  return (
+                    <>
+                      <h3 className="text-xl font-bold text-gray-900 dark:text-white mb-2">
+                        确认删除他人消息
+                      </h3>
+                      <p className="text-gray-600 dark:text-gray-300 mb-2">
+                        作为群管理员，你正在删除其他用户的消息。
+                      </p>
+                      <p className="text-red-600 dark:text-red-400 font-medium">
+                        该操作将从数据库中永久删除此消息，所有成员都将无法看到。
+                      </p>
+                    </>
+                  );
+                } else {
+                  return (
+                    <>
+                      <h3 className="text-xl font-bold text-gray-900 dark:text-white mb-2">
+                        确认删除消息
+                      </h3>
+                      <p className="text-gray-600 dark:text-gray-300">
+                        确定要删除这条消息吗？
+                      </p>
+                    </>
+                  );
+                }
+              })()}
             </div>
             <div className="flex gap-3">
               <button
@@ -1468,14 +1563,7 @@ const GroupChatPage = ({ params }: { params: Promise<{ groupId: string }> }) => 
         </div>
       )}
 
-      {/* 消息提示 */}
-      {toastMessage && (
-        <MessageToast
-          message={toastMessage}
-          type={toastType}
-          onClose={handleCloseToast}
-        />
-      )}
+
       
       {/* 用户信息弹窗 */}
       {showUserProfileModal && (
@@ -1704,14 +1792,12 @@ const GroupChatPage = ({ params }: { params: Promise<{ groupId: string }> }) => 
                     if (file) {
                       // 检查文件类型
                       if (!file.type.startsWith('image/')) {
-                        setToastMessage('请选择图片文件');
-                        setToastType('error');
+                        showToast.error('请选择图片文件');
                         return;
                       }
                       // 检查文件大小（最大5MB）
                       if (file.size > 5 * 1024 * 1024) {
-                        setToastMessage('图片大小不能超过5MB');
-                        setToastType('error');
+                        showToast.error('图片大小不能超过5MB');
                         return;
                       }
                       
@@ -1799,13 +1885,11 @@ const GroupChatPage = ({ params }: { params: Promise<{ groupId: string }> }) => 
                       } : prev);
                       
                       setShowGroupSettingsModal(false);
-                      setToastMessage('群设置更新成功');
-                      setToastType('success');
+                      showToast.success('群设置更新成功');
                     } catch (err) {
                       console.error('Failed to update group settings:', err);
                       const errorMessage = err instanceof Error ? err.message : '更新群设置失败，请重试';
-                      setToastMessage(errorMessage);
-                      setToastType('error');
+                      showToast.error(errorMessage);
                     } finally {
                       // 重置表单
                       setGroupAvatarFile(null);

@@ -7,6 +7,7 @@ import { confessionService } from '@/services/confessionService';
 import { PhotoIcon, PaperAirplaneIcon, XMarkIcon, FilmIcon } from '@heroicons/react/24/outline';
 import VideoUploader from './VideoUploader';
 import VideoPlayer from './VideoPlayer';
+import { motion } from 'framer-motion';
 
 interface CreateConfessionFormProps {
   onSuccess: () => void;
@@ -162,16 +163,31 @@ export default function CreateConfessionForm({ onSuccess, user }: CreateConfessi
   }
 
   return (
-    <div className="glass rounded-2xl p-6 md:p-8 mb-10 shadow-xl border border-white/20 animate-slide-up relative overflow-hidden">
+    <motion.div 
+      className="glass rounded-2xl p-6 md:p-8 mb-10 shadow-xl border border-white/20 relative overflow-hidden"
+      initial={{ opacity: 0, y: 20 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.5, ease: "easeOut" }}
+    >
       {/* Decorative elements */}
       <div className="absolute top-0 right-0 w-32 h-32 bg-gradient-to-br from-primary-500/10 to-secondary-500/10 rounded-bl-full -z-10"></div>
       
-      <h2 className="text-2xl font-bold text-gray-800 dark:text-white mb-6 flex items-center gap-2">
+      <motion.h2 
+        className="text-2xl font-bold text-gray-800 dark:text-white mb-6 flex items-center gap-2"
+        initial={{ opacity: 0, x: -20 }}
+        animate={{ opacity: 1, x: 0 }}
+        transition={{ duration: 0.5, delay: 0.2, ease: "easeOut" }}
+      >
         <span className="text-3xl">✨</span> 写下你的秘密
-      </h2>
+      </motion.h2>
       
       <form onSubmit={handleSubmit} className="space-y-6">
-        <div className="relative group">
+        <motion.div 
+          className="relative group"
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.5, delay: 0.3, ease: "easeOut" }}
+        >
           <textarea
             className="w-full h-40 px-6 py-4 bg-white/50 dark:bg-gray-800/50 backdrop-blur-sm border border-gray-200 dark:border-gray-700 rounded-2xl focus:ring-2 focus:ring-primary-500 focus:border-transparent transition-all resize-none text-lg placeholder-gray-400 dark:text-white dark:placeholder-gray-500 group-hover:bg-white/80 dark:group-hover:bg-gray-800/80"
             placeholder="在这里写下你想说的话..."
@@ -182,7 +198,7 @@ export default function CreateConfessionForm({ onSuccess, user }: CreateConfessi
           <div className="absolute bottom-4 right-4 text-xs text-gray-400 font-medium bg-white/80 dark:bg-gray-800/80 px-2 py-1 rounded-lg backdrop-blur-sm">
             {formData.content.length} 字
           </div>
-        </div>
+        </motion.div>
 
         {/* Image Upload Preview */}
         {previewUrls.length > 0 && (
@@ -373,6 +389,6 @@ export default function CreateConfessionForm({ onSuccess, user }: CreateConfessi
           </div>
         </div>
       )}
-    </div>
+    </motion.div>
   );
 }

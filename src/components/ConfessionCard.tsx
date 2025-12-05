@@ -3,11 +3,14 @@
 import React, { useState } from 'react';
 import Image from 'next/image';
 import { useRouter } from 'next/navigation';
+import { motion } from 'framer-motion';
 import { Confession } from '@/types/confession';
 import CommentSection from '@/components/CommentSection';
 import VideoPlayer from '@/components/VideoPlayer';
 import { TrashIcon } from '@heroicons/react/24/outline';
 import { HeartIcon as HeartIconSolid } from '@heroicons/react/24/solid';
+import { PhotoProvider, PhotoView } from 'react-photo-view';
+import 'react-photo-view/dist/react-photo-view.css';
 
 interface ConfessionCardProps {
   confession: Confession;
@@ -24,7 +27,6 @@ export default function ConfessionCard({
   onDelete,
   isLikeLoading
 }: ConfessionCardProps) {
-  const [enlargedImageId, setEnlargedImageId] = useState<string | null>(null);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const router = useRouter();
 
@@ -39,10 +41,6 @@ export default function ConfessionCard({
     });
   };
 
-  const toggleImageEnlarge = (imageId: string) => {
-    setEnlargedImageId(enlargedImageId === imageId ? null : imageId);
-  };
-
   // Handle profile click
   const handleProfileClick = () => {
     if (!confession.is_anonymous && confession.profile?.username) {
@@ -51,7 +49,12 @@ export default function ConfessionCard({
   };
 
   return (
-    <div className="glass-card rounded-2xl p-6 mb-6 transition-all duration-300 hover:-translate-y-2 hover:shadow-xl border border-white/20">
+    <motion.div 
+      className="glass-card rounded-2xl p-6 mb-6 transition-all duration-300 hover:-translate-y-2 hover:shadow-xl border border-white/20"
+      initial={{ opacity: 0, y: 20 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.5 }}
+    >
       <div className="flex justify-between items-start mb-4">
         <div className="flex items-center">
           {confession.is_anonymous ? (
@@ -101,28 +104,27 @@ export default function ConfessionCard({
       </div>
 
       {confession.images && confession.images.length > 0 && (
-        <div className="mb-6 grid grid-cols-1 md:grid-cols-2 gap-4">
-          {confession.images.map((media) => (
-            <div
-              key={media.id}
-              className={`relative group transition-all duration-500 ease-in-out ${enlargedImageId === media.id ? 'col-span-full z-20' : ''}`}
-            >
+        <PhotoProvider>
+          <div className="mb-6 grid grid-cols-1 md:grid-cols-2 gap-4">
+            {confession.images.map((media) => (
               <div
-                className={`w-full rounded-xl border border-gray-100 dark:border-gray-700 shadow-sm transition-all duration-500 ease-in-out ${enlargedImageId === media.id ? 'aspect-auto' : media.file_type === 'video' ? '' : 'aspect-square overflow-hidden'}`}
+                key={media.id}
+                className={`w-full rounded-xl border border-gray-100 dark:border-gray-700 shadow-sm transition-all duration-500 ease-in-out ${media.file_type === 'video' ? '' : 'aspect-square overflow-hidden'}`}
               >
                 {media.file_type === 'image' ? (
-                  <Image
-                    src={media.image_url}
-                    alt="Confession image"
-                    width={enlargedImageId === media.id ? 800 : 600}
-                    height={enlargedImageId === media.id ? 600 : 600}
-                    className={`w-full h-full object-cover transition-transform duration-500 cursor-pointer ${enlargedImageId === media.id ? '' : 'group-hover:scale-110'}`}
-                    onClick={() => toggleImageEnlarge(media.id)}
-                  />
+                  <PhotoView src={media.image_url}>
+                    <Image
+                      src={media.image_url}
+                      alt="Confession image"
+                      width={600}
+                      height={600}
+                      className="w-full h-full object-cover transition-transform duration-500 cursor-pointer group-hover:scale-110"
+                    />
+                  </PhotoView>
                 ) : media.file_type === 'video' && media.image_url ? (
                   <VideoPlayer
                     videoUrl={media.image_url}
-                    className={`w-full h-full transition-transform duration-500 cursor-pointer ${enlargedImageId === media.id ? '' : 'group-hover:scale-110'}`}
+                    className="w-full h-full transition-transform duration-500 cursor-pointer group-hover:scale-110"
                   />
                 ) : (
                   <div className="w-full h-full flex items-center justify-center bg-gray-900">
@@ -130,9 +132,9 @@ export default function ConfessionCard({
                   </div>
                 )}
               </div>
-            </div>
-          ))}
-        </div>
+            ))}
+          </div>
+        </PhotoProvider>
       )}
 
       <div className="flex items-center justify-between pt-4 border-t border-gray-100 dark:border-gray-700/50">
@@ -199,6 +201,6 @@ export default function ConfessionCard({
       <div className="mt-6">
         <CommentSection confessionId={confession.id} />
       </div>
-    </div>
+    </motion.div>
   );
 }

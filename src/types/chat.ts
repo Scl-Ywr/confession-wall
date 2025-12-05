@@ -48,6 +48,7 @@ export interface ChatMessage {
   sender_profile?: Profile;
   is_read: boolean;
   type: 'text' | 'image' | 'video' | 'file';
+  deleted?: boolean; // 消息是否已删除
 }
 
 // 聊天会话

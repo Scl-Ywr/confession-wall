@@ -21,97 +21,60 @@ const createNotification = async (
   friendRequestId?: string,
   groupId?: string
 ): Promise<Notification> => {
-  // 获取当前认证用户
-  let user = await supabase.auth.getUser();
+  // 获取当前认证用户和会话
+  const user = await supabase.auth.getUser();
+  const session = await supabase.auth.getSession();
+  const accessToken = session.data.session?.access_token || '';
   
-  // 检查是否有错误获取用户信息，尝试刷新会话
   if (user.error || !user.data.user?.id) {
-    // 尝试刷新会话
-    const { error: refreshError } = await supabase.auth.refreshSession();
-    
-    if (refreshError) {
-      console.error('Failed to refresh session:', refreshError.message || JSON.stringify(refreshError));
-      throw new Error('User not authenticated');
-    }
-    
-    // 重新获取用户信息
-    user = await supabase.auth.getUser();
-    
-    if (user.error || !user.data.user?.id) {
-      console.error('Auth error in createNotification after refresh:', user.error?.message || JSON.stringify(user.error));
-      throw new Error('User not authenticated');
-    }
+    throw new Error('User not authenticated');
   }
   
   const senderId = user.data.user.id;
 
-  // 尝试插入通知，移除.select('*').single()，因为发送者不是接收者，不能查询通知
-  // 注意：notifications 表没有 group_id 列，所以不插入该字段
-  const { error } = await supabase
-    .from('notifications')
-    .insert({
+  try {
+    // 使用直接的 fetch 调用来插入通知
+    const response = await fetch(
+      `${process.env.NEXT_PUBLIC_SUPABASE_URL}/rest/v1/notifications`,
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'apikey': process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+          'Authorization': `Bearer ${accessToken}`
+        },
+        body: JSON.stringify({
+          recipient_id: recipientId,
+          sender_id: senderId,
+          content,
+          type,
+          friend_request_id: friendRequestId
+        })
+      }
+    );
+
+    if (!response.ok) {
+      console.error('Error inserting notification:', await response.text());
+      throw new Error('Failed to create notification');
+    }
+
+    // 返回一个模拟的通知对象，因为我们不需要实际的数据库ID
+    return {
+      id: 'temp-notification-id',
       recipient_id: recipientId,
-      sender_id: senderId, // 始终使用当前认证用户的ID作为发送者ID
+      sender_id: senderId,
       content,
       type,
-      friend_request_id: friendRequestId
-      // 移除 group_id 字段，因为表中没有这个列
-    });
-
-  if (error) {
-    console.error('Error inserting notification:', error.message || JSON.stringify(error));
-    // 检查是否是认证错误，如果是，尝试刷新会话并重试
-    if (error.code === '42501' || error.code === '401' || error.code === '403') {
-      // 刷新会话
-      const { error: refreshError } = await supabase.auth.refreshSession();
-      
-      if (!refreshError) {
-        // 重试插入，同样移除.select('*').single()
-        const { error: retryError } = await supabase
-          .from('notifications')
-          .insert({
-            recipient_id: recipientId,
-            sender_id: senderId,
-            content,
-            type,
-            friend_request_id: friendRequestId
-            // 移除 group_id 字段，因为表中没有这个列
-          });
-        
-        if (!retryError) {
-          // 返回一个模拟的通知对象，因为我们不需要实际的数据库ID
-          return {
-            id: 'temp-notification-id',
-            recipient_id: recipientId,
-            sender_id: senderId,
-            content,
-            type,
-            read_status: false,
-            created_at: new Date().toISOString(),
-            updated_at: new Date().toISOString(),
-            friend_request_id: friendRequestId,
-            group_id: groupId
-          } as Notification;
-        }
-        console.error('Retry failed:', retryError.message || JSON.stringify(retryError));
-      }
-    }
+      read_status: false,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+      friend_request_id: friendRequestId,
+      group_id: groupId
+    } as Notification;
+  } catch (error) {
+    console.error('Error in createNotification:', error);
     throw error;
   }
-
-  // 返回一个模拟的通知对象，因为我们不需要实际的数据库ID
-  return {
-    id: 'temp-notification-id',
-    recipient_id: recipientId,
-    sender_id: senderId,
-    content,
-    type,
-    read_status: false,
-    created_at: new Date().toISOString(),
-    updated_at: new Date().toISOString(),
-    friend_request_id: friendRequestId,
-    group_id: groupId
-  } as Notification;
 };
 
 export const chatService = {
@@ -126,7 +89,7 @@ export const chatService = {
       const userId = user.data.user.id;
       const timestamp = Date.now();
       const fileExtension = file.name.split('.').pop();
-      const fileName = `${userId}_${timestamp}_${Math.random().toString(36).substr(2, 9)}.${fileExtension}`;
+      const fileName = `${userId}_${timestamp}_${Math.random().toString(36).substring(2, 9)}.${fileExtension}`;
       const filePath = `${folder}/${fileName}`;
 
       // 上传文件
@@ -254,95 +217,234 @@ export const chatService = {
     }
     
     const senderId = user.data?.user?.id;
+    const session = await supabase.auth.getSession();
+    const accessToken = session.data.session?.access_token || '';
 
     if (!senderId) {
       throw new Error('User not authenticated');
     }
     
-    // 简单验证 receiverId 格式，避免无效请求
-    if (!receiverId || receiverId.length !== 36) {
-      throw new Error('Invalid receiver ID format');
-    }
-
-    // 开始事务
-    const { data, error } = await supabase
-      .from('friend_requests')
-      .insert({
-        sender_id: senderId,
-        receiver_id: receiverId,
-        message
-      })
-      .select('*')
-      .single();
-
-    if (error) {
-      throw error;
-    }
-    
-    // 获取发送者的资料，用于通知内容
-    const { data: senderProfile } = await supabase
-      .from('profiles')
-      .select('display_name')
-      .eq('id', senderId)
-      .single();
-    
-    // 获取接收者的资料，用于通知内容
-    const { data: receiverProfile } = await supabase
-      .from('profiles')
-      .select('display_name')
-      .eq('id', receiverId)
-      .single();
-    
     try {
-      // 创建通知给接收者
-      await createNotification(
-        receiverId,
-        `${senderProfile?.display_name || '用户'} 发送了好友请求`,
-        'friend_request',
-        data.id
+      // 先根据 receiverId 获取用户的实际 UUID
+      let targetReceiverId = receiverId;
+      
+      // 如果 receiverId 不是 UUID 格式，尝试根据用户名获取用户信息
+      if (receiverId.length !== 36 || !receiverId.includes('-')) {
+        const profileResponse = await fetch(
+          `${process.env.NEXT_PUBLIC_SUPABASE_URL}/rest/v1/profiles?select=id&username=eq.${receiverId}&limit=1`,
+          {
+            headers: {
+              'Content-Type': 'application/json',
+              'apikey': process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+              'Authorization': `Bearer ${accessToken}`
+            }
+          }
+        );
+        
+        const profileData = await profileResponse.json();
+        
+        if (Array.isArray(profileData) && profileData.length > 0) {
+          targetReceiverId = profileData[0].id;
+        } else {
+          // 如果不是 UUID 且不是有效的用户名，返回错误
+          throw new Error('Invalid receiver ID format');
+        }
+      }
+      
+      // 获取发送者和接收者的资料，用于通知内容
+      const senderProfileResponse = await fetch(
+        `${process.env.NEXT_PUBLIC_SUPABASE_URL}/rest/v1/profiles?select=display_name&id=eq.${senderId}&limit=1`,
+        {
+          headers: {
+            'Content-Type': 'application/json',
+            'apikey': process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+            'Authorization': `Bearer ${accessToken}`
+          }
+        }
       );
       
-      // 创建通知给发起者
-      await createNotification(
-        senderId,
-        `你已向 ${receiverProfile?.display_name || '用户'} 发送了好友请求，等待对方同意`,
-        'friend_request_sent',
-        data.id
+      const senderProfileData = await senderProfileResponse.json();
+      const senderProfile = Array.isArray(senderProfileData) && senderProfileData.length > 0 ? senderProfileData[0] : null;
+      
+      const receiverProfileResponse = await fetch(
+        `${process.env.NEXT_PUBLIC_SUPABASE_URL}/rest/v1/profiles?select=display_name&id=eq.${targetReceiverId}&limit=1`,
+        {
+          headers: {
+            'Content-Type': 'application/json',
+            'apikey': process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+            'Authorization': `Bearer ${accessToken}`
+          }
+        }
       );
-    } catch {
-      // 继续执行，不中断好友请求流程
-    }
+      
+      const receiverProfileData = await receiverProfileResponse.json();
+      const receiverProfile = Array.isArray(receiverProfileData) && receiverProfileData.length > 0 ? receiverProfileData[0] : null;
+      
+      // 先检查是否已经存在相同的好友请求（检查所有状态，不仅仅是pending）
+      const existingRequestResponse = await fetch(
+        `${process.env.NEXT_PUBLIC_SUPABASE_URL}/rest/v1/friend_requests?select=*&sender_id=eq.${senderId}&receiver_id=eq.${targetReceiverId}&limit=1`,
+        {
+          headers: {
+            'Content-Type': 'application/json',
+            'apikey': process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+            'Authorization': `Bearer ${accessToken}`
+          }
+        }
+      );
+      
+      const existingRequestData = await existingRequestResponse.json();
+      
+      if (Array.isArray(existingRequestData) && existingRequestData.length > 0) {
+        // 如果已经存在相同的请求，直接返回该请求，不抛出错误
+        const existingRequest = existingRequestData[0];
+        
+        // 为接收者创建通知，即使是重复请求
+        try {
+          await createNotification(
+            targetReceiverId,
+            `${senderProfile?.display_name || '用户'} 发送了好友请求`,
+            'friend_request',
+            existingRequest.id
+          );
+        } catch (notificationError) {
+          console.error('Error creating notification for existing request:', notificationError);
+        }
+        
+        return existingRequest as FriendRequest;
+      }
+      
+      // 构建请求体
+      const requestBody = {
+        sender_id: senderId,
+        receiver_id: targetReceiverId,
+        message
+      };
 
-    return data as FriendRequest;
+      // 开始事务
+      const response = await fetch(
+        `${process.env.NEXT_PUBLIC_SUPABASE_URL}/rest/v1/friend_requests?select=*`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'apikey': process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+            'Authorization': `Bearer ${accessToken}`
+          },
+          body: JSON.stringify(requestBody)
+        }
+      );
+      
+      if (!response.ok) {
+        // 如果是重复请求错误（409 Conflict），尝试获取已存在的请求并返回
+        if (response.status === 409) {
+          const conflictRequestResponse = await fetch(
+            `${process.env.NEXT_PUBLIC_SUPABASE_URL}/rest/v1/friend_requests?select=*&sender_id=eq.${senderId}&receiver_id=eq.${targetReceiverId}&limit=1`,
+            {
+              headers: {
+                'Content-Type': 'application/json',
+                'apikey': process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+                'Authorization': `Bearer ${accessToken}`
+              }
+            }
+          );
+          
+          const conflictRequestData = await conflictRequestResponse.json();
+          
+          if (Array.isArray(conflictRequestData) && conflictRequestData.length > 0) {
+            const conflictRequest = conflictRequestData[0];
+            
+            // 为接收者创建通知，即使是重复请求
+            try {
+              await createNotification(
+                targetReceiverId,
+                `${senderProfile?.display_name || '用户'} 发送了好友请求`,
+                'friend_request',
+                conflictRequest.id
+              );
+            } catch (notificationError) {
+              console.error('Error creating notification for conflict request:', notificationError);
+            }
+            
+            return conflictRequest as FriendRequest;
+          }
+        }
+        // 其他错误，抛出异常
+        const errorData = await response.json();
+        throw new Error(errorData.message || 'Failed to send friend request');
+      }
+      
+      const data = await response.json();
+      
+      try {
+        // 创建通知给接收者
+        await createNotification(
+          targetReceiverId,
+          `${senderProfile?.display_name || '用户'} 发送了好友请求`,
+          'friend_request',
+          data.id
+        );
+        
+        // 创建通知给发起者
+        await createNotification(
+          senderId,
+          `你已向 ${receiverProfile?.display_name || '用户'} 发送了好友请求，等待对方同意`,
+          'friend_request_sent',
+          data.id
+        );
+      } catch (notificationError) {
+        console.error('Error creating notification:', notificationError);
+        // 继续执行，不中断好友请求流程
+      }
+
+      return data as FriendRequest;
+    } catch (error) {
+      // 更详细的错误处理
+      console.error('Error in sendFriendRequest:', error);
+      throw error;
+    }
   },
 
   // 获取好友申请列表
   getFriendRequests: async (): Promise<FriendRequest[]> => {
     const user = await supabase.auth.getUser();
     const userId = user.data.user?.id;
+    const session = await supabase.auth.getSession();
+    const accessToken = session.data.session?.access_token || '';
 
     if (!userId) {
       throw new Error('User not authenticated');
     }
 
-    // 获取收到的好友申请
-    const { data, error } = await supabase
-      .from('friend_requests')
-      .select('*, sender_profile:profiles!sender_id(*), receiver_profile:profiles!receiver_id(*)')
-      .eq('receiver_id', userId)
-      .eq('status', 'pending')
-      .order('created_at', { ascending: false });
+    try {
+      // 使用直接的 fetch 调用来获取好友申请列表
+      const response = await fetch(
+        `${process.env.NEXT_PUBLIC_SUPABASE_URL}/rest/v1/friend_requests?select=*, sender_profile:profiles!sender_id(*), receiver_profile:profiles!receiver_id(*)&receiver_id=eq.${userId}&status=eq.pending&order=created_at.desc`,
+        {
+          headers: {
+            'Content-Type': 'application/json',
+            'apikey': process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+            'Authorization': `Bearer ${accessToken}`
+          }
+        }
+      );
 
-    if (error) {
+      if (!response.ok) {
+        throw new Error(`Failed to get friend requests: ${await response.text()}`);
+      }
+
+      const data = await response.json();
+      return data as FriendRequest[];
+    } catch (error) {
+      console.error('Error in getFriendRequests:', error);
       throw error;
     }
-
-    return data as FriendRequest[];
   },
 
   // 处理好友申请
   handleFriendRequest: async (requestId: string, status: 'accepted' | 'rejected'): Promise<FriendRequest> => {
     const user = await supabase.auth.getUser();
+    const session = await supabase.auth.getSession();
+    const accessToken = session.data.session?.access_token || '';
     
     // 检查是否有错误获取用户信息
     if (user.error) {
@@ -355,65 +457,116 @@ export const chatService = {
       throw new Error('User not authenticated');
     }
 
-    // 更新好友申请状态
-    const { data: updatedRequest, error: updateError } = await supabase
-      .from('friend_requests')
-      .update({ status })
-      .eq('id', requestId)
-      .eq('receiver_id', userId)
-      .select('*')
-      .single();
+    try {
+      // 使用直接的 fetch 调用来更新好友申请状态
+      const updateResponse = await fetch(
+        `${process.env.NEXT_PUBLIC_SUPABASE_URL}/rest/v1/friend_requests?id=eq.${requestId}&receiver_id=eq.${userId}`,
+        {
+          method: 'PATCH',
+          headers: {
+            'Content-Type': 'application/json',
+            'apikey': process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+            'Authorization': `Bearer ${accessToken}`
+          },
+          body: JSON.stringify({ status })
+        }
+      );
 
-    if (updateError) {
-      throw updateError;
-    }
-
-    // 获取接收者的资料，用于通知内容
-    const { data: receiverProfile } = await supabase
-      .from('profiles')
-      .select('display_name')
-      .eq('id', userId)
-      .single();
-
-    // 创建通知给发送者
-    if (updatedRequest) {
-      const notificationContent = status === 'accepted' 
-        ? `${receiverProfile?.display_name || '用户'} 接受了你的好友请求`
-        : `${receiverProfile?.display_name || '用户'} 拒绝了你的好友请求`;
-      
-      try {
-        await createNotification(
-          updatedRequest.sender_id,
-          notificationContent,
-          status === 'accepted' ? 'friend_accepted' : 'friend_rejected',
-          updatedRequest.id
-        );
-      } catch {
-        // 继续执行，不中断好友请求处理流程
+      if (!updateResponse.ok) {
+        throw new Error(`Failed to update friend request: ${await updateResponse.text()}`);
       }
 
-      // 如果是接受请求，创建好友关系
-      if (status === 'accepted') {
-        const { error: friendshipError } = await supabase
-          .from('friendships')
-          .insert([
-            {
-              user_id: updatedRequest.sender_id,
-              friend_id: updatedRequest.receiver_id
-            },
-            {
-              user_id: updatedRequest.receiver_id,
-              friend_id: updatedRequest.sender_id
-            }
-          ]);
+      // 获取更新后的好友申请
+      const updatedRequestResponse = await fetch(
+        `${process.env.NEXT_PUBLIC_SUPABASE_URL}/rest/v1/friend_requests?id=eq.${requestId}`,
+        {
+          headers: {
+            'Content-Type': 'application/json',
+            'apikey': process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+            'Authorization': `Bearer ${accessToken}`
+          }
+        }
+      );
 
-        if (friendshipError) {
-          throw friendshipError;
+      if (!updatedRequestResponse.ok) {
+        throw new Error(`Failed to get updated friend request: ${await updatedRequestResponse.text()}`);
+      }
+
+      const updatedRequestData = await updatedRequestResponse.json();
+      const updatedRequest = updatedRequestData[0];
+
+      // 获取接收者的资料，用于通知内容
+      const receiverProfileResponse = await fetch(
+        `${process.env.NEXT_PUBLIC_SUPABASE_URL}/rest/v1/profiles?select=display_name&id=eq.${userId}`,
+        {
+          headers: {
+            'Content-Type': 'application/json',
+            'apikey': process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+            'Authorization': `Bearer ${accessToken}`
+          }
+        }
+      );
+
+      if (!receiverProfileResponse.ok) {
+        throw new Error(`Failed to get receiver profile: ${await receiverProfileResponse.text()}`);
+      }
+
+      const receiverProfileData = await receiverProfileResponse.json();
+      const receiverProfile = receiverProfileData[0];
+
+      // 创建通知给发送者
+      if (updatedRequest) {
+        const notificationContent = status === 'accepted' 
+          ? `${receiverProfile?.display_name || '用户'} 接受了你的好友请求`
+          : `${receiverProfile?.display_name || '用户'} 拒绝了你的好友请求`;
+        
+        try {
+          await createNotification(
+            updatedRequest.sender_id,
+            notificationContent,
+            status === 'accepted' ? 'friend_accepted' : 'friend_rejected',
+            updatedRequest.id
+          );
+        } catch {
+          // 继续执行，不中断好友请求处理流程
+        }
+
+        // 如果是接受请求，创建好友关系
+        if (status === 'accepted') {
+          // 创建双向好友关系
+          const friendshipResponse = await fetch(
+            `${process.env.NEXT_PUBLIC_SUPABASE_URL}/rest/v1/friendships`,
+            {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                'apikey': process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+                'Authorization': `Bearer ${accessToken}`
+              },
+              body: JSON.stringify([
+                {
+                  user_id: updatedRequest.sender_id,
+                  friend_id: updatedRequest.receiver_id
+                },
+                {
+                  user_id: updatedRequest.receiver_id,
+                  friend_id: updatedRequest.sender_id
+                }
+              ])
+            }
+          );
+
+          if (!friendshipResponse.ok) {
+            throw new Error(`Failed to create friendship: ${await friendshipResponse.text()}`);
+          }
         }
       }
-    }
 
-    return updatedRequest as FriendRequest;
+      return updatedRequest as FriendRequest;
+    } catch (error) {
+      console.error('Error in handleFriendRequest:', error);
+      throw error;
+    }
   },
 
   // 获取好友列表
@@ -1322,8 +1475,24 @@ export const chatService = {
     }
   },
 
-  // 删除聊天消息（只能删除两分钟内发送的消息）
-  deleteMessages: async (messageIds: string[]): Promise<void> => {
+  // 检查用户是否是群管理员（群主或管理员）
+  isGroupAdmin: async (groupId: string, userId: string): Promise<boolean> => {
+    const { data: member, error } = await supabase
+      .from('group_members')
+      .select('role')
+      .eq('group_id', groupId)
+      .eq('user_id', userId)
+      .single();
+
+    if (error || !member) {
+      return false;
+    }
+
+    return member.role === 'owner' || member.role === 'admin';
+  },
+
+  // 删除聊天消息
+  deleteMessages: async (messageIds: string[], isGroup: boolean = false, otherId: string = ''): Promise<void> => {
     const user = await supabase.auth.getUser();
     const userId = user.data.user?.id;
     
@@ -1334,42 +1503,134 @@ export const chatService = {
     // 获取当前时间，计算两分钟前的时间戳
     const twoMinutesAgo = new Date(Date.now() - 2 * 60 * 1000).toISOString();
     
-    // 先获取当前用户可以删除的消息（只有自己发送的消息且在两分钟内）
-    const { data: authorizedMessages } = await supabase
+    // 获取消息详情，用于权限检查和删除逻辑
+    const { data: messages } = await supabase
       .from('chat_messages')
-      .select('id, group_id')
-      .in('id', messageIds)
-      .eq('sender_id', userId)
-      .gte('created_at', twoMinutesAgo); // 只允许删除两分钟内的消息
+      .select('id, sender_id, group_id, created_at, content')
+      .in('id', messageIds);
     
-    if (!authorizedMessages || authorizedMessages.length === 0) {
+    if (!messages || messages.length === 0) {
       // 没有可删除的消息，直接返回
       return;
     }
     
-    // 提取可删除的消息ID
-    const deletableMessageIds = authorizedMessages.map(msg => msg.id);
+    // 准备更新或删除的消息ID数组
+    const databaseDeleteIds: string[] = [];
+    const adminUpdateIds: string[] = [];
     
-    // 检查哪些是群消息
-    const groupMessages = authorizedMessages.filter(msg => msg.group_id !== null);
-    
-    // 删除聊天消息（数据库删除后，对方会通过Realtime同步删除）
-    const { error } = await supabase
-      .from('chat_messages')
-      .delete()
-      .in('id', deletableMessageIds);
-
-    if (error) {
-      throw error;
+    // 遍历消息，根据权限和时间决定处理方式
+    for (const message of messages) {
+      if (message.group_id) {
+        // 群消息
+        // 检查是否是群管理员
+        const isAdmin = await chatService.isGroupAdmin(message.group_id, userId);
+        
+        if (isAdmin && message.sender_id !== userId) {
+          // 管理员删除其他人的消息：保留消息，修改内容为删除提示
+          adminUpdateIds.push(message.id);
+        } else if (isAdmin || (message.sender_id === userId && message.created_at >= twoMinutesAgo)) {
+          // 管理员删除自己的消息或普通用户删除自己两分钟内的消息：直接删除
+          databaseDeleteIds.push(message.id);
+        }
+      } else {
+        // 私聊消息
+        if (message.sender_id === userId && message.created_at >= twoMinutesAgo) {
+          // 只能删除自己发送的且在两分钟内的消息
+          databaseDeleteIds.push(message.id);
+        }
+      }
     }
     
-    // 如果有群消息，删除对应的群消息未读状态记录
-    if (groupMessages.length > 0) {
-      const groupMessageIds = groupMessages.map(msg => msg.id);
-      await supabase
-        .from('group_message_read_status')
+    // 1. 管理员删除其他人的消息：更新消息内容
+    if (adminUpdateIds.length > 0) {
+      // 为每个消息获取原始发送者信息
+      for (const messageId of adminUpdateIds) {
+        const message = messages.find(msg => msg.id === messageId);
+        if (!message) continue;
+        
+        // 更新消息内容为删除提示
+        const { error } = await supabase
+          .from('chat_messages')
+          .update({
+            content: '[你的消息被群管理员删除]',
+            deleted: true
+          })
+          .eq('id', messageId);
+
+        if (error) {
+          console.error(`Error updating message ${messageId}:`, {
+            error: error,
+            errorMessage: error?.message || 'Unknown error',
+            errorCode: error?.code || 'No code',
+            messageId: messageId,
+            groupId: message.group_id,
+            senderId: message.sender_id,
+            currentUserId: userId
+          });
+          // 继续处理其他消息，不中断整个流程
+        }
+      }
+    }
+    
+    // 2. 直接删除消息（管理员删除自己的消息或普通用户删除自己两分钟内的消息）
+    if (databaseDeleteIds.length > 0) {
+      // 删除聊天消息
+      const { error } = await supabase
+        .from('chat_messages')
         .delete()
-        .in('message_id', groupMessageIds);
+        .in('id', databaseDeleteIds);
+
+      if (error) {
+        throw error;
+      }
+      
+      // 过滤出群消息
+      const groupMessageIds = messages
+        .filter(msg => msg.group_id !== null && databaseDeleteIds.includes(msg.id))
+        .map(msg => msg.id);
+      
+      // 如果有群消息，删除对应的群消息未读状态记录
+      if (groupMessageIds.length > 0) {
+        await supabase
+          .from('group_message_read_status')
+          .delete()
+          .in('message_id', groupMessageIds);
+      }
+    }
+    
+    // 对于所有消息，添加到本地已删除消息列表
+    // 这确保刷新页面后消息不会重新出现
+    for (const message of messages) {
+      const key = isGroup 
+        ? `deleted_messages_${userId}_${message.group_id}` 
+        : `deleted_messages_${userId}_${message.group_id || otherId}`;
+      
+      // 获取当前已删除消息列表（增强版，包含删除类型）
+      let deletedMessages: Record<string, { deletedAt: number; deletedByAdmin: boolean }> = {};
+      const existingData = localStorage.getItem(key);
+      if (existingData) {
+        try {
+          deletedMessages = JSON.parse(existingData);
+        } catch {
+          deletedMessages = {};
+        }
+      }
+      
+      // 添加新的已删除消息信息
+      for (const messageId of messageIds) {
+        // 检查是否是管理员删除其他人的消息
+        const isAdminDeletion = message.group_id && 
+                               (message.sender_id !== userId) && 
+                               (adminUpdateIds.includes(messageId) || databaseDeleteIds.includes(messageId));
+        
+        deletedMessages[messageId] = {
+          deletedAt: Date.now(),
+          deletedByAdmin: isAdminDeletion
+        };
+      }
+      
+      // 保存更新后的已删除消息列表
+      localStorage.setItem(key, JSON.stringify(deletedMessages));
     }
   },
 
@@ -1506,46 +1767,58 @@ export const chatService = {
       return 'none'; // 未登录用户，默认返回 none
     }
 
-    // 简单验证 otherUserId 格式，避免无效请求
-    if (!otherUserId || otherUserId.length !== 36) {
-      return 'none';
-    }
-
     try {
-      // 检查是否已经是好友（只需要检查当前用户的好友关系记录）
-      const { data: friendship, error: friendshipError } = await supabase
-        .from('friendships')
-        .select('id')
-        .eq('user_id', userId)
-        .eq('friend_id', otherUserId)
-        .single();
-
-      if (!friendshipError && friendship) {
+      // 先根据 otherUserId 获取用户的实际 UUID
+      let targetUserId = otherUserId;
+      
+      // 如果 otherUserId 不是 UUID 格式，尝试根据用户名获取用户信息
+      if (otherUserId.length !== 36 || !otherUserId.includes('-')) {
+        const { data: profile, error: profileError } = await supabase
+          .from('profiles')
+          .select('id')
+          .eq('username', otherUserId)
+          .limit(1);
+        
+        if (!profileError && profile && profile.length > 0) {
+          targetUserId = profile[0].id;
+        } else {
+          // 如果不是 UUID 且不是有效的用户名，返回 none
+          return 'none';
+        }
+      }
+      
+      // 使用 fetch 直接调用 Supabase API，避免 Postgrest 客户端的问题
+      // 检查是否已经是好友
+      const friendshipsResponse = await fetch(
+        `${process.env.NEXT_PUBLIC_SUPABASE_URL}/rest/v1/friendships?select=id&user_id=eq.${userId}&friend_id=eq.${targetUserId}&limit=1`,
+        {
+          headers: {
+            'Content-Type': 'application/json',
+            'apikey': process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+            'Authorization': `Bearer ${(await supabase.auth.getSession()).data.session?.access_token || ''}`
+          }
+        }
+      );
+      
+      const friendships = await friendshipsResponse.json();
+      if (Array.isArray(friendships) && friendships.length > 0) {
         return 'accepted';
       }
 
       // 检查是否有未处理的好友请求
-      const { data: sentRequest, error: sentError } = await supabase
-        .from('friend_requests')
-        .select('id')
-        .eq('sender_id', userId)
-        .eq('receiver_id', otherUserId)
-        .eq('status', 'pending')
-        .single();
-
-      if (!sentError && sentRequest) {
-        return 'pending';
-      }
-
-      const { data: receivedRequest, error: receivedError } = await supabase
-        .from('friend_requests')
-        .select('id')
-        .eq('sender_id', otherUserId)
-        .eq('receiver_id', userId)
-        .eq('status', 'pending')
-        .single();
-
-      if (!receivedError && receivedRequest) {
+      const requestsResponse = await fetch(
+        `${process.env.NEXT_PUBLIC_SUPABASE_URL}/rest/v1/friend_requests?select=id&or=(and(sender_id.eq.${userId},receiver_id.eq.${targetUserId},status.eq.pending),and(sender_id.eq.${targetUserId},receiver_id.eq.${userId},status.eq.pending))&limit=1`,
+        {
+          headers: {
+            'Content-Type': 'application/json',
+            'apikey': process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+            'Authorization': `Bearer ${(await supabase.auth.getSession()).data.session?.access_token || ''}`
+          }
+        }
+      );
+      
+      const friendRequests = await requestsResponse.json();
+      if (Array.isArray(friendRequests) && friendRequests.length > 0) {
         return 'pending';
       }
     } catch (error) {
@@ -1624,6 +1897,8 @@ export const chatService = {
   getNotifications: async (): Promise<Notification[]> => {
     try {
       const user = await supabase.auth.getUser();
+      const session = await supabase.auth.getSession();
+      const accessToken = session.data.session?.access_token || '';
       
       // 检查是否有错误获取用户信息
       if (user.error) {
@@ -1638,21 +1913,24 @@ export const chatService = {
         return [];
       }
 
+      // 使用直接的 fetch 调用来获取通知列表
+      const response = await fetch(
+        `${process.env.NEXT_PUBLIC_SUPABASE_URL}/rest/v1/notifications?select=*&recipient_id=eq.${userId}&order=created_at.desc`,
+        {
+          headers: {
+            'Content-Type': 'application/json',
+            'apikey': process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+            'Authorization': `Bearer ${accessToken}`
+          }
+        }
+      );
 
-      
-      // 尝试获取通知列表
-      const { data, error } = await supabase
-        .from('notifications')
-        .select('*')
-        .eq('recipient_id', userId)
-        .order('created_at', { ascending: false });
-
-      if (error) {
-        console.error('Error fetching notifications:', error.message || 'Unknown error');
+      if (!response.ok) {
+        console.error('Error fetching notifications:', await response.text());
         return [];
       }
 
-
+      const data = await response.json();
       return data as Notification[];
     } catch (error) {
       console.error('Unexpected error in getNotifications:', error instanceof Error ? error.message : 'Unknown error');
@@ -1664,6 +1942,8 @@ export const chatService = {
   getUnreadNotificationsCount: async (): Promise<number> => {
     try {
       const user = await supabase.auth.getUser();
+      const session = await supabase.auth.getSession();
+      const accessToken = session.data.session?.access_token || '';
       
       // 检查是否有错误获取用户信息
       if (user.error) {
@@ -1677,19 +1957,25 @@ export const chatService = {
         return 0;
       }
 
-      // 尝试获取未读通知数量
-      const { count, error } = await supabase
-        .from('notifications')
-        .select('id', { count: 'exact', head: true })
-        .eq('recipient_id', userId)
-        .eq('read_status', false);
+      // 使用直接的 fetch 调用来获取未读通知数量
+      const response = await fetch(
+        `${process.env.NEXT_PUBLIC_SUPABASE_URL}/rest/v1/notifications?select=id&recipient_id=eq.${userId}&read_status=eq.false`,
+        {
+          headers: {
+            'Content-Type': 'application/json',
+            'apikey': process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+            'Authorization': `Bearer ${accessToken}`
+          }
+        }
+      );
 
-      if (error) {
-        console.error('Error getting unread notifications count:', error.message || 'Unknown error');
+      if (!response.ok) {
+        console.error('Error getting unread notifications count:', await response.text());
         return 0;
       }
 
-      return count || 0;
+      const data = await response.json();
+      return data.length || 0;
     } catch (error) {
       console.error('Unexpected error in getUnreadNotificationsCount:', error instanceof Error ? error.message : 'Unknown error');
       return 0;
@@ -1699,6 +1985,8 @@ export const chatService = {
   // 标记通知为已读
   markNotificationAsRead: async (notificationId: string): Promise<Notification> => {
     const user = await supabase.auth.getUser();
+    const session = await supabase.auth.getSession();
+    const accessToken = session.data.session?.access_token || '';
     
     // 检查是否有错误获取用户信息
     if (user.error) {
@@ -1711,24 +1999,54 @@ export const chatService = {
       throw new Error('User not authenticated');
     }
 
-    const { data, error } = await supabase
-      .from('notifications')
-      .update({ read_status: true })
-      .eq('id', notificationId)
-      .eq('recipient_id', userId)
-      .select('*')
-      .single();
+    try {
+      // 使用直接的 fetch 调用来标记通知为已读
+      const updateResponse = await fetch(
+        `${process.env.NEXT_PUBLIC_SUPABASE_URL}/rest/v1/notifications?id=eq.${notificationId}&recipient_id=eq.${userId}`,
+        {
+          method: 'PATCH',
+          headers: {
+            'Content-Type': 'application/json',
+            'apikey': process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+            'Authorization': `Bearer ${accessToken}`
+          },
+          body: JSON.stringify({ read_status: true })
+        }
+      );
 
-    if (error) {
+      if (!updateResponse.ok) {
+        throw new Error(`Failed to mark notification as read: ${await updateResponse.text()}`);
+      }
+
+      // 获取更新后的通知
+      const getResponse = await fetch(
+        `${process.env.NEXT_PUBLIC_SUPABASE_URL}/rest/v1/notifications?id=eq.${notificationId}`,
+        {
+          headers: {
+            'Content-Type': 'application/json',
+            'apikey': process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+            'Authorization': `Bearer ${accessToken}`
+          }
+        }
+      );
+
+      if (!getResponse.ok) {
+        throw new Error(`Failed to get updated notification: ${await getResponse.text()}`);
+      }
+
+      const updatedNotificationData = await getResponse.json();
+      return updatedNotificationData[0] as Notification;
+    } catch (error) {
+      console.error('Error in markNotificationAsRead:', error);
       throw error;
     }
-
-    return data as Notification;
   },
 
   // 标记所有通知为已读
   markAllNotificationsAsRead: async (): Promise<void> => {
     const user = await supabase.auth.getUser();
+    const session = await supabase.auth.getSession();
+    const accessToken = session.data.session?.access_token || '';
     
     // 检查是否有错误获取用户信息
     if (user.error) {
@@ -1741,13 +2059,26 @@ export const chatService = {
       throw new Error('User not authenticated');
     }
 
-    const { error } = await supabase
-      .from('notifications')
-      .update({ read_status: true })
-      .eq('recipient_id', userId)
-      .eq('read_status', false);
+    try {
+      // 使用直接的 fetch 调用来标记所有通知为已读
+      const response = await fetch(
+        `${process.env.NEXT_PUBLIC_SUPABASE_URL}/rest/v1/notifications?recipient_id=eq.${userId}&read_status=eq.false`,
+        {
+          method: 'PATCH',
+          headers: {
+            'Content-Type': 'application/json',
+            'apikey': process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+            'Authorization': `Bearer ${accessToken}`
+          },
+          body: JSON.stringify({ read_status: true })
+        }
+      );
 
-    if (error) {
+      if (!response.ok) {
+        throw new Error(`Failed to mark all notifications as read: ${await response.text()}`);
+      }
+    } catch (error) {
+      console.error('Error in markAllNotificationsAsRead:', error);
       throw error;
     }
   },
@@ -1755,6 +2086,8 @@ export const chatService = {
   // 删除通知
   deleteNotification: async (notificationId: string): Promise<void> => {
     const user = await supabase.auth.getUser();
+    const session = await supabase.auth.getSession();
+    const accessToken = session.data.session?.access_token || '';
     
     // 检查是否有错误获取用户信息
     if (user.error) {
@@ -1767,13 +2100,25 @@ export const chatService = {
       throw new Error('User not authenticated');
     }
 
-    const { error } = await supabase
-      .from('notifications')
-      .delete()
-      .eq('id', notificationId)
-      .eq('recipient_id', userId);
+    try {
+      // 使用直接的 fetch 调用来删除通知
+      const response = await fetch(
+        `${process.env.NEXT_PUBLIC_SUPABASE_URL}/rest/v1/notifications?id=eq.${notificationId}&recipient_id=eq.${userId}`,
+        {
+          method: 'DELETE',
+          headers: {
+            'Content-Type': 'application/json',
+            'apikey': process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+            'Authorization': `Bearer ${accessToken}`
+          }
+        }
+      );
 
-    if (error) {
+      if (!response.ok) {
+        throw new Error(`Failed to delete notification: ${await response.text()}`);
+      }
+    } catch (error) {
+      console.error('Error in deleteNotification:', error);
       throw error;
     }
   },
@@ -2059,32 +2404,27 @@ export const chatService = {
         return;
       }
       
-      // 更新群聊已读计数器
-      const { error } = await supabase
-        .from('group_read_counters')
-        .upsert(
-          {
-            group_id: groupId,
-            user_id: userId,
-            last_read_message_id: latestMessageId,
-            last_read_at: new Date().toISOString()
-          },
-          { onConflict: 'group_id,user_id' }
-        );
-      
-      if (error) {
-        // 改进错误日志，显示更详细的错误信息
-        console.error('Error updating group read counter:', {
-          error: error,
-          errorMessage: error?.message || 'Unknown error',
-          errorCode: error?.code || 'No code',
-          groupId,
-          userId,
-          latestMessageId
-        });
-        // 继续执行，不抛出错误
-      } else {
-        console.log('Successfully updated group read counter:', { groupId, userId, latestMessageId });
+      // 更新群聊已读计数器 - 使用try-catch避免整体功能失败
+      try {
+        const { error } = await supabase
+          .from('group_read_counters')
+          .upsert(
+            {
+              group_id: groupId,
+              user_id: userId,
+              last_read_message_id: latestMessageId,
+              last_read_at: new Date().toISOString()
+            },
+            { onConflict: 'group_id,user_id' }
+          );
+        
+        if (error) {
+          // 简化错误日志，避免复杂对象导致的控制台错误
+          console.error(`Error updating group read counter for group ${groupId}:`, error.message || 'Unknown error');
+        }
+      } catch (e) {
+        // 捕获任何可能的异常，避免影响主要功能
+        console.error(`Exception updating group read counter for group ${groupId}:`, e instanceof Error ? e.message : String(e));
       }
     } catch (error) {
       console.error('Error in markGroupMessagesAsRead:', error);

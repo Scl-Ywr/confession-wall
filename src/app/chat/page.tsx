@@ -7,7 +7,8 @@ import { Friendship, Group } from '@/types/chat';
 import Link from 'next/link';
 import Image from 'next/image';
 import Navbar from '@/components/Navbar';
-import MessageToast from '@/components/MessageToast';
+import { showToast } from '@/utils/toast';
+import LoadingSpinner from '@/components/LoadingSpinner';
 import { MessageCircleIcon, UserSearchIcon, UsersIcon, TrashIcon, PlusIcon, UsersRoundIcon } from 'lucide-react';
 import { supabase } from '@/lib/supabase/client';
 
@@ -21,8 +22,13 @@ const ChatListPage = () => {
   const [showCreateGroupModal, setShowCreateGroupModal] = useState(false);
   const [groupName, setGroupName] = useState('');
   const [creatingGroup, setCreatingGroup] = useState(false);
-  const [toastMessage, setToastMessage] = useState<string | null>(null);
-  const [toastType, setToastType] = useState<'success' | 'error' | 'info'>('success');
+  // 用于解决 hydration mismatch 的状态
+  const [isHydrated, setIsHydrated] = useState(false);
+
+  // 组件挂载后设置为客户端已加载，避免 hydration 不匹配
+  useEffect(() => {
+    setIsHydrated(true);
+  }, []);
 
   // 获取好友列表和群聊列表
   useEffect(() => {
@@ -323,8 +329,7 @@ const ChatListPage = () => {
   // 处理创建群聊
   const handleCreateGroup = async () => {
     if (!groupName.trim() || groupName.length < 2 || groupName.length > 20) {
-      setToastMessage('群聊名称必须为2-20个字符');
-      setToastType('error');
+      showToast.error('群聊名称必须为2-20个字符');
       return;
     }
 
@@ -334,8 +339,7 @@ const ChatListPage = () => {
       setGroups(prev => [newGroup, ...prev]);
       setShowCreateGroupModal(false);
       setGroupName('');
-      setToastMessage('群聊创建成功！');
-      setToastType('success');
+      showToast.success('群聊创建成功！');
     } catch (err) {
       console.error('Failed to create group:', err);
       // 添加更详细的错误处理
@@ -349,16 +353,10 @@ const ChatListPage = () => {
           errorMessage = `创建群聊失败：${err.message}`;
         }
       }
-      setToastMessage(errorMessage);
-      setToastType('error');
+      showToast.error(errorMessage);
     } finally {
       setCreatingGroup(false);
     }
-  };
-
-  // 关闭消息提示
-  const handleCloseToast = () => {
-    setToastMessage(null);
   };
 
   if (loading) {
@@ -366,7 +364,12 @@ const ChatListPage = () => {
       <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
         <Navbar />
         <div className="flex justify-center items-center h-[calc(100vh-80px)]">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary-500"></div>
+          {isHydrated ? (
+            <LoadingSpinner type="grid" size={20} color="#f97316" />
+          ) : (
+            // Use a simple server-safe loading indicator
+            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary-500"></div>
+          )}
         </div>
       </div>
     );
@@ -716,14 +719,7 @@ const ChatListPage = () => {
           </div>
         )}
 
-        {/* 消息提示 */}
-        {toastMessage && (
-          <MessageToast
-            message={toastMessage}
-            type={toastType}
-            onClose={handleCloseToast}
-          />
-        )}
+
       </main>
     </div>
   );

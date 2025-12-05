@@ -1,64 +1,49 @@
 'use client';
 
-import React, { useState } from 'react';
+import React from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/context/AuthContext';
-import { LoginFormData } from '@/types/auth';
 import MeteorShower from '@/components/MeteorShower';
 import Link from 'next/link';
+import { useForm } from 'react-hook-form';
+import { zodResolver } from '@hookform/resolvers/zod';
+import { z } from 'zod';
+
+// 创建登录表单的Zod schema
+const loginSchema = z.object({
+  email: z.string()
+    .nonempty('请输入邮箱')
+    .email('请输入有效的邮箱地址'),
+  password: z.string()
+    .nonempty('请输入密码'),
+});
+
+type LoginFormData = z.infer<typeof loginSchema>;
 
 const LoginPage: React.FC = () => {
   const router = useRouter();
   const { login, loading, error } = useAuth();
-  const [formData, setFormData] = useState<LoginFormData>({
-    email: '',
-    password: '',
+
+  // 使用react-hook-form
+  const {
+    register,
+    handleSubmit,
+    formState: { errors },
+  } = useForm<LoginFormData>({
+    resolver: zodResolver(loginSchema),
+    defaultValues: {
+      email: '',
+      password: '',
+    },
   });
-  const [formErrors, setFormErrors] = useState<Partial<LoginFormData>>({});
 
-  const validateForm = () => {
-    const errors: Partial<LoginFormData> = {};
-
-    if (!formData.email) {
-      errors.email = '请输入邮箱';
-    } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formData.email)) {
-      errors.email = '请输入有效的邮箱地址';
-    }
-
-    if (!formData.password) {
-      errors.password = '请输入密码';
-    }
-
-    setFormErrors(errors);
-    return Object.keys(errors).length === 0;
-  };
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-
-    if (!validateForm()) {
-      return;
-    }
-
+  const onSubmit = async (data: LoginFormData) => {
     try {
-      await login(formData.email, formData.password);
+      await login(data.email, data.password);
       // 登录成功后跳转到首页
       router.push('/');
     } catch {
       // 错误已在AuthContext中处理
-    }
-  };
-
-  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const { name, value } = e.target;
-    setFormData(prev => ({ ...prev, [name]: value }));
-    // 清除对应字段的错误信息
-    if (formErrors[name as keyof LoginFormData]) {
-      setFormErrors(prev => {
-        const newErrors = { ...prev };
-        delete newErrors[name as keyof LoginFormData];
-        return newErrors;
-      });
     }
   };
 
@@ -87,23 +72,20 @@ const LoginPage: React.FC = () => {
           </p>
         </div>
 
-        <form className="mt-8 space-y-6" onSubmit={handleSubmit}>
+        <form className="mt-8 space-y-6" onSubmit={handleSubmit(onSubmit)}>
           <div className="space-y-4">
             <div className="relative group">
               <label htmlFor="email" className="sr-only">邮箱</label>
               <input
                 id="email"
-                name="email"
                 type="email"
                 autoComplete="email"
-                required
-                className={`block w-full px-5 py-4 bg-white/50 dark:bg-gray-800/50 border border-gray-200 dark:border-gray-700 rounded-xl placeholder-gray-400 text-gray-900 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent transition-all duration-200 backdrop-blur-sm dark:text-white ${formErrors.email ? 'border-red-500 focus:ring-red-500' : 'group-hover:border-primary-300 dark:group-hover:border-primary-700'}`}
+                className={`block w-full px-5 py-4 bg-white/50 dark:bg-gray-800/50 border border-gray-200 dark:border-gray-700 rounded-xl placeholder-gray-400 text-gray-900 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent transition-all duration-200 backdrop-blur-sm dark:text-white ${errors.email ? 'border-red-500 focus:ring-red-500' : 'group-hover:border-primary-300 dark:group-hover:border-primary-700'}`}
                 placeholder="请输入邮箱"
-                value={formData.email}
-                onChange={handleChange}
+                {...register('email')}
               />
-              {formErrors.email && (
-                <p className="mt-1 text-sm text-red-500 pl-1 animate-slide-up">{formErrors.email}</p>
+              {errors.email && (
+                <p className="mt-1 text-sm text-red-500 pl-1 animate-slide-up">{errors.email.message}</p>
               )}
             </div>
 
@@ -111,17 +93,14 @@ const LoginPage: React.FC = () => {
               <label htmlFor="password" className="sr-only">密码</label>
               <input
                 id="password"
-                name="password"
                 type="password"
                 autoComplete="current-password"
-                required
-                className={`block w-full px-5 py-4 bg-white/50 dark:bg-gray-800/50 border border-gray-200 dark:border-gray-700 rounded-xl placeholder-gray-400 text-gray-900 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent transition-all duration-200 backdrop-blur-sm dark:text-white ${formErrors.password ? 'border-red-500 focus:ring-red-500' : 'group-hover:border-primary-300 dark:group-hover:border-primary-700'}`}
+                className={`block w-full px-5 py-4 bg-white/50 dark:bg-gray-800/50 border border-gray-200 dark:border-gray-700 rounded-xl placeholder-gray-400 text-gray-900 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent transition-all duration-200 backdrop-blur-sm dark:text-white ${errors.password ? 'border-red-500 focus:ring-red-500' : 'group-hover:border-primary-300 dark:group-hover:border-primary-700'}`}
                 placeholder="请输入密码"
-                value={formData.password}
-                onChange={handleChange}
+                {...register('password')}
               />
-              {formErrors.password && (
-                <p className="mt-1 text-sm text-red-500 pl-1 animate-slide-up">{formErrors.password}</p>
+              {errors.password && (
+                <p className="mt-1 text-sm text-red-500 pl-1 animate-slide-up">{errors.password.message}</p>
               )}
             </div>
           </div>
