@@ -32,19 +32,34 @@ export async function POST(req: NextRequest) {
     // 创建Supabase客户端
     const supabase = await createSupabaseServerClient();
 
-    // 尝试获取当前登录用户的信息
+    // 1. 尝试获取当前登录用户的信息
+    let currentUserId: string | null = null;
+    let isAuthenticated = false;
+    
     try {
-      await supabase.auth.getUser();
+      const { data: authData } = await supabase.auth.getUser();
+      if (authData.user) {
+        currentUserId = authData.user.id;
+        isAuthenticated = true;
+      }
     } catch (authError) {
       // 忽略认证错误，继续执行
       console.error('Error getting current user:', authError);
     }
 
-    // 允许通过userId直接更新状态
-    // 这是为了支持页面关闭时的状态更新
-    // 当用户关闭页面时，浏览器会发送一个sendBeacon请求，此时用户会话可能已经过期
+    // 2. 验证请求合法性
+    if (isAuthenticated) {
+      // 对于已认证用户，确保只能更新自己的状态
+      if (currentUserId !== userId) {
+        return NextResponse.json({ error: 'Forbidden: You can only update your own status' }, { status: 403 });
+      }
+    }
+    // 对于未认证请求（如sendBeacon），允许更新状态，但只允许设置为offline
+    else if (status !== 'offline') {
+      return NextResponse.json({ error: 'Unauthorized: Only offline status can be set without authentication' }, { status: 401 });
+    }
 
-    // 更新用户在线状态
+    // 3. 更新用户在线状态
     const { error } = await supabase
       .from('profiles')
       .update({

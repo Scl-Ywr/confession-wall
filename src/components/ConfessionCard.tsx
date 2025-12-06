@@ -17,7 +17,6 @@ interface ConfessionCardProps {
   currentUserId?: string;
   onLike: (id: string) => void;
   onDelete: (id: string) => void;
-  isLikeLoading: boolean;
 }
 
 export default function ConfessionCard({
@@ -25,7 +24,6 @@ export default function ConfessionCard({
   currentUserId,
   onLike,
   onDelete,
-  // isLikeLoading不再使用，因为LikeButton内部管理loading状态
 }: ConfessionCardProps) {
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const router = useRouter();

@@ -24,7 +24,7 @@ export interface Confession {
   id: string;
   content: string;
   is_anonymous: boolean;
-  user_id: string;
+  user_id?: string;
   created_at: string;
   likes_count: number;
   profile?: Profile;

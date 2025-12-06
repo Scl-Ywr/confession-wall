@@ -43,6 +43,8 @@ export default function VideoPlayer({ videoUrl, className = '', posterUrl }: Vid
   const [isMuted, setIsMuted] = useState(false);
   const [volume, setVolume] = useState(1);
   const [pip, setPip] = useState(false); // 画中画模式
+  const [showControls, setShowControls] = useState(true); // 控制组件显示状态
+  const controlsTimeoutRef = useRef<NodeJS.Timeout | null>(null); // 控制组件隐藏定时器
   
   const playerRef = useRef<HTMLVideoElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -56,6 +58,8 @@ export default function VideoPlayer({ videoUrl, className = '', posterUrl }: Vid
       // 使用 requestAnimationFrame 避免在 effect 中同步更新状态导致的警告
       requestAnimationFrame(() => {
         setIsSwitching(true);
+        // 在 requestAnimationFrame 中更新状态，避免直接在 effect 中调用 setState
+        setDuration(0);
       });
       
       // 2. 延迟更新视频源，等待遮罩完全显示
@@ -73,6 +77,26 @@ export default function VideoPlayer({ videoUrl, className = '', posterUrl }: Vid
       return () => clearTimeout(timeoutId);
     }
   }, [videoUrl, currentVideoUrl]);
+
+  // 视频URL变化后，确保正确获取时长
+  useEffect(() => {
+    if (currentVideoUrl) {
+      const videoElement = playerRef.current;
+      if (videoElement) {
+        // 尝试直接获取时长，如果不行则等待元数据加载完成
+        const checkDuration = () => {
+          if (videoElement.duration > 0) {
+            setDuration(videoElement.duration);
+          } else {
+            // 如果时长为0，说明元数据还没加载完成，等待事件触发
+            setTimeout(checkDuration, 100);
+          }
+        };
+        
+        checkDuration();
+      }
+    }
+  }, [currentVideoUrl]);
 
   // 处理视口大小变化
   const handleResize = () => {
@@ -105,6 +129,22 @@ export default function VideoPlayer({ videoUrl, className = '', posterUrl }: Vid
     };
   };
   
+  // 显示控制组件并设置定时器自动隐藏
+  const showControlsWithTimeout = () => {
+    // 显示控制组件
+    setShowControls(true);
+    
+    // 清除之前的定时器
+    if (controlsTimeoutRef.current) {
+      clearTimeout(controlsTimeoutRef.current);
+    }
+    
+    // 设置新的定时器，2秒后隐藏控制组件
+    controlsTimeoutRef.current = setTimeout(() => {
+      setShowControls(false);
+    }, 2000);
+  };
+
   // 处理放大按钮点击 (影院模式)
   const handleFullscreenToggle = () => {
     if (!isEnlarged) {
@@ -119,32 +159,77 @@ export default function VideoPlayer({ videoUrl, className = '', posterUrl }: Vid
       const isMobile = window.innerWidth < 768;
       const isTablet = window.innerWidth < 1024;
       
-      // 计算目标尺寸和位置 (移动端：95% 视口，平板：90% 视口，桌面：85% 视口)
-      const widthRatio = isMobile ? 0.95 : isTablet ? 0.9 : 0.85;
-      const heightRatio = isMobile ? 0.85 : isTablet ? 0.9 : 0.9;
+      // 计算目标尺寸和位置
+      let targetWidth, targetHeight, targetTop, targetLeft;
+      let finalStyle: React.CSSProperties;
       
-      const targetWidth = Math.min(window.innerWidth * widthRatio, 1920);
-      const targetHeight = Math.min(window.innerHeight * heightRatio, 1080);
-      
-      // 保持宽高比
-      const videoRatio = (videoDimensions.width / videoDimensions.height) || (16/9);
-      const screenRatio = targetWidth / targetHeight;
-      
-      let finalWidth, finalHeight;
-      if (videoRatio > screenRatio) {
-        finalWidth = targetWidth;
-        finalHeight = targetWidth / videoRatio;
+      if (isMobile) {
+        // 移动端：全屏体验，充分利用屏幕空间
+        targetWidth = window.innerWidth;
+        targetHeight = window.innerHeight;
+        targetTop = 0;
+        targetLeft = 0;
+        
+        // 移动端简化样式，更接近全屏体验
+        finalStyle = {
+          position: 'fixed',
+          top: `${targetTop}px`,
+          left: `${targetLeft}px`,
+          width: `${targetWidth}px`,
+          height: `${targetHeight}px`,
+          zIndex: 9999,
+          transition: 'all 0.3s ease',
+          borderRadius: '0',
+          boxShadow: 'none',
+          backgroundColor: 'black',
+          border: 'none',
+          backdropFilter: 'none'
+        };
       } else {
-        finalHeight = targetHeight;
-        finalWidth = targetHeight * videoRatio;
+        // 平板和桌面端：保持原有影院模式
+        // 计算目标尺寸和位置 (平板：90% 视口，桌面：85% 视口)
+        const widthRatio = isTablet ? 0.9 : 0.85;
+        const heightRatio = isTablet ? 0.9 : 0.9;
+        
+        targetWidth = Math.min(window.innerWidth * widthRatio, 1920);
+        targetHeight = Math.min(window.innerHeight * heightRatio, 1080);
+        
+        // 保持宽高比
+        const videoRatio = (videoDimensions.width / videoDimensions.height) || (16/9);
+        const screenRatio = targetWidth / targetHeight;
+        
+        let finalWidth, finalHeight;
+        if (videoRatio > screenRatio) {
+          finalWidth = targetWidth;
+          finalHeight = targetWidth / videoRatio;
+        } else {
+          finalHeight = targetHeight;
+          finalWidth = targetHeight * videoRatio;
+        }
+        
+        // 计算居中位置
+        const horizontalPadding = isTablet ? 20 : 40;
+        const verticalPadding = isTablet ? 30 : 50;
+        
+        targetTop = Math.max((window.innerHeight - finalHeight) / 2, verticalPadding);
+        targetLeft = Math.max((window.innerWidth - finalWidth) / 2, horizontalPadding);
+        
+        // 桌面端样式
+        finalStyle = {
+          position: 'fixed',
+          top: `${targetTop}px`,
+          left: `${targetLeft}px`,
+          width: `${finalWidth}px`,
+          height: `${finalHeight}px`,
+          zIndex: 9999,
+          transition: 'all 0.4s cubic-bezier(0.2, 0, 0.2, 1)',
+          borderRadius: '1rem',
+          boxShadow: '0 20px 60px rgba(249, 115, 22, 0.3)',
+          backgroundColor: 'rgba(0, 0, 0, 0.85)',
+          border: '1px solid rgba(249, 115, 22, 0.2)',
+          backdropFilter: 'blur(20px)'
+        };
       }
-      
-      // 计算居中位置，移动端可以更靠近边缘
-      const horizontalPadding = isMobile ? 10 : isTablet ? 20 : 40;
-      const verticalPadding = isMobile ? 20 : isTablet ? 30 : 50;
-      
-      const targetTop = Math.max((window.innerHeight - finalHeight) / 2, verticalPadding);
-      const targetLeft = Math.max((window.innerWidth - finalWidth) / 2, horizontalPadding);
       
       // 1. 设置初始固定位置（在当前位置）
       setStyle({
@@ -153,9 +238,9 @@ export default function VideoPlayer({ videoUrl, className = '', posterUrl }: Vid
         left: `${rect.left}px`,
         width: `${rect.width}px`,
         height: `${rect.height}px`,
-        zIndex: 1000,
+        zIndex: 9999,
         transition: 'none',
-        borderRadius: '0.75rem',
+        borderRadius: isMobile ? '0' : '0.75rem',
         backgroundColor: 'rgba(0,0,0,0)'
       });
       
@@ -165,20 +250,7 @@ export default function VideoPlayer({ videoUrl, className = '', posterUrl }: Vid
       // 2. 强制重绘后开始动画
       requestAnimationFrame(() => {
         requestAnimationFrame(() => {
-          setStyle({
-            position: 'fixed',
-            top: `${targetTop}px`,
-            left: `${targetLeft}px`,
-            width: `${finalWidth}px`,
-            height: `${finalHeight}px`,
-            zIndex: 1000,
-            transition: 'all 0.4s cubic-bezier(0.2, 0, 0.2, 1)',
-            borderRadius: '1rem',
-            boxShadow: '0 20px 60px rgba(249, 115, 22, 0.3)',
-            backgroundColor: 'rgba(0, 0, 0, 0.85)',
-            border: '1px solid rgba(249, 115, 22, 0.2)',
-            backdropFilter: 'blur(20px)'
-          });
+          setStyle(finalStyle);
         });
       });
       
@@ -195,7 +267,7 @@ export default function VideoPlayer({ videoUrl, className = '', posterUrl }: Vid
           left: `${rect.left}px`,
           width: `${rect.width}px`,
           height: `${rect.height}px`,
-          zIndex: 1000,
+          zIndex: 9999,
           transition: 'all 0.35s cubic-bezier(0.4, 0, 0.2, 1)',
           borderRadius: '0.75rem',
           boxShadow: 'none',
@@ -263,6 +335,47 @@ export default function VideoPlayer({ videoUrl, className = '', posterUrl }: Vid
       playerRef.current.volume = volume;
     }
   }, [volume]);
+
+  // 屏幕旋转检测 - 自动切换全屏模式
+  useEffect(() => {
+    // 检测是否为横屏
+    const isLandscape = () => {
+      return window.matchMedia('(orientation: landscape)').matches;
+    };
+
+    // 处理屏幕方向变化
+    const handleOrientationChange = () => {
+      // 只在视频播放时才自动切换全屏，避免初始加载时自动全屏
+      if (isLandscape() && playerRef.current && !isPaused) {
+        // 横屏时自动切换到全屏模式
+        const container = containerRef.current;
+        if (container && !document.fullscreenElement) {
+          container.requestFullscreen().catch(err => {
+            console.error(`Error attempting to enable full-screen mode: ${err.message}`);
+          });
+        }
+      }
+    };
+
+    // 监听屏幕方向变化
+    const orientationMediaQuery = window.matchMedia('(orientation: landscape)');
+    orientationMediaQuery.addEventListener('change', handleOrientationChange);
+
+    // 清理事件监听器
+    return () => {
+      orientationMediaQuery.removeEventListener('change', handleOrientationChange);
+    };
+  }, [isPaused]);
+
+  // 确保页面加载时不会自动全屏
+  useEffect(() => {
+    // 检查是否有元素处于全屏状态，如果有则退出
+    if (document.fullscreenElement) {
+      document.exitFullscreen().catch(err => {
+        console.error(`Error attempting to exit full-screen mode: ${err.message}`);
+      });
+    }
+  }, []);
 
   return (
     <>
@@ -333,28 +446,95 @@ export default function VideoPlayer({ videoUrl, className = '', posterUrl }: Vid
           </div>
         )}
 
-        {/* 视频源 */}
+        {/* 视频源 - 禁用浏览器默认控件，使用自定义控制界面 */}
         <video
           ref={playerRef}
           src={currentVideoUrl}
           className="w-full h-full object-contain"
           poster={posterUrl || ''}
-          preload="auto"
+          preload="metadata"
+          autoPlay={false}
           muted={isMuted}
           playsInline
-          onPlay={() => setIsPaused(false)}
-          onPause={() => setIsPaused(true)}
-          onTimeUpdate={() => setCurrentTime(playerRef.current?.currentTime || 0)}
-          onDurationChange={() => setDuration(playerRef.current?.duration || 0)}
+          controlsList="nodownload noremoteplayback"
+          onClick={() => {
+            if (playerRef.current) {
+              if (isPaused) {
+                playerRef.current.play();
+              } else {
+                playerRef.current.pause();
+              }
+              // 点击视频时显示控制组件并设置定时器自动隐藏
+              showControlsWithTimeout();
+            }
+          }}
+          onPlay={() => {
+            setIsPaused(false);
+            // 播放时获取时长并显示控制组件
+            if (playerRef.current) {
+              setDuration(playerRef.current.duration || 0);
+            }
+            showControlsWithTimeout();
+          }}
+          onPause={() => {
+            setIsPaused(true);
+            // 暂停时显示控制组件并设置定时器自动隐藏
+            showControlsWithTimeout();
+          }}
+          onTimeUpdate={() => {
+            if (playerRef.current) {
+              setCurrentTime(playerRef.current.currentTime || 0);
+              // 播放过程中也尝试获取时长
+              if (duration === 0) {
+                setDuration(playerRef.current.duration || 0);
+              }
+            }
+          }}
+          onDurationChange={() => {
+            if (playerRef.current) {
+              setDuration(playerRef.current.duration || 0);
+            }
+          }}
+          onLoadedMetadata={() => {
+            // 视频元数据加载完成后，获取视频时长
+            if (playerRef.current) {
+              setDuration(playerRef.current.duration || 0);
+            }
+          }}
+          onLoadedData={() => {
+            // 视频数据加载完成后，获取视频时长
+            if (playerRef.current) {
+              setDuration(playerRef.current.duration || 0);
+            }
+          }}
+          onCanPlay={() => {
+            // 视频可以播放时，获取视频时长
+            if (playerRef.current) {
+              setDuration(playerRef.current.duration || 0);
+            }
+          }}
           onWaiting={() => setIsBuffering(true)}
-          onPlaying={() => setIsBuffering(false)}
+          onPlaying={() => {
+            // 开始播放时，再次尝试获取时长
+            if (playerRef.current) {
+              setDuration(playerRef.current.duration || 0);
+            }
+            setIsBuffering(false);
+          }}
+          onVolumeChange={() => {
+            if (playerRef.current) {
+              setVolume(playerRef.current.volume);
+              setIsMuted(playerRef.current.muted);
+            }
+          }}
         />
         
-        {/* 播放按钮覆盖层 */}
-        <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity duration-300 pointer-events-auto">
+        {/* 中央播放/暂停按钮 - 点击视频时显示 */}
+        <div className={`absolute inset-0 flex items-center justify-center pointer-events-auto ${(isPaused || showControls) ? 'opacity-100' : 'opacity-0'} group-hover:opacity-100 transition-opacity duration-300`}>
           <button 
             className="w-16 h-16 rounded-full bg-primary-500/90 hover:bg-primary-600/90 text-white shadow-lg transition-all duration-300 transform hover:scale-110 active:scale-95 flex items-center justify-center"
-            onClick={() => {
+            onClick={(e) => {
+              e.stopPropagation();
               if (playerRef.current) {
                 if (isPaused) {
                   playerRef.current.play();
@@ -364,33 +544,53 @@ export default function VideoPlayer({ videoUrl, className = '', posterUrl }: Vid
               }
             }}
           >
-            <svg className="w-8 h-8 ml-1" fill="currentColor" viewBox="0 0 20 20">
-              <path d="M6.3 2.841A1.5 1.5 0 004 4.11V15.89a1.5 1.5 0 002.3 1.269l9.344-5.89a1.5 1.5 0 000-2.538L6.3 2.84z" />
-            </svg>
+            {isPaused ? (
+              <svg className="w-8 h-8 ml-1" fill="currentColor" viewBox="0 0 20 20">
+                <path d="M6.3 2.841A1.5 1.5 0 004 4.11V15.89a1.5 1.5 0 002.3 1.269l9.344-5.89a1.5 1.5 0 000-2.538L6.3 2.84z" />
+              </svg>
+            ) : (
+              <svg className="w-8 h-8" fill="currentColor" viewBox="0 0 20 20">
+                <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zM7 8a1 1 0 012 0v4a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v4a1 1 0 102 0V8a1 1 0 00-1-1z" clipRule="evenodd" />
+              </svg>
+            )}
           </button>
         </div>
-        
-        {/* 控制栏 */}
-        <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 to-transparent p-4 opacity-0 group-hover:opacity-100 transition-opacity duration-300">
-          {/* 进度条 */}
-          <input 
-            type="range" 
-            className="w-full h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer mb-3"
-            style={{
-              background: `linear-gradient(to right, var(--warm-primary) 0%, var(--warm-primary) ${currentTime / (duration || 1) * 100}%, rgba(255, 255, 255, 0.2) ${currentTime / (duration || 1) * 100}%, rgba(255, 255, 255, 0.2) 100%)`
-            }}
-            value={currentTime}
-            min="0"
-            max={duration || 1}
-            step="0.01"
-            onChange={(e) => {
-              const newTime = parseFloat(e.target.value);
-              setCurrentTime(newTime);
-              if (playerRef.current) {
-                playerRef.current.currentTime = newTime;
-              }
-            }}
-          />
+
+        {/* 自定义控制栏 */}
+        <div className={`absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 to-transparent p-4 ${showControls ? 'opacity-100' : 'opacity-0'} group-hover:opacity-100 transition-opacity duration-300 pointer-events-auto`}>
+          {/* 进度条组件 */}
+          <div className="relative mb-3">
+            <input 
+              type="range" 
+              className="w-full h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer"
+              style={{
+                background: `linear-gradient(to right, var(--warm-primary) 0%, var(--warm-primary) ${currentTime / (duration || 1) * 100}%, rgba(255, 255, 255, 0.2) ${currentTime / (duration || 1) * 100}%, rgba(255, 255, 255, 0.2) 100%)`
+              }}
+              value={currentTime}
+              min="0"
+              max={duration || 1}
+              step="0.01"
+              onChange={(e) => {
+                const newTime = parseFloat(e.target.value);
+                setCurrentTime(newTime);
+                if (playerRef.current) {
+                  playerRef.current.currentTime = newTime;
+                }
+                // 重置控制组件隐藏定时器
+                showControlsWithTimeout();
+              }}
+              onMouseDown={(e) => {
+                e.stopPropagation();
+                // 重置控制组件隐藏定时器
+                showControlsWithTimeout();
+              }}
+              onTouchStart={(e) => {
+                e.stopPropagation();
+                // 重置控制组件隐藏定时器
+                showControlsWithTimeout();
+              }}
+            />
+          </div>
           
           {/* 控制按钮和时间显示 */}
           <div className="flex items-center justify-between">
@@ -399,12 +599,15 @@ export default function VideoPlayer({ videoUrl, className = '', posterUrl }: Vid
               {/* 快退按钮 */}
               <button 
                 className="w-8 h-8 text-white hover:text-primary-400 transition-colors duration-200 flex items-center justify-center"
-                onClick={() => {
+                onClick={(e) => {
+                  e.stopPropagation();
                   const newTime = Math.max(0, currentTime - 10);
                   setCurrentTime(newTime);
                   if (playerRef.current) {
                     playerRef.current.currentTime = newTime;
                   }
+                  // 重置控制组件隐藏定时器
+                  showControlsWithTimeout();
                 }}
               >
                 <svg className="w-6 h-6" fill="currentColor" viewBox="0 0 20 20">
@@ -414,8 +617,9 @@ export default function VideoPlayer({ videoUrl, className = '', posterUrl }: Vid
               
               {/* 播放/暂停按钮 */}
               <button 
-                className="w-8 h-8 text-white hover:text-primary-400 transition-colors duration-200 flex items-center justify-center"
-                onClick={() => {
+                className="w-10 h-10 text-white hover:text-primary-400 transition-colors duration-200 flex items-center justify-center"
+                onClick={(e) => {
+                  e.stopPropagation();
                   if (playerRef.current) {
                     if (isPaused) {
                       playerRef.current.play();
@@ -423,14 +627,16 @@ export default function VideoPlayer({ videoUrl, className = '', posterUrl }: Vid
                       playerRef.current.pause();
                     }
                   }
+                  // 重置控制组件隐藏定时器
+                  showControlsWithTimeout();
                 }}
               >
                 {isPaused ? (
-                  <svg className="w-6 h-6" fill="currentColor" viewBox="0 0 20 20">
+                  <svg className="w-7 h-7 ml-1" fill="currentColor" viewBox="0 0 20 20">
                     <path d="M6.3 2.841A1.5 1.5 0 004 4.11V15.89a1.5 1.5 0 002.3 1.269l9.344-5.89a1.5 1.5 0 000-2.538L6.3 2.84z" />
                   </svg>
                 ) : (
-                  <svg className="w-6 h-6" fill="currentColor" viewBox="0 0 20 20">
+                  <svg className="w-7 h-7" fill="currentColor" viewBox="0 0 20 20">
                     <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zM7 8a1 1 0 012 0v4a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v4a1 1 0 102 0V8a1 1 0 00-1-1z" clipRule="evenodd" />
                   </svg>
                 )}
@@ -439,12 +645,15 @@ export default function VideoPlayer({ videoUrl, className = '', posterUrl }: Vid
               {/* 快进按钮 */}
               <button 
                 className="w-8 h-8 text-white hover:text-primary-400 transition-colors duration-200 flex items-center justify-center"
-                onClick={() => {
+                onClick={(e) => {
+                  e.stopPropagation();
                   const newTime = Math.min(duration || 0, currentTime + 10);
                   setCurrentTime(newTime);
                   if (playerRef.current) {
                     playerRef.current.currentTime = newTime;
                   }
+                  // 重置控制组件隐藏定时器
+                  showControlsWithTimeout();
                 }}
               >
                 <svg className="w-6 h-6" fill="currentColor" viewBox="0 0 20 20">
@@ -453,7 +662,7 @@ export default function VideoPlayer({ videoUrl, className = '', posterUrl }: Vid
               </button>
             </div>
             
-            {/* 中间时间显示 */}
+            {/* 时间显示 */}
             <div className="text-white text-sm font-medium">
               <span>{formatTime(currentTime)}</span>
               <span className="text-gray-400 mx-2">/</span>
@@ -461,13 +670,16 @@ export default function VideoPlayer({ videoUrl, className = '', posterUrl }: Vid
             </div>
             
             {/* 右侧控制按钮 */}
-            <div className="flex items-center space-x-3">
+            <div className="flex items-center space-x-2">
               {/* 音量控制 */}
-              <div className="flex items-center space-x-2">
+              <div className="flex items-center space-x-1">
                 <button 
                   className="w-8 h-8 text-white hover:text-primary-400 transition-colors duration-200 flex items-center justify-center"
-                  onClick={() => {
+                  onClick={(e) => {
+                    e.stopPropagation();
                     setIsMuted(!isMuted);
+                    // 重置控制组件隐藏定时器
+                    showControlsWithTimeout();
                   }}
                 >
                   {isMuted ? (
@@ -482,7 +694,7 @@ export default function VideoPlayer({ videoUrl, className = '', posterUrl }: Vid
                 </button>
                 <input 
                   type="range" 
-                  className="w-24 h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer"
+                  className="w-16 h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer"
                   min="0"
                   max="1"
                   step="0.01"
@@ -491,6 +703,18 @@ export default function VideoPlayer({ videoUrl, className = '', posterUrl }: Vid
                     const newVolume = parseFloat(e.target.value);
                     setVolume(newVolume);
                     setIsMuted(newVolume === 0);
+                    // 重置控制组件隐藏定时器
+                    showControlsWithTimeout();
+                  }}
+                  onMouseDown={(e) => {
+                    e.stopPropagation();
+                    // 重置控制组件隐藏定时器
+                    showControlsWithTimeout();
+                  }}
+                  onTouchStart={(e) => {
+                    e.stopPropagation();
+                    // 重置控制组件隐藏定时器
+                    showControlsWithTimeout();
                   }}
                 />
               </div>
@@ -498,7 +722,12 @@ export default function VideoPlayer({ videoUrl, className = '', posterUrl }: Vid
               {/* 画中画按钮 */}
               <button 
                 className="w-8 h-8 text-white hover:text-primary-400 transition-colors duration-200 flex items-center justify-center"
-                onClick={togglePIP}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  togglePIP();
+                  // 重置控制组件隐藏定时器
+                  showControlsWithTimeout();
+                }}
                 title={pip ? "退出画中画" : "画中画模式"}
               >
                 <svg className="w-6 h-6" fill="currentColor" viewBox="0 0 20 20">
@@ -509,7 +738,8 @@ export default function VideoPlayer({ videoUrl, className = '', posterUrl }: Vid
               {/* 全屏按钮 */}
               <button 
                 className="w-8 h-8 text-white hover:text-primary-400 transition-colors duration-200 flex items-center justify-center"
-                onClick={() => {
+                onClick={(e) => {
+                  e.stopPropagation();
                   const container = containerRef.current;
                   if (container) {
                     if (!document.fullscreenElement) {
@@ -522,7 +752,10 @@ export default function VideoPlayer({ videoUrl, className = '', posterUrl }: Vid
                       }
                     }
                   }
+                  // 重置控制组件隐藏定时器
+                  showControlsWithTimeout();
                 }}
+                title="全屏模式"
               >
                 <svg className="w-6 h-6" fill="currentColor" viewBox="0 0 20 20">
                   <path d="M10 3.586L13.586 7H10V3.586zM14 8H10V4l4 4zM9.414 13L6 9.414V13H9.414zM4 12h4v4L4 12z" />
@@ -531,9 +764,9 @@ export default function VideoPlayer({ videoUrl, className = '', posterUrl }: Vid
             </div>
           </div>
         </div>
-        
+
         {/* 自定义影院模式按钮 - 悬浮在右上角 */}
-        <div className="absolute top-4 right-4 z-50 opacity-0 group-hover:opacity-100 transition-opacity duration-300 pointer-events-auto">
+        <div className={`absolute top-4 right-4 z-50 ${showControls ? 'opacity-100' : 'opacity-0'} group-hover:opacity-100 transition-opacity duration-300 pointer-events-auto`}>
            <button 
               type="button"
               className="bg-black/50 hover:bg-primary-500/90 text-white p-2.5 rounded-full backdrop-blur-md border border-primary-300/30 shadow-lg transition-all duration-300 transform hover:scale-110 active:scale-95"

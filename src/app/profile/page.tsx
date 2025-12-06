@@ -5,7 +5,8 @@ import Image from 'next/image';
 import { supabase } from '@/lib/supabase/client';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/context/AuthContext';
-import { profileService, Profile, ProfileUpdateData } from '@/services/profileService';
+import { profileService, ProfileUpdateData } from '@/services/profileService';
+import { Profile } from '@/types/confession';
 import MeteorShower from '@/components/MeteorShower';
 import { UserCircleIcon, PhotoIcon, ArrowLeftCircleIcon, TrashIcon } from '@heroicons/react/24/outline';
 
@@ -388,7 +389,7 @@ const ProfilePage: React.FC = () => {
               <div className="pt-4 border-t border-gray-200 dark:border-gray-700/50">
                 <div className="flex justify-between text-sm mb-2">
                   <span className="text-gray-600 dark:text-gray-300 font-medium">注册时间</span>
-                  <span className="font-bold text-gray-800 dark:text-gray-100">{profile && new Date(profile.created_at).toLocaleDateString('zh-CN') || '未知'}</span>
+                  <span className="font-bold text-gray-800 dark:text-gray-100">{profile && profile.created_at ? new Date(profile.created_at).toLocaleDateString('zh-CN') : '未知'}</span>
                 </div>
                 <div className="flex justify-between text-sm">
                   <span className="text-gray-600 dark:text-gray-300 font-medium">邮箱</span>

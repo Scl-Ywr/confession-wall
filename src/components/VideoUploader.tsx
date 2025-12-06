@@ -76,7 +76,6 @@ export default function VideoUploader({ onUploadSuccess }: VideoUploaderProps) {
     }));
   };
 
-  // Compress video
   // 直接上传视频，不进行压缩，避免损坏视频文件
   const handleVideoUpload = async () => {
     if (!selectedFile) return;
@@ -85,120 +84,303 @@ export default function VideoUploader({ onUploadSuccess }: VideoUploaderProps) {
     await handleUpload(selectedFile);
   };
 
-  // 视频压缩函数 - 基于浏览器MediaRecorder API
+  // 视频压缩函数 - 实现真实的视频压缩功能
   const compressVideo = async () => {
-    if (!selectedFile) return;
+    console.log('Compress button clicked, selectedFile:', selectedFile);
+    if (!selectedFile) {
+      console.error('No file selected for compression');
+      setError('没有选择要压缩的视频文件');
+      setUploadState('error');
+      return;
+    }
 
     setUploadState('compressing');
     setCompressionProgress(0);
 
+    // 进度更新定时器
+    let progressInterval: NodeJS.Timeout | undefined;
+
     try {
-      // 创建视频元素
-      const videoElement = document.createElement('video');
-      videoElement.src = URL.createObjectURL(selectedFile);
-      videoElement.muted = true;
-      videoElement.playsInline = true;
-      
-      // 等待视频加载完成
-      await new Promise<void>((resolve, reject) => {
-        videoElement.onloadedmetadata = () => resolve();
-        videoElement.onerror = () => reject(new Error('Failed to load video'));
-      });
-      
-      // 设置压缩参数
-      const { bitrate } = compressionOptions;
-      
-      // 创建视频流
-      videoElement.play();
-      
-      // 创建MediaRecorder实例
-      // 使用HTMLMediaElement类型，captureStream方法在该接口上定义
-      const mediaElement = videoElement as HTMLMediaElement & { 
-        captureStream?: () => MediaStream; 
-        mozCaptureStream?: () => MediaStream; 
-        webkitCaptureStream?: () => MediaStream;
-      };
-      
-      const stream = mediaElement.captureStream?.() || 
-                    mediaElement.mozCaptureStream?.() || 
-                    mediaElement.webkitCaptureStream?.();
-      
-      if (!stream) {
-        throw new Error('Video capture stream not supported');
-      }
-      
-      const mediaRecorder = new MediaRecorder(stream, {
-        mimeType: 'video/mp4; codecs=avc1',
-        videoBitsPerSecond: parseInt(bitrate) * 1024 * 1024 // 将Mbps转换为bps
-      });
-      
-      // 录制视频数据
-      const chunks: BlobPart[] = [];
-      mediaRecorder.ondataavailable = (e) => {
-        if (e.data.size > 0) {
-          chunks.push(e.data);
-        }
-      };
-      
       // 模拟压缩进度
-      const totalDuration = videoElement.duration;
-      const startTime = Date.now();
-      
-      // 开始录制
-      mediaRecorder.start();
-      
-      // 更新压缩进度
-      const updateProgress = () => {
-        const elapsed = (Date.now() - startTime) / 1000;
-        const progress = Math.min(100, Math.round((elapsed / totalDuration) * 100));
-        setCompressionProgress(progress);
-        
-        if (mediaRecorder.state === 'recording') {
-          requestAnimationFrame(updateProgress);
-        }
+      const simulateProgress = () => {
+        let progress = 0;
+        progressInterval = setInterval(() => {
+          if (progress < 95) {
+            progress += Math.random() * 5; // 随机增加进度
+          } else {
+            progress = Math.min(99.9, progress + 0.5); // 接近完成时放慢进度增长
+          }
+          setCompressionProgress(progress);
+        }, 200);
       };
       
-      // 开始更新进度
-      updateProgress();
+      simulateProgress();
       
-      // 等待录制完成
-      await new Promise<void>((resolve) => {
-        mediaRecorder.onstop = () => resolve();
+      // 记录原始文件大小
+      const originalSize = selectedFile.size;
+      console.log('Starting video compression. Original file size:', originalSize, 'bytes');
+      
+      // 使用MediaRecorder API进行真实的视频压缩
+      const compressedBlob = await new Promise<Blob>((resolve, reject) => {
+        const videoElement = document.createElement('video');
+        videoElement.preload = 'metadata';
+        videoElement.src = URL.createObjectURL(selectedFile);
+        videoElement.muted = true;
+        videoElement.playsInline = true;
         
-        // 视频播放结束后停止录制
-        videoElement.onended = () => {
-          if (mediaRecorder.state === 'recording') {
-            mediaRecorder.stop();
+        videoElement.onloadedmetadata = () => {
+          try {
+            // 设置视频.currentTime到0，确保从开头开始录制
+            videoElement.currentTime = 0;
+            
+            // 创建一个canvas元素，用于绘制视频帧
+            const canvas = document.createElement('canvas');
+            const ctx = canvas.getContext('2d');
+            if (!ctx) {
+              throw new Error('无法获取canvas上下文');
+            }
+            
+            // 设置canvas大小为压缩分辨率
+            const resolution = compressionOptions.resolution;
+            let targetWidth, targetHeight;
+            if (resolution === '480p') {
+              targetWidth = 640;
+              targetHeight = 480;
+            } else if (resolution === '720p') {
+              targetWidth = 1280;
+              targetHeight = 720;
+            } else {
+              targetWidth = 1920;
+              targetHeight = 1080;
+            }
+            
+            // 保持宽高比
+            const aspectRatio = videoElement.videoWidth / videoElement.videoHeight;
+            if (aspectRatio > targetWidth / targetHeight) {
+              targetHeight = targetWidth / aspectRatio;
+            } else {
+              targetWidth = targetHeight * aspectRatio;
+            }
+            
+            canvas.width = targetWidth;
+            canvas.height = targetHeight;
+            
+            // 使用MediaRecorder进行压缩录制
+            const stream = canvas.captureStream(30); // 30fps
+            
+            // 设置比特率
+            const bitrate = compressionOptions.bitrate;
+            const bitrateValue = bitrate.endsWith('M') ? parseInt(bitrate) * 1000000 : parseInt(bitrate) * 1000;
+            
+            const recorder = new MediaRecorder(stream, {
+              mimeType: 'video/webm; codecs=vp9',
+              videoBitsPerSecond: bitrateValue
+            });
+            
+            const chunks: Blob[] = [];
+            
+            recorder.ondataavailable = (e) => {
+              if (e.data.size > 0) {
+                chunks.push(e.data);
+              }
+            };
+            
+            recorder.onstop = () => {
+              const compressedBlob = new Blob(chunks, { type: 'video/webm' });
+              console.log('Compression completed, compressed size:', compressedBlob.size);
+              URL.revokeObjectURL(videoElement.src);
+              resolve(compressedBlob);
+            };
+            
+            recorder.onerror = (e) => {
+              URL.revokeObjectURL(videoElement.src);
+              reject(new Error(`视频压缩失败: ${e.error?.message || '未知错误'}`));
+            };
+            
+            // 开始录制
+            recorder.start();
+            
+            // 实现高效的视频处理
+            const duration = videoElement.duration;
+            const fps = 5; // 降低帧率，提高处理效率
+            const totalFrames = Math.ceil(duration * fps);
+            let processedFrames = 0;
+            
+            // 根据视频大小和时长动态调整超时时间
+            const baseTimeout = 30000; // 基础超时时间30秒
+            const sizeFactor = Math.min(3, originalSize / (10 * 1024 * 1024)); // 文件大小因子，最大3倍
+            const durationFactor = Math.min(2, duration / 60); // 时长因子，最大2倍
+            const dynamicTimeout = baseTimeout * sizeFactor * durationFactor;
+            console.log('Dynamic compression timeout:', dynamicTimeout, 'ms');
+            
+            // 压缩超时定时器
+            const compressionTimeout = setTimeout(() => {
+              URL.revokeObjectURL(videoElement.src);
+              reject(new Error('视频压缩超时，请尝试选择更小的视频文件或调整压缩参数'));
+            }, dynamicTimeout);
+            
+            // 直接播放视频并捕获帧，提高处理效率
+            videoElement.play().then(() => {
+              // 设置视频播放速率为1倍，确保视频完整处理
+              videoElement.playbackRate = 1;
+              
+              // 计算帧捕获间隔，确保捕获正确的帧数
+              const frameInterval = 1000 / fps;
+              
+              // 更高效的帧捕获方法
+              const captureFrame = () => {
+                if (processedFrames >= totalFrames || videoElement.ended) {
+                  clearTimeout(compressionTimeout);
+                  recorder.stop();
+                  videoElement.pause();
+                  return;
+                }
+                
+                // 绘制当前帧到canvas
+                ctx.drawImage(videoElement, 0, 0, canvas.width, canvas.height);
+                
+                // 更新已处理帧数
+                processedFrames++;
+                
+                // 使用setTimeout控制帧捕获频率，确保视频完整处理
+                setTimeout(captureFrame, frameInterval);
+              };
+              
+              // 开始捕获帧
+              captureFrame();
+            }).catch(err => {
+              console.error('Error playing video for compression:', err);
+              // 如果直接播放失败，回退到优化的逐帧处理
+              const fallbackDrawFrame = () => {
+                if (processedFrames >= totalFrames) {
+                  clearTimeout(compressionTimeout);
+                  recorder.stop();
+                  return;
+                }
+                
+                // 计算当前要处理的时间点
+                const currentTime = (processedFrames / totalFrames) * duration;
+                
+                // 设置视频当前时间，然后等待onseeked事件触发后再绘制帧
+                videoElement.currentTime = currentTime;
+                
+                // 等待视频定位到正确的时间点后再绘制帧
+                const handleSeeked = () => {
+                  // 移除事件监听器，避免重复调用
+                  videoElement.removeEventListener('seeked', handleSeeked);
+                  
+                  // 绘制当前帧到canvas
+                  ctx.drawImage(videoElement, 0, 0, canvas.width, canvas.height);
+                  
+                  // 更新已处理帧数
+                  processedFrames++;
+                  
+                  // 继续处理下一帧，确保所有帧都被处理
+                  setTimeout(fallbackDrawFrame, 50); // 适当延迟，确保视频完整处理
+                };
+                
+                // 监听seeked事件，确保视频已经定位到正确的时间点
+                videoElement.addEventListener('seeked', handleSeeked);
+              };
+              
+              // 开始回退绘制帧
+              fallbackDrawFrame();
+            });
+            
+          } catch (error) {
+            URL.revokeObjectURL(videoElement.src);
+            reject(error);
           }
         };
         
-        // 设置超时，确保录制不会无限期进行
-        setTimeout(() => {
-          if (mediaRecorder.state === 'recording') {
-            mediaRecorder.stop();
-          }
-        }, totalDuration * 1000 + 5000);
+        videoElement.onerror = () => {
+          URL.revokeObjectURL(videoElement.src);
+          reject(new Error('视频加载失败，无法进行压缩'));
+        };
       });
       
-      // 创建压缩后的视频Blob
-      const compressedBlob = new Blob(chunks, { type: 'video/mp4' });
+      // 清除进度定时器
+      if (progressInterval) {
+        clearInterval(progressInterval);
+        progressInterval = undefined;
+        console.log('Progress interval cleared');
+      }
       
-      // 创建压缩后的File对象
-      const compressedFile = new File([compressedBlob], `compressed_${selectedFile.name}`, { type: 'video/mp4' });
+      // 确保进度达到100%
+      setCompressionProgress(100);
+      console.log('Compression progress set to 100%');
       
-      // 释放资源
-      videoElement.pause();
-      URL.revokeObjectURL(videoElement.src);
-      
-      console.log('Compression completed. Original size:', selectedFile.size, 'Compressed size:', compressedFile.size);
-      
-      // 上传压缩后的视频
-      await handleUpload(compressedFile);
+      // 使用setTimeout确保状态更新后再执行后续操作
+      setTimeout(async () => {
+        try {
+          // 创建压缩后的文件
+          console.log('Creating compressed file...');
+          const compressedFile = new File([compressedBlob], selectedFile.name.replace(/\.[^/.]+$/, '.webm'), {
+            type: 'video/webm'
+          });
+          console.log('Compressed file created successfully');
+          
+          // 记录压缩后的文件大小
+          const compressedSize = compressedFile.size;
+          console.log('Video compression completed successfully!');
+          console.log('- Original size:', (originalSize / (1024 * 1024)).toFixed(2), 'MB');
+          console.log('- Compressed size:', (compressedSize / (1024 * 1024)).toFixed(2), 'MB');
+          console.log('- Compression ratio:', ((1 - compressedSize / originalSize) * 100).toFixed(2), '%');
+          
+          // 检查压缩后的文件大小，大于50MB则显示提示
+          const maxSizeMB = 50;
+          const maxSizeBytes = maxSizeMB * 1024 * 1024;
+          
+          // 检查压缩后的文件大小，必须在50M以内才能上传
+          if (compressedSize > maxSizeBytes) {
+            // 设置压缩完成但大小超限的状态
+            console.log('Compressed file size exceeds limit, switching to size_exceeded state');
+            setUploadState('size_exceeded');
+            setFileSizeMB(compressedSize / (1024 * 1024));
+            setError(`压缩完成！但文件大小为 ${(compressedSize / (1024 * 1024)).toFixed(2)} MB，超过了允许的 ${maxSizeMB} MB。请取消上传或选择更小的视频文件。`);
+          } else {
+            // 上传压缩后的文件
+            console.log('Uploading compressed file...');
+            await handleUpload(compressedFile);
+            console.log('Compressed file uploaded successfully');
+          }
+        } catch (err) {
+          const errorMessage = err instanceof Error ? err.message : '处理压缩文件时发生错误';
+          console.error('Error processing compressed file:', err);
+          setError(`处理压缩文件时发生错误: ${errorMessage}`);
+          setUploadState('error');
+          setCompressionProgress(0);
+        }
+      }, 100); // 等待状态更新完成
     } catch (err) {
-      const errorMessage = err instanceof Error ? err.message : '视频上传失败';
-      console.error('Video compression error:', err);
-      setError(`视频压缩失败: ${errorMessage}`);
+      // 处理各种类型的错误
+      const errorMessage = err instanceof Error ? err.message : '视频压缩失败';
+      console.error('Video compression error:', err, 'Stack:', err instanceof Error ? err.stack : 'No stack');
+      
+      // 清除进度定时器
+      if (progressInterval) {
+        clearInterval(progressInterval);
+        progressInterval = undefined;
+      }
+      
+      // 显示更详细的错误信息
+      setError(`视频压缩失败: ${errorMessage}\n\n建议：\n1. 尝试选择更小的视频文件\n2. 调整压缩参数（降低分辨率或比特率）\n3. 检查网络连接\n4. 尝试直接上传原视频`);
       setUploadState('error');
+      setCompressionProgress(0);
+      
+      // 记录详细的错误日志到控制台
+      console.group('Compression Error Details:');
+      console.log('Error:', err);
+      console.log('Selected File:', selectedFile);
+      console.log('Compression Options:', compressionOptions);
+      console.log('File Size:', (selectedFile.size / (1024 * 1024)).toFixed(2), 'MB');
+      console.groupEnd();
+    } finally {
+      // 确保进度定时器被清除
+      if (progressInterval) {
+        clearInterval(progressInterval);
+        progressInterval = undefined;
+      }
     }
   };
 
@@ -473,7 +655,7 @@ export default function VideoUploader({ onUploadSuccess }: VideoUploaderProps) {
               <div className="flex flex-col sm:flex-row gap-4">
                 <button
                   onClick={compressVideo}
-                  className="flex-1 bg-primary-600 text-black px-6 py-3 rounded-xl border-2 border-primary-700 hover:bg-primary-700 transition-all font-bold"
+                  className="flex-1 bg-primary-600 text-black px-6 py-3 rounded-xl border-2 border-primary-700 hover:bg-primary-700 transition-all font-bold disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   压缩后上传
                 </button>
@@ -490,6 +672,7 @@ export default function VideoUploader({ onUploadSuccess }: VideoUploaderProps) {
                   取消上传
                 </button>
               </div>
+
             </div>
           </div>
         );

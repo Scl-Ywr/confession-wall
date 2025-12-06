@@ -271,7 +271,7 @@ export default function CreateConfessionForm({ onSuccess, user }: CreateConfessi
                     return newPosters;
                   });
                 }}
-                className="absolute top-2 right-2 bg-black/50 hover:bg-red-500 text-white p-2 rounded-full backdrop-blur-sm transition-all transform hover:scale-110"
+                className="absolute top-2 right-2 bg-black/50 hover:bg-red-500 text-white p-2 rounded-full backdrop-blur-sm transition-all transform hover:scale-110 z-50"
               >
                 <XMarkIcon className="w-5 h-5" />
               </button>

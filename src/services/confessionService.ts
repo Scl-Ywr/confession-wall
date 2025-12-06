@@ -1,5 +1,5 @@
 import { supabase } from '@/lib/supabase/client';
-import { Profile } from './profileService';
+import { Profile } from '@/types/confession';
 import { Confession, ConfessionFormData, Comment, CommentFormData, ConfessionImage } from '@/types/confession';
 import { profileService } from './profileService';
 
@@ -457,15 +457,31 @@ export const confessionService = {
     }
     
     try {
-      // 检查用户是否已经点赞
-      const isLiked = await confessionService.checkIfLiked(confessionId);
+      // 直接尝试插入，利用Supabase的唯一约束（user_id + confession_id）
+      const { error: insertError } = await supabase
+        .from('likes')
+        .insert({
+          confession_id: confessionId,
+          user_id: userId,
+        });
       
-      if (isLiked) {
-        // 如果已经点赞，执行取消点赞操作
-        await confessionService.unlikeConfession(confessionId);
-      } else {
-        // 如果未点赞，执行点赞操作
-        await confessionService.likeConfession(confessionId);
+      if (insertError) {
+        // 检查是否是唯一约束冲突（已点赞）
+        if (insertError.code === '23505') {
+          // 已点赞，执行取消点赞操作
+          const { error: deleteError } = await supabase
+            .from('likes')
+            .delete()
+            .eq('confession_id', confessionId)
+            .eq('user_id', userId);
+          
+          if (deleteError) {
+            throw deleteError;
+          }
+        } else {
+          // 其他插入错误
+          throw insertError;
+        }
       }
       
       return { success: true };

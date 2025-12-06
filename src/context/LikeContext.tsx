@@ -33,8 +33,7 @@ export const LikeProvider: React.FC<LikeProviderProps> = ({ children }) => {
     }
   }, [user]);
 
-  // 实时监听点赞变化 - 只用于更新搜索结果，不更新confessions缓存
-  // 这样可以避免与invalidateQueries冲突
+  // 实时监听点赞变化 - 更新所有相关缓存
   useEffect(() => {
     // 只有在用户登录后才开始监听
     if (!user) return;
@@ -43,9 +42,10 @@ export const LikeProvider: React.FC<LikeProviderProps> = ({ children }) => {
     const channel = supabase.channel('likes-changes');
 
     // 监听likes表的INSERT和DELETE事件
-    channel.on('postgres_changes', { event: '*', schema: 'public', table: 'likes' }, (payload) => {
-      // 只更新搜索结果缓存，不直接更新confessions缓存
-      // 这样可以避免与invalidateQueries冲突
+    channel.on('postgres_changes', { event: '*', schema: 'public', table: 'likes' }, () => {
+      // 同时更新主表白列表和搜索结果缓存
+      // 这样可以确保所有相关数据保持一致
+      queryClient.invalidateQueries({ queryKey: ['confessions'] });
       queryClient.invalidateQueries({ queryKey: ['search'] });
     });
 
@@ -71,14 +71,19 @@ export const LikeProvider: React.FC<LikeProviderProps> = ({ children }) => {
 
     try {
       // 直接执行点赞/取消点赞操作，不依赖本地likedConfessions状态
-      await confessionService.toggleLike(confessionId);
+      const result = await confessionService.toggleLike(confessionId);
       
-      // 使用refetchQueries确保数据一致性，等待重新获取完成
-      // 这样可以确保UI更新时使用的是最新数据
-      await queryClient.refetchQueries({ queryKey: ['confessions'] });
-      
-      // 同时更新search缓存
-      await queryClient.refetchQueries({ queryKey: ['search'] });
+      if (result.success) {
+        // 使用refetchQueries确保数据一致性，等待重新获取完成
+        // 这样可以确保UI更新时使用的是最新数据
+        await queryClient.refetchQueries({ queryKey: ['confessions'] });
+        
+        // 同时更新search缓存
+        await queryClient.refetchQueries({ queryKey: ['search'] });
+      } else {
+        console.error('Failed to toggle like:', result.error);
+        throw new Error(result.error);
+      }
     } catch (error) {
       console.error('Failed to toggle like:', error);
       throw error;

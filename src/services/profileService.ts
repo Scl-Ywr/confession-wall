@@ -1,14 +1,5 @@
 import { supabase } from '@/lib/supabase/client';
-
-export interface Profile {
-  id: string;
-  username: string;
-  display_name: string;
-  avatar_url?: string;
-  bio?: string;
-  created_at: string;
-  updated_at: string;
-}
+import { Profile } from '@/types/confession';
 
 export interface ProfileUpdateData {
   username?: string;

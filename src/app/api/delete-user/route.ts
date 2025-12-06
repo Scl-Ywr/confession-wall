@@ -1,22 +1,34 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createClient } from '@supabase/supabase-js';
-
-// 使用匿名密钥创建supabase客户端
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY! // 使用匿名密钥
-);
+import { createSupabaseAdminClient, createSupabaseServerClient } from '@/lib/supabase/server';
 
 export async function POST(req: NextRequest) {
   try {
+    // 解析请求数据
     const { userId } = await req.json();
     
     if (!userId) {
       return NextResponse.json({ error: 'User ID is required' }, { status: 400 });
     }
     
-    // 1. 删除用户的存储文件
-    const { error: storageError } = await supabase.storage
+    // 1. 验证当前用户身份
+    const supabase = await createSupabaseServerClient();
+    const { data: authData, error: authError } = await supabase.auth.getUser();
+    
+    if (authError || !authData.user) {
+      return NextResponse.json({ error: 'Unauthorized: User not authenticated' }, { status: 401 });
+    }
+    
+    // 2. 确保用户只能删除自己的账号
+    const currentUserId = authData.user.id;
+    if (currentUserId !== userId) {
+      return NextResponse.json({ error: 'Forbidden: You can only delete your own account' }, { status: 403 });
+    }
+    
+    // 3. 使用服务角色密钥执行删除操作
+    const adminSupabase = await createSupabaseAdminClient();
+    
+    // 4. 删除用户的存储文件
+    const { error: storageError } = await adminSupabase.storage
       .from('confession_images')
       .remove([`avatars/${userId}/*`, `confession_images/${userId}/*`]);
     
@@ -25,8 +37,8 @@ export async function POST(req: NextRequest) {
       // 继续执行，不中断流程
     }
     
-    // 2. 删除用户的点赞记录
-    const { error: likesError } = await supabase
+    // 5. 删除用户的点赞记录
+    const { error: likesError } = await adminSupabase
       .from('likes')
       .delete()
       .eq('user_id', userId);
@@ -35,8 +47,8 @@ export async function POST(req: NextRequest) {
       console.error('Error deleting likes:', likesError);
     }
     
-    // 3. 删除用户的评论
-    const { error: commentsError } = await supabase
+    // 6. 删除用户的评论
+    const { error: commentsError } = await adminSupabase
       .from('comments')
       .delete()
       .eq('user_id', userId);
@@ -45,8 +57,8 @@ export async function POST(req: NextRequest) {
       console.error('Error deleting comments:', commentsError);
     }
     
-    // 4. 先获取用户的所有表白ID
-    const { data: confessions, error: getConfessionsError } = await supabase
+    // 7. 先获取用户的所有表白ID
+    const { data: confessions, error: getConfessionsError } = await adminSupabase
       .from('confessions')
       .select('id')
       .eq('user_id', userId);
@@ -57,8 +69,8 @@ export async function POST(req: NextRequest) {
       // 获取所有表白ID
       const confessionIds = confessions.map(confession => confession.id);
       
-      // 5. 删除这些表白的图片记录
-      const { error: confessionImagesError } = await supabase
+      // 8. 删除这些表白的图片记录
+      const { error: confessionImagesError } = await adminSupabase
         .from('confession_images')
         .delete()
         .in('confession_id', confessionIds);
@@ -68,8 +80,8 @@ export async function POST(req: NextRequest) {
       }
     }
     
-    // 6. 删除用户的表白记录
-    const { error: confessionsError } = await supabase
+    // 9. 删除用户的表白记录
+    const { error: confessionsError } = await adminSupabase
       .from('confessions')
       .delete()
       .eq('user_id', userId);
@@ -78,20 +90,24 @@ export async function POST(req: NextRequest) {
       console.error('Error deleting confessions:', confessionsError);
     }
     
-    // 7. 删除用户的个人资料
-    const { error: profileError } = await supabase
+    // 10. 删除用户的个人资料
+    const { error: profileError } = await adminSupabase
       .from('profiles')
       .delete()
       .eq('id', userId);
     
     if (profileError) {
       console.error('Error deleting profile:', profileError);
-      // 抛出错误，确保profile删除成功
       return NextResponse.json({ error: 'Failed to delete profile' }, { status: 500 });
     }
     
-    // 用户账号删除将由客户端处理
-    // 我们已经删除了所有关联数据，客户端可以调用logout来结束会话
+    // 11. 删除用户账号（使用服务角色密钥）
+    const { error: deleteUserError } = await adminSupabase.auth.admin.deleteUser(userId);
+    
+    if (deleteUserError) {
+      console.error('Error deleting user account:', deleteUserError);
+      return NextResponse.json({ error: 'Failed to delete user account' }, { status: 500 });
+    }
     
     return NextResponse.json({ success: true });
   } catch (error) {

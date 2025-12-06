@@ -18,7 +18,7 @@ import LoadingSpinner from '@/components/LoadingSpinner';
 export default function Home() {
   const router = useRouter();
   const { user } = useAuth();
-  const { toggleLike, likeLoading, showLoginPrompt } = useLike();
+  const { toggleLike, showLoginPrompt } = useLike();
   const [searchKeyword, setSearchKeyword] = useState('');
   const [searchType, setSearchType] = useState<'content' | 'username'>('content');
   const queryClient = useQueryClient();
@@ -277,7 +277,6 @@ export default function Home() {
                 currentUserId={user?.id}
                 onLike={handleLike}
                 onDelete={handleDeleteConfession}
-                isLikeLoading={likeLoading[confession.id] || false}
               />
               ))}
             </div>

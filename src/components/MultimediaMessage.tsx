@@ -52,10 +52,13 @@ const MultimediaMessage: React.FC<MultimediaMessageProps> = ({ message }) => {
                 setIsEnlarged(true);
               }}
             >
-              <img
+              <Image
                 src={message.content}
                 alt="聊天图片"
+                width={600}
+                height={400}
                 className="max-w-full max-h-80 object-contain transition-transform duration-300 hover:scale-[1.02]"
+                priority={false}
               />
             </div>
             
@@ -78,10 +81,13 @@ const MultimediaMessage: React.FC<MultimediaMessageProps> = ({ message }) => {
                 
                 {/* 图片容器 */}
                 <div className="relative max-w-full max-h-[90vh] overflow-auto" onClick={(e) => e.stopPropagation()}>
-                  <img
+                  <Image
                     src={message.content}
                     alt="放大的聊天图片"
+                    width={1200}
+                    height={800}
                     className="object-contain max-w-full max-h-[90vh]"
+                    priority={false}
                   />
                 </div>
               </div>
