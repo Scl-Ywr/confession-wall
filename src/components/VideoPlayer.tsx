@@ -341,6 +341,7 @@ export default function VideoPlayer({ videoUrl, className = '', posterUrl }: Vid
           poster={posterUrl || ''}
           preload="auto"
           muted={isMuted}
+          playsInline
           onPlay={() => setIsPaused(false)}
           onPause={() => setIsPaused(true)}
           onTimeUpdate={() => setCurrentTime(playerRef.current?.currentTime || 0)}
@@ -348,15 +349,6 @@ export default function VideoPlayer({ videoUrl, className = '', posterUrl }: Vid
           onWaiting={() => setIsBuffering(true)}
           onPlaying={() => setIsBuffering(false)}
         />
-        
-        {/* 播放/暂停控制 */}
-        <script>{`
-          // 同步播放状态
-          const player = document.querySelector('video');
-          if (player) {
-            player.${isPaused ? 'pause' : 'play'}();
-          }
-        `}</script>
         
         {/* 播放按钮覆盖层 */}
         <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity duration-300 pointer-events-auto">

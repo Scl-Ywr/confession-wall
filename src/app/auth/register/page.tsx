@@ -4,6 +4,7 @@ import React, { useState } from 'react';
 import { useAuth } from '@/context/AuthContext';
 import MeteorShower from '@/components/MeteorShower';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
@@ -34,10 +35,12 @@ type RegisterFormData = z.infer<typeof registerSchema>;
 type ResendEmailFormData = z.infer<typeof resendEmailSchema>;
 
 const RegisterPage: React.FC = () => {
+  const router = useRouter();
   const { register: registerUser, resendVerificationEmail, loading, error } = useAuth();
   const [showResendForm, setShowResendForm] = useState(false);
   const [resendSuccess, setResendSuccess] = useState(false);
   const [resendError, setResendError] = useState<string | null>(null);
+  const [resendLoading, setResendLoading] = useState(false);
   const [registerSuccess, setRegisterSuccess] = useState(false);
 
   // 使用react-hook-form管理注册表单
@@ -78,8 +81,16 @@ const RegisterPage: React.FC = () => {
       reset();
       // 3秒后隐藏成功提示
       setTimeout(() => setRegisterSuccess(false), 3000);
-    } catch {
-      // 错误已在AuthContext中处理
+    } catch (err) {
+      // 错误已在AuthContext中处理，但需要根据不同错误类型处理
+      const errorMessage = error || (err instanceof Error ? err.message : '');
+      
+      if (errorMessage.includes('您已经注册成功')) {
+        // 已验证邮箱用户：显示提示，2秒后自动跳转登录
+        setTimeout(() => {
+          router.push('/auth/login');
+        }, 2000);
+      }
     }
   };
 
@@ -87,6 +98,7 @@ const RegisterPage: React.FC = () => {
   const onResendSubmit = async (data: ResendEmailFormData) => {
     setResendSuccess(false);
     setResendError(null);
+    setResendLoading(true);
 
     try {
       await resendVerificationEmail(data.resendEmail);
@@ -94,7 +106,19 @@ const RegisterPage: React.FC = () => {
       resetResend();
       setTimeout(() => setResendSuccess(false), 3000); // 3秒后隐藏成功提示
     } catch (error) {
-      setResendError(error instanceof Error ? error.message : '重新发送验证邮件失败，请重试');
+      const errorMessage = error instanceof Error ? error.message : '重新发送验证邮件失败，请重试';
+      // 处理特定错误情况
+      if (errorMessage.toLowerCase().includes('rate limit')) {
+        setResendError('操作过于频繁，请稍后再试');
+      } else if (errorMessage.toLowerCase().includes('network')) {
+        setResendError('网络连接失败，请检查您的网络设置');
+      } else if (errorMessage.toLowerCase().includes('user not found')) {
+        setResendError('该邮箱尚未注册，请先注册');
+      } else {
+        setResendError(errorMessage);
+      }
+    } finally {
+      setResendLoading(false);
     }
   };
 
@@ -180,6 +204,17 @@ const RegisterPage: React.FC = () => {
                 </svg>
                 <p className="text-sm font-medium">{error}</p>
               </div>
+              {/* 注销用户特殊处理 */}
+              {error.includes('已注销') && (
+                <div className="mt-4">
+                  <Link 
+                    href="/auth/forgot-password" 
+                    className="w-full inline-flex justify-center py-3 px-6 border border-transparent text-sm font-bold rounded-xl text-gray-800 dark:text-gray-300 bg-gradient-to-r from-primary-600 to-secondary-600 hover:from-primary-700 hover:to-secondary-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500 shadow-lg shadow-primary-500/30 transform hover:-translate-y-0.5 transition-all duration-200"
+                  >
+                    前往密码重置页面
+                  </Link>
+                </div>
+              )}
             </div>
           )}
 
@@ -247,14 +282,14 @@ const RegisterPage: React.FC = () => {
               </div>
 
               <div>
-                <button
-                  type="submit"
-                  disabled={loading}
-                  className={`w-full flex justify-center py-3 px-6 border border-gray-200 dark:border-gray-700 text-sm font-bold rounded-xl text-gray-700 dark:text-gray-200 bg-white/50 dark:bg-gray-800/50 hover:bg-white dark:hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-500 transition-all duration-200 ${loading ? 'opacity-70 cursor-wait' : ''}`}
-                >
-                  {loading ? '发送中...' : '重新发送验证邮件'}
-                </button>
-              </div>
+                      <button
+                        type="submit"
+                        disabled={resendLoading}
+                        className={`w-full flex justify-center py-3 px-6 border border-gray-200 dark:border-gray-700 text-sm font-bold rounded-xl text-gray-700 dark:text-gray-200 bg-white/50 dark:bg-gray-800/50 hover:bg-white dark:hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-500 transition-all duration-200 ${resendLoading ? 'opacity-70 cursor-wait' : ''}`}
+                      >
+                        {resendLoading ? '发送中...' : '重新发送验证邮件'}
+                      </button>
+                    </div>
             </form>
           )}
         </div>

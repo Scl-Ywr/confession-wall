@@ -1,6 +1,6 @@
 'use client';
 
-import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+import React, { createContext, useContext, useState, useEffect, ReactNode, useCallback } from 'react';
 import { supabase } from '@/lib/supabase/client';
 import { User, AuthState } from '@/types/auth';
 import { useRouter } from 'next/navigation';
@@ -8,9 +8,11 @@ import { useRouter } from 'next/navigation';
 interface AuthContextType extends AuthState {
   register: (email: string, password: string) => Promise<void>;
   login: (email: string, password: string) => Promise<void>;
-  logout: () => Promise<void>;
+  logout: (options?: { redirect?: boolean; redirectUrl?: string }) => Promise<void>;
   updateUser: (user: User | null) => void;
   resendVerificationEmail: (email: string) => Promise<void>;
+  clearError: () => void;
+  checkEmailExists: (email: string) => Promise<{ exists: boolean; verified: boolean }>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -22,6 +24,43 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     loading: true,
     error: null,
   });
+
+  // 错误信息翻译函数，将英文错误转换为中文
+  const translateError = (error: Error): string => {
+    const errorMessage = error.message.toLowerCase();
+    
+    // 登录相关错误
+    if (errorMessage.includes('invalid login credentials') || errorMessage.includes('invalid email or password')) {
+      return '邮箱或密码不正确';
+    }
+    if (errorMessage.includes('email not confirmed')) {
+      return '请先验证您的邮箱，然后再登录';
+    }
+    
+    // 注册相关错误
+    if (errorMessage.includes('user already registered') || errorMessage.includes('already exists')) {
+      return '该邮箱已注册，您可以直接登录';
+    }
+    if (errorMessage.includes('password too short') || errorMessage.includes('password must be at least')) {
+      return '密码长度不能少于6个字符';
+    }
+    
+    // 邮箱验证相关错误
+    if (errorMessage.includes('invalid token') || errorMessage.includes('token expired') || errorMessage.includes('invalid otp')) {
+      return '验证链接无效或已过期，请重新注册获取新的验证链接';
+    }
+    if (errorMessage.includes('rate limit exceeded')) {
+      return '操作过于频繁，请稍后再试';
+    }
+    
+    // 网络错误
+    if (errorMessage.includes('network error') || errorMessage.includes('failed to fetch')) {
+      return '网络连接失败，请检查您的网络设置';
+    }
+    
+    // 其他错误
+    return error.message || '发生未知错误，请重试';
+  };
 
   // 更新用户在线状态的辅助函数
   const updateOnlineStatus = async (userId: string, status: 'online' | 'offline' | 'away') => {
@@ -35,28 +74,32 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         })
         .eq('id', userId);
       if (error) {
-        // 改进错误日志，提供更详细的信息
-        console.error('Error updating online status:', {
-          userId,
-          status,
-          errorMessage: error.message || JSON.stringify(error)
-        });
+        // 静默处理错误，仅在开发环境下记录详细日志
+        if (process.env.NODE_ENV === 'development') {
+          console.debug('Online status update info:', {
+            userId,
+            status,
+            error: error.message || 'Unknown error'
+          });
+        }
       }
     } catch (error) {
       // 忽略网络请求错误，例如用户已离线或会话过期
-      if (error instanceof Error) {
-        console.error('Unexpected error updating online status:', {
-          userId,
-          status,
-          errorMessage: error.message
-        });
-      } else {
-        console.error('Unexpected error updating online status:', {
-          userId,
-          status,
-          errorType: typeof error,
-          error: JSON.stringify(error)
-        });
+      // 仅在开发环境下记录日志
+      if (process.env.NODE_ENV === 'development') {
+        if (error instanceof Error) {
+          console.debug('Online status update info:', {
+            userId,
+            status,
+            error: error.message
+          });
+        } else {
+          console.debug('Online status update info:', {
+            userId,
+            status,
+            error: 'Non-error object caught'
+          });
+        }
       }
     }
   };
@@ -181,10 +224,13 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
           await updateOnlineStatus(currentUserId, 'online');
         } catch (error) {
           // 忽略心跳更新失败，这可能是网络问题或用户已离线
-          // 但我们可以记录这个错误，方便调试
-          const errorObj = error as Error;
-          if (errorObj.message) {
-            console.error('Heartbeat update failed:', errorObj.message);
+          // 仅在开发环境下记录调试信息
+          if (process.env.NODE_ENV === 'development') {
+            const errorObj = error as Error;
+            console.debug('Heartbeat update info:', {
+              userId: currentUserId,
+              error: errorObj.message || 'Unknown error'
+            });
           }
           // 不要在catch块中再次调用updateOnlineStatus，避免潜在的无限循环
         }
@@ -232,34 +278,90 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   const register = async (email: string, password: string) => {
     setState(prev => ({ ...prev, loading: true, error: null }));
     try {
-      // 只在客户端执行，确保window对象存在
+      // 1. 检查邮箱是否存在及验证状态
+      const emailStatus = await checkEmailExists(email);
+      
+      // 2. 根据邮箱状态处理不同情况
+      if (emailStatus.exists) {
+        if (emailStatus.verified) {
+          throw new Error('您已经注册成功');
+        } else {
+          // 未验证的用户，检查是否为注销用户（密码为随机值）
+          const loginAttempt = await supabase.auth.signInWithPassword({
+            email,
+            password,
+          });
+          
+          if (!loginAttempt.error) {
+            // 登录成功，说明密码正确，用户是正常用户
+            await supabase.auth.signOut();
+            throw new Error('您已经注册成功');
+          }
+          
+          // 登录失败，说明是注销用户或密码错误
+          // 对于注销用户，我们需要引导用户前往密码重置页面
+          const errorMsg = loginAttempt.error.message.toLowerCase();
+          
+          if (errorMsg.includes('invalid login credentials')) {
+            // 密码错误，说明是注销用户，密码已被重置为随机值
+            // 提示用户前往密码重置页面
+            throw new Error('您的账号已注销，请前往密码重置页面重置密码后再登录');
+          } else {
+            // 其他错误，如邮箱未验证
+            throw new Error('该邮箱尚未验证');
+          }
+        }
+      }
+      
+      // 3. 邮箱不存在，执行正常注册流程
       const redirectUrl = typeof window !== 'undefined' 
         ? `${window.location.origin}/auth/verify-email` 
         : '';
       
-      // 尝试注册
-      const { error } = await supabase.auth.signUp({
+      const signupResult = await supabase.auth.signUp({
         email,
         password,
         options: {
           emailRedirectTo: redirectUrl,
+          data: {
+            signup_timestamp: new Date().toISOString()
+          }
         },
       });
 
-      if (error) {
-        // 如果用户已存在，直接提示用户登录
-        if (error.message.includes('User already registered') || error.message.includes('already exists')) {
-          throw new Error('该邮箱已注册，您可以直接登录');
-        } else {
-          throw error;
+      if (signupResult.error) {
+        // 处理Supabase返回的错误
+        const errorMsg = signupResult.error.message.toLowerCase();
+        if (errorMsg.includes('user already registered') || errorMsg.includes('already exists')) {
+          // 对于已经存在的用户，再次检查其状态
+          const updatedStatus = await checkEmailExists(email);
+          if (updatedStatus.verified) {
+            throw new Error('您已经注册成功');
+          } else {
+            // 尝试直接登录，确认密码是否正确
+            const { error: loginError } = await supabase.auth.signInWithPassword({
+              email,
+              password
+            });
+            
+            if (loginError) {
+              // 登录失败，说明是注销用户，提示前往密码重置页面
+              throw new Error('您的账号已注销，请前往密码重置页面重置密码后再登录');
+            } else {
+              // 登录成功，说明密码正确，用户是正常用户
+              await supabase.auth.signOut();
+              throw new Error('您已经注册成功');
+            }
+          }
         }
+        throw signupResult.error;
       }
       
       // 注册成功，设置loading为false
       setState(prev => ({ ...prev, loading: false }));
     } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : 'An unknown error occurred';
-      setState(prev => ({ ...prev, loading: false, error: errorMessage }));
+      const errorObj = error instanceof Error ? error : new Error('An unknown error occurred');
+      setState(prev => ({ ...prev, loading: false, error: translateError(errorObj) }));
       throw error;
     }
   };
@@ -317,13 +419,14 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         }
       }
     } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : 'An unknown error occurred';
+      const errorObj = error instanceof Error ? error : new Error('An unknown error occurred');
+      const errorMessage = translateError(errorObj);
       setState(prev => ({ ...prev, loading: false, error: errorMessage }));
       throw error;
     }
   };
 
-  const logout = async () => {
+  const logout = async (options?: { redirect?: boolean; redirectUrl?: string }) => {
     setState(prev => ({ ...prev, loading: true, error: null }));
     try {
       // 在登出前手动更新状态为离线
@@ -338,8 +441,17 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         throw error;
       }
       
-      // 退出登录成功后跳转到主页
-      router.push('/');
+      // 登出成功，更新状态并重置loading
+      setState(prev => ({ 
+        ...prev, 
+        user: null, // 确保用户状态被清空
+        loading: false // 重置loading状态
+      }));
+      
+      // 根据选项决定是否重定向
+      if (options?.redirect) {
+        router.push(options.redirectUrl || '/');
+      }
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'An unknown error occurred';
       setState(prev => ({ ...prev, loading: false, error: errorMessage }));
@@ -348,7 +460,8 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   };
 
   const resendVerificationEmail = async (email: string) => {
-    setState(prev => ({ ...prev, loading: true, error: null }));
+    // 不要设置全局loading状态，避免影响其他按钮
+    setState(prev => ({ ...prev, error: null }));
     try {
       // 只在客户端执行，确保window对象存在
       const redirectUrl = typeof window !== 'undefined' 
@@ -367,8 +480,9 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         throw error;
       }
     } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : 'An unknown error occurred';
-      setState(prev => ({ ...prev, loading: false, error: errorMessage }));
+      const errorObj = error instanceof Error ? error : new Error('An unknown error occurred');
+      const errorMessage = translateError(errorObj);
+      setState(prev => ({ ...prev, error: errorMessage }));
       throw error;
     }
   };
@@ -376,6 +490,69 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   const updateUser = (user: User | null) => {
     setState(prev => ({ ...prev, user }));
   };
+
+  // 使用useCallback确保clearError函数引用稳定，避免useEffect无限循环
+  const clearError = useCallback(() => {
+    setState(prev => ({ ...prev, error: null }));
+  }, []);
+
+  // 检查邮箱是否存在及验证状态
+  const checkEmailExists = useCallback(async (email: string): Promise<{ exists: boolean; verified: boolean }> => {
+    try {
+      // 1. 首先尝试使用RPC函数检查
+      const rpcResult = await supabase.rpc('check_email_status', { email_to_check: email });
+      
+      if (rpcResult.error) {
+        // RPC调用失败，使用备选方案：尝试登录
+        const { error: signInError } = await supabase.auth.signInWithPassword({
+          email,
+          password: 'invalid-password-123456',
+        });
+        
+        if (!signInError) {
+          // 登录成功，说明邮箱存在且密码正确
+          await supabase.auth.signOut();
+          return { exists: true, verified: true };
+        }
+        
+        const errorMsg = signInError.message.toLowerCase();
+        if (errorMsg.includes('invalid login credentials')) {
+          // 密码错误，说明邮箱存在但可能是注销用户
+          // 对于注销用户，我们应该允许重新注册
+          return { exists: false, verified: false };
+        } else if (errorMsg.includes('email not confirmed')) {
+          // 邮箱未确认，说明是真实的注册用户
+          return { exists: true, verified: false };
+        } else if (errorMsg.includes('user not found')) {
+          // 用户不存在
+          return { exists: false, verified: false };
+        }
+        
+        return { exists: false, verified: false };
+      }
+      
+      // 处理RPC返回的结果
+      if (rpcResult.data && Array.isArray(rpcResult.data) && rpcResult.data.length > 0) {
+        // 取数组的第一个元素
+        const rpcData = rpcResult.data[0];
+        return {
+          exists: Boolean(rpcData.email_exists),
+          verified: Boolean(rpcData.verified)
+        };
+      } else if (rpcResult.data && typeof rpcResult.data === 'object') {
+        // 兼容单个对象的情况
+        return {
+          exists: Boolean(rpcResult.data.email_exists),
+          verified: Boolean(rpcResult.data.verified)
+        };
+      } else {
+        return { exists: false, verified: false };
+      }
+    } catch {
+      // 所有检查都失败，默认返回用户不存在
+      return { exists: false, verified: false };
+    }
+  }, []);
 
   return (
     <AuthContext.Provider
@@ -386,6 +563,8 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         logout,
         updateUser,
         resendVerificationEmail,
+        clearError,
+        checkEmailExists,
       }}
     >
       {children}

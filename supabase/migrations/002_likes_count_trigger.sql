@@ -4,11 +4,11 @@ RETURNS TRIGGER AS $$
 BEGIN
   IF TG_OP = 'INSERT' THEN
     UPDATE confessions
-    SET likes_count = likes_count + 1
+    SET likes_count = COALESCE(likes_count, 0) + 1
     WHERE id = NEW.confession_id;
   ELSIF TG_OP = 'DELETE' THEN
     UPDATE confessions
-    SET likes_count = GREATEST(likes_count - 1, 0)
+    SET likes_count = GREATEST(COALESCE(likes_count, 0) - 1, 0)
     WHERE id = OLD.confession_id;
   END IF;
   RETURN NULL;

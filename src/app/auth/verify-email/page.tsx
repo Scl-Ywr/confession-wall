@@ -5,6 +5,27 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { supabase } from '@/lib/supabase/client';
 import type { EmailOtpType } from '@supabase/supabase-js';
 
+// 错误信息翻译函数，将英文错误转换为中文
+const translateError = (error: Error): string => {
+  const errorMessage = error.message.toLowerCase();
+  
+  // 邮箱验证相关错误
+  if (errorMessage.includes('invalid token') || errorMessage.includes('token expired') || errorMessage.includes('invalid otp')) {
+    return '验证链接无效或已过期，请重新注册获取新的验证链接';
+  }
+  if (errorMessage.includes('rate limit exceeded')) {
+    return '操作过于频繁，请稍后再试';
+  }
+  
+  // 网络错误
+  if (errorMessage.includes('network error') || errorMessage.includes('failed to fetch')) {
+    return '网络连接失败，请检查您的网络设置';
+  }
+  
+  // 其他错误
+  return error.message || '发生未知错误，请重试';
+};
+
 const VerifyEmailPage: React.FC = () => {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -71,14 +92,27 @@ const VerifyEmailPage: React.FC = () => {
         // 验证成功
         setVerificationStatus('success');
       } catch (error) {
-        // 验证失败
-        setVerificationStatus('error');
-        setErrorMessage(error instanceof Error ? error.message : '验证失败，请重试');
-      }
+          // 验证失败
+          setVerificationStatus('error');
+          const errorObj = error instanceof Error ? error : new Error('验证失败，请重试');
+          setErrorMessage(translateError(errorObj));
+        }
     };
 
     verifyEmail();
   }, [searchParams]);
+
+  // 验证成功后自动跳转到登录页面
+  useEffect(() => {
+    if (verificationStatus === 'success') {
+      // 显示成功页面2秒后自动跳转到登录页面
+      const timer = setTimeout(() => {
+        router.push('/auth/login');
+      }, 2000);
+      
+      return () => clearTimeout(timer);
+    }
+  }, [verificationStatus, router]);
 
   const handleLogin = () => {
     router.push('/auth/login');
@@ -123,46 +157,59 @@ const VerifyEmailPage: React.FC = () => {
       setResendEmail('');
       setTimeout(() => setResendSuccess(false), 3000); // 3秒后隐藏成功提示
     } catch (error) {
-      setResendError(error instanceof Error ? error.message : '重新发送验证邮件失败，请重试');
+      const errorObj = error instanceof Error ? error : new Error('重新发送验证邮件失败，请重试');
+      setResendError(translateError(errorObj));
     } finally {
       setResendLoading(false);
     }
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-50 py-12 px-4 sm:px-6 lg:px-8">
-      <div className="max-w-md w-full space-y-8">
+    <div className="min-h-screen flex items-center justify-center relative overflow-hidden bg-gradient-to-br from-orange-50 via-pink-50 to-purple-50 dark:from-gray-900 dark:via-orange-900/20 dark:to-gray-900">
+      {/* Decorative blobs */}
+      <div className="absolute top-0 left-0 w-96 h-96 bg-orange-300/30 rounded-full mix-blend-multiply filter blur-3xl opacity-70 animate-blob dark:bg-orange-900/30"></div>
+      <div className="absolute top-0 right-0 w-96 h-96 bg-pink-300/30 rounded-full mix-blend-multiply filter blur-3xl opacity-70 animate-blob animation-delay-2000 dark:bg-pink-900/30"></div>
+      <div className="absolute -bottom-8 left-20 w-96 h-96 bg-purple-300/30 rounded-full mix-blend-multiply filter blur-3xl opacity-70 animate-blob animation-delay-4000 dark:bg-purple-900/30"></div>
+      
+      <div className="max-w-md w-full space-y-8 relative z-10 p-8 glass rounded-3xl animate-fade-in">
         <div className="text-center">
-          <h2 className="mt-6 text-3xl font-extrabold text-gray-900">
+          <div className="mx-auto h-16 w-16 bg-gradient-to-br from-orange-500 to-pink-500 rounded-2xl flex items-center justify-center shadow-lg transform rotate-3 hover:rotate-6 transition-transform duration-300">
+            <span className="text-3xl">💌</span>
+          </div>
+          <h2 className="mt-6 text-3xl font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-orange-600 to-pink-600 dark:from-orange-400 dark:to-pink-400">
             邮箱验证
           </h2>
+          <p className="mt-2 text-sm text-gray-600 dark:text-gray-300">
+            验证您的邮箱，开启表白之旅
+          </p>
         </div>
 
         <div className="mt-8 space-y-6">
           {verificationStatus === 'verifying' && (
-            <div className="text-center">
-              <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
-              <p className="text-gray-600">正在验证邮箱...</p>
+            <div className="text-center p-8 bg-white/50 dark:bg-gray-800/50 rounded-2xl backdrop-blur-sm">
+              <div className="animate-spin rounded-full h-16 w-16 border-b-4 border-orange-500 mx-auto mb-4"></div>
+              <p className="text-lg text-gray-700 dark:text-gray-300">正在验证您的邮箱...</p>
+              <p className="mt-2 text-sm text-gray-500 dark:text-gray-400">请稍候，我们正在处理您的请求</p>
             </div>
           )}
 
           {verificationStatus === 'success' && (
-            <div className="bg-gradient-to-br from-green-50 to-blue-50 border border-green-200 rounded-2xl p-8 text-center shadow-lg">
-              <div className="text-green-600 text-6xl mb-6">🎉</div>
-              <h3 className="text-2xl font-bold text-green-900 mb-3">恭喜你注册成功！</h3>
-              <p className="text-green-700 mb-8 text-lg">
-                您的邮箱已成功验证，欢迎加入我们的社区！
+            <div className="bg-gradient-to-br from-green-50 to-orange-50 border border-green-200 rounded-2xl p-8 text-center shadow-lg dark:bg-green-900/20 dark:border-green-800">
+              <div className="text-green-600 text-7xl mb-6">🎉</div>
+              <h3 className="text-2xl font-bold text-green-900 dark:text-green-400 mb-3">恭喜你验证成功！</h3>
+              <p className="text-green-700 dark:text-green-300 mb-8 text-lg">
+                您的邮箱已成功验证，欢迎加入表白墙社区！
               </p>
               <div className="space-y-4">
                 <button
                   onClick={handleLogin}
-                  className="group relative w-full flex justify-center py-3 px-6 border border-transparent text-base font-bold rounded-xl text-white bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 shadow-md hover:shadow-lg transform hover:-translate-y-1 transition-all"
+                  className="group relative w-full flex justify-center py-4 px-6 border border-transparent text-base font-bold rounded-xl text-gray-800 dark:text-gray-300 bg-gradient-to-r from-orange-600 to-pink-600 hover:from-orange-700 hover:to-pink-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-orange-500 shadow-lg shadow-orange-500/30 transform hover:-translate-y-0.5 transition-all duration-200"
                 >
                   立即登录
                 </button>
                 <button
                   onClick={handleHome}
-                  className="group relative w-full flex justify-center py-3 px-6 border border-gray-300 text-base font-bold rounded-xl text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 shadow-sm hover:shadow-md transform hover:-translate-y-1 transition-all"
+                  className="group relative w-full flex justify-center py-4 px-6 border border-gray-200 dark:border-gray-700 text-base font-bold rounded-xl text-gray-700 dark:text-gray-300 bg-white/80 dark:bg-gray-800/80 hover:bg-white dark:hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-500 shadow-md transform hover:-translate-y-0.5 transition-all duration-200"
                 >
                   浏览首页
                 </button>
@@ -171,54 +218,56 @@ const VerifyEmailPage: React.FC = () => {
           )}
 
           {verificationStatus === 'error' && (
-            <div className="bg-red-50 border border-red-200 rounded-md p-6 text-center">
-              <div className="text-red-600 text-4xl mb-4">✗</div>
-              <h3 className="text-lg font-medium text-red-900 mb-2">邮箱验证失败</h3>
-              <p className="text-red-600 mb-6">
+            <div className="bg-red-50/80 border border-red-200 rounded-2xl p-8 text-center backdrop-blur-sm dark:bg-red-900/30 dark:border-red-800">
+              <div className="text-red-600 text-6xl mb-4">❌</div>
+              <h3 className="text-2xl font-bold text-red-900 dark:text-red-400 mb-3">验证失败</h3>
+              <p className="text-red-700 dark:text-red-300 mb-6 text-lg">
                 {errorMessage || '验证链接无效或已过期，请重新注册获取新的验证链接。'}
               </p>
               <div className="space-y-3">
                 <button
                   onClick={handleHome}
-                  className="group relative w-full flex justify-center py-2 px-4 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+                  className="group relative w-full flex justify-center py-3 px-5 border border-gray-200 dark:border-gray-700 text-base font-medium rounded-xl text-gray-700 dark:text-gray-300 bg-white/80 dark:bg-gray-800/80 hover:bg-white dark:hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-500 shadow-sm transform hover:-translate-y-0.5 transition-all duration-200"
                 >
                   返回首页
                 </button>
                 <button
                   onClick={() => router.push('/auth/register')}
-                  className="group relative w-full flex justify-center py-2 px-4 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+                  className="group relative w-full flex justify-center py-3 px-5 border border-gray-200 dark:border-gray-700 text-base font-medium rounded-xl text-gray-700 dark:text-gray-300 bg-white/80 dark:bg-gray-800/80 hover:bg-white dark:hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-500 shadow-sm transform hover:-translate-y-0.5 transition-all duration-200"
                 >
                   返回注册
                 </button>
               </div>
 
               {/* 重新发送验证邮件区域 */}
-              <div className="mt-6">
+              <div className="mt-6 pt-6 border-t border-gray-200 dark:border-gray-700/50">
                 <div className="text-center">
                   <button
                     type="button"
                     onClick={() => setShowResendForm(!showResendForm)}
-                    className="text-sm text-blue-600 hover:text-blue-500 font-medium"
+                    className="text-sm text-gray-500 hover:text-orange-600 font-medium transition-colors dark:text-gray-400 dark:hover:text-orange-400"
                   >
                     {showResendForm ? '取消' : '未收到验证邮件？重新发送'}
                   </button>
                 </div>
 
                 {showResendForm && (
-                  <form className="mt-4 space-y-4" onSubmit={handleResendVerification}>
-                    <div>
+                  <form className="mt-4 space-y-4 animate-slide-up" onSubmit={handleResendVerification}>
+                    <div className="relative group">
+                      <label htmlFor="resendEmail" className="sr-only">邮箱</label>
                       <input
+                        id="resendEmail"
                         type="email"
                         placeholder="请输入您的邮箱"
                         value={resendEmail}
                         onChange={(e) => setResendEmail(e.target.value)}
-                        className={`appearance-none rounded-md relative block w-full px-3 py-2 border ${resendError ? 'border-red-300' : 'border-gray-300'} placeholder-gray-500 text-gray-900 focus:outline-none focus:ring-blue-500 focus:border-blue-500 focus:z-10 sm:text-sm`}
+                        className={`block w-full px-5 py-3 bg-white/50 dark:bg-gray-800/50 border ${resendError ? 'border-red-500' : 'border-gray-200 dark:border-gray-700'} rounded-xl placeholder-gray-400 text-gray-900 focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-transparent transition-all duration-200 backdrop-blur-sm dark:text-white`}
                       />
                       {resendError && (
-                        <p className="mt-1 text-sm text-red-600">{resendError}</p>
+                        <p className="mt-1 text-sm text-red-500 pl-1 animate-slide-up">{resendError}</p>
                       )}
                       {resendSuccess && (
-                        <p className="mt-1 text-sm text-green-600">验证邮件已重新发送，请检查您的邮箱！</p>
+                        <p className="mt-1 text-sm text-green-500 pl-1 animate-slide-up">验证邮件已重新发送，请检查您的邮箱！</p>
                       )}
                     </div>
 
@@ -226,9 +275,14 @@ const VerifyEmailPage: React.FC = () => {
                       <button
                         type="submit"
                         disabled={resendLoading}
-                        className={`group relative w-full flex justify-center py-2 px-4 border border-transparent text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 ${resendLoading ? 'opacity-50 cursor-not-allowed' : ''}`}
+                        className={`group relative w-full flex justify-center py-3 px-6 border border-transparent text-base font-bold rounded-xl text-white bg-gradient-to-r from-orange-600 to-pink-600 hover:from-orange-700 hover:to-pink-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-orange-500 shadow-lg shadow-orange-500/30 transform hover:-translate-y-0.5 transition-all duration-200 ${resendLoading ? 'opacity-70 cursor-wait' : ''}`}
                       >
-                        {resendLoading ? '发送中...' : '重新发送验证邮件'}
+                        {resendLoading ? (
+                          <div className="flex items-center gap-2">
+                            <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
+                            <span>发送中...</span>
+                          </div>
+                        ) : '重新发送验证邮件'}
                       </button>
                     </div>
                   </form>
@@ -239,12 +293,12 @@ const VerifyEmailPage: React.FC = () => {
         </div>
 
         {/* 返回注册页面链接 */}
-        <div className="mt-6 text-center">
-          <p className="text-sm text-gray-600">
+        <div className="mt-6 pt-6 border-t border-gray-200 dark:border-gray-700/50 text-center">
+          <p className="text-sm text-gray-600 dark:text-gray-400">
             需要重新注册？
             <a 
               href="/auth/register" 
-              className="font-medium text-blue-600 hover:text-blue-500 ml-1"
+              className="font-medium text-orange-600 hover:text-orange-500 transition-colors dark:text-orange-400 dark:hover:text-orange-300 ml-1"
             >
               返回注册页面
             </a>

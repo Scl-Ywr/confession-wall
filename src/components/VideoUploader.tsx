@@ -84,21 +84,119 @@ export default function VideoUploader({ onUploadSuccess }: VideoUploaderProps) {
     await handleUpload(selectedFile);
   };
 
-  // 修复后的视频压缩函数
+  // 视频压缩函数 - 基于浏览器MediaRecorder API
   const compressVideo = async () => {
     if (!selectedFile) return;
 
-    setUploadState('uploading');
+    setUploadState('compressing');
     setCompressionProgress(0);
 
     try {
-      console.log('Skipping video compression, uploading original video directly');
-      // 直接上传原视频，不进行压缩，避免视频格式错误
-      await handleUpload(selectedFile);
+      // 创建视频元素
+      const videoElement = document.createElement('video');
+      videoElement.src = URL.createObjectURL(selectedFile);
+      videoElement.muted = true;
+      videoElement.playsInline = true;
+      
+      // 等待视频加载完成
+      await new Promise<void>((resolve, reject) => {
+        videoElement.onloadedmetadata = () => resolve();
+        videoElement.onerror = () => reject(new Error('Failed to load video'));
+      });
+      
+      // 设置压缩参数
+      const { bitrate } = compressionOptions;
+      
+      // 创建视频流
+      videoElement.play();
+      
+      // 创建MediaRecorder实例
+      // 使用HTMLMediaElement类型，captureStream方法在该接口上定义
+      const mediaElement = videoElement as HTMLMediaElement & { 
+        captureStream?: () => MediaStream; 
+        mozCaptureStream?: () => MediaStream; 
+        webkitCaptureStream?: () => MediaStream;
+      };
+      
+      const stream = mediaElement.captureStream?.() || 
+                    mediaElement.mozCaptureStream?.() || 
+                    mediaElement.webkitCaptureStream?.();
+      
+      if (!stream) {
+        throw new Error('Video capture stream not supported');
+      }
+      
+      const mediaRecorder = new MediaRecorder(stream, {
+        mimeType: 'video/mp4; codecs=avc1',
+        videoBitsPerSecond: parseInt(bitrate) * 1024 * 1024 // 将Mbps转换为bps
+      });
+      
+      // 录制视频数据
+      const chunks: BlobPart[] = [];
+      mediaRecorder.ondataavailable = (e) => {
+        if (e.data.size > 0) {
+          chunks.push(e.data);
+        }
+      };
+      
+      // 模拟压缩进度
+      const totalDuration = videoElement.duration;
+      const startTime = Date.now();
+      
+      // 开始录制
+      mediaRecorder.start();
+      
+      // 更新压缩进度
+      const updateProgress = () => {
+        const elapsed = (Date.now() - startTime) / 1000;
+        const progress = Math.min(100, Math.round((elapsed / totalDuration) * 100));
+        setCompressionProgress(progress);
+        
+        if (mediaRecorder.state === 'recording') {
+          requestAnimationFrame(updateProgress);
+        }
+      };
+      
+      // 开始更新进度
+      updateProgress();
+      
+      // 等待录制完成
+      await new Promise<void>((resolve) => {
+        mediaRecorder.onstop = () => resolve();
+        
+        // 视频播放结束后停止录制
+        videoElement.onended = () => {
+          if (mediaRecorder.state === 'recording') {
+            mediaRecorder.stop();
+          }
+        };
+        
+        // 设置超时，确保录制不会无限期进行
+        setTimeout(() => {
+          if (mediaRecorder.state === 'recording') {
+            mediaRecorder.stop();
+          }
+        }, totalDuration * 1000 + 5000);
+      });
+      
+      // 创建压缩后的视频Blob
+      const compressedBlob = new Blob(chunks, { type: 'video/mp4' });
+      
+      // 创建压缩后的File对象
+      const compressedFile = new File([compressedBlob], `compressed_${selectedFile.name}`, { type: 'video/mp4' });
+      
+      // 释放资源
+      videoElement.pause();
+      URL.revokeObjectURL(videoElement.src);
+      
+      console.log('Compression completed. Original size:', selectedFile.size, 'Compressed size:', compressedFile.size);
+      
+      // 上传压缩后的视频
+      await handleUpload(compressedFile);
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : '视频上传失败';
-      console.error('Video upload error:', err);
-      setError(errorMessage);
+      console.error('Video compression error:', err);
+      setError(`视频压缩失败: ${errorMessage}`);
       setUploadState('error');
     }
   };
@@ -134,6 +232,15 @@ export default function VideoUploader({ onUploadSuccess }: VideoUploaderProps) {
     const uploadFile = file || selectedFile;
     if (!uploadFile) {
       setError('请选择一个视频文件');
+      setUploadState('error');
+      return;
+    }
+
+    // 检查文件大小，确保不超过Supabase Storage限制
+    const maxUploadSizeMB = 100; // Supabase Storage默认限制是100MB
+    const maxUploadSizeBytes = maxUploadSizeMB * 1024 * 1024;
+    if (uploadFile.size > maxUploadSizeBytes) {
+      setError(`文件大小超过限制。当前大小：${(uploadFile.size / (1024 * 1024)).toFixed(2)} MB，最大允许：${maxUploadSizeMB} MB。请尝试更小的视频或使用视频编辑软件压缩后再上传。`);
       setUploadState('error');
       return;
     }
@@ -176,7 +283,12 @@ export default function VideoUploader({ onUploadSuccess }: VideoUploaderProps) {
       clearInterval(progressInterval);
 
       if (uploadError) {
-        throw uploadError;
+        // 处理具体的上传错误
+        if (uploadError.message.includes('size')) {
+          throw new Error(`文件大小超过存储桶限制。请尝试更小的视频或使用视频编辑软件压缩后再上传。`);
+        } else {
+          throw uploadError;
+        }
       }
 
       // 获取视频URL
@@ -352,19 +464,19 @@ export default function VideoUploader({ onUploadSuccess }: VideoUploaderProps) {
               <div className="flex flex-col sm:flex-row gap-4">
                 <button
                   onClick={compressVideo}
-                  className="flex-1 bg-primary-600 text-white px-6 py-3 rounded-xl hover:bg-primary-700 transition-all font-bold"
+                  className="flex-1 bg-primary-600 text-black px-6 py-3 rounded-xl border-2 border-primary-700 hover:bg-primary-700 transition-all font-bold"
                 >
                   压缩后上传
                 </button>
                 <button
                   onClick={handleVideoUpload}
-                  className="flex-1 bg-secondary-600 text-white px-6 py-3 rounded-xl hover:bg-secondary-700 transition-all font-bold"
+                  className="flex-1 bg-secondary-600 text-black px-6 py-3 rounded-xl border-2 border-secondary-700 hover:bg-secondary-700 transition-all font-bold"
                 >
                   直接上传原视频
                 </button>
                 <button
                   onClick={resetUpload}
-                  className="flex-1 border border-gray-300 text-gray-900 dark:text-white dark:border-gray-700 px-6 py-3 rounded-xl hover:bg-gray-100 dark:hover:bg-gray-800 transition-all font-bold"
+                  className="flex-1 border-2 border-gray-300 text-gray-900 dark:text-white dark:border-gray-700 px-6 py-3 rounded-xl hover:bg-gray-100 dark:hover:bg-gray-800 transition-all font-bold"
                 >
                   取消上传
                 </button>
@@ -482,7 +594,7 @@ export default function VideoUploader({ onUploadSuccess }: VideoUploaderProps) {
             <div className="flex flex-col sm:flex-row gap-4 justify-center">
               <button
                 onClick={resetUpload}
-                className="px-8 py-3 bg-primary-600 text-white rounded-xl hover:bg-primary-700 transition-all font-bold shadow-lg shadow-primary-500/20"
+                className="px-8 py-3 bg-primary-600 text-black border-2 border-primary-700 rounded-xl hover:bg-primary-700 transition-all font-bold shadow-lg shadow-primary-500/20"
               >
                 上传新视频
               </button>
@@ -491,7 +603,7 @@ export default function VideoUploader({ onUploadSuccess }: VideoUploaderProps) {
                   href={videoUrl}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="px-8 py-3 border border-gray-300 text-gray-900 dark:text-white dark:border-gray-700 rounded-xl hover:bg-gray-100 dark:hover:bg-gray-800 transition-all font-bold shadow-lg"
+                  className="px-8 py-3 border-2 border-gray-300 text-gray-900 dark:text-white dark:border-gray-700 rounded-xl hover:bg-gray-100 dark:hover:bg-gray-800 transition-all font-bold shadow-lg"
                 >
                   查看视频
                 </a>
@@ -513,13 +625,13 @@ export default function VideoUploader({ onUploadSuccess }: VideoUploaderProps) {
             <div className="flex flex-col sm:flex-row gap-4 justify-center">
               <button
                 onClick={resetUpload}
-                className="px-8 py-3 bg-primary-600 text-white rounded-xl hover:bg-primary-700 transition-all font-bold shadow-lg shadow-primary-500/20"
+                className="px-8 py-3 bg-primary-600 text-black border-2 border-primary-700 rounded-xl hover:bg-primary-700 transition-all font-bold shadow-lg shadow-primary-500/20"
               >
                 重试上传
               </button>
               <button
                 onClick={resetUpload}
-                className="px-8 py-3 border border-gray-300 text-gray-900 dark:text-white dark:border-gray-700 rounded-xl hover:bg-gray-100 dark:hover:bg-gray-800 transition-all font-bold shadow-lg"
+                className="px-8 py-3 border-2 border-gray-300 text-gray-900 dark:text-white dark:border-gray-700 rounded-xl hover:bg-gray-100 dark:hover:bg-gray-800 transition-all font-bold shadow-lg"
               >
                 选择新文件
               </button>

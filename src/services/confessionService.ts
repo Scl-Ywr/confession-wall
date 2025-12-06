@@ -10,10 +10,10 @@ export const confessionService = {
     const user = await supabase.auth.getUser();
     const userId = user.data.user?.id;
 
-    // 2. 优化查询，只获取需要的字段
+    // 2. 优化查询，包含likes_count字段
     const { data: confessions, error: confessionsError } = await supabase
       .from('confessions')
-      .select('id, content, is_anonymous, user_id, created_at')
+      .select('id, content, is_anonymous, user_id, created_at, likes_count')
       .order('created_at', { ascending: false })
       .range((page - 1) * limit, page * limit - 1);
 
@@ -74,34 +74,25 @@ export const confessionService = {
 
     // 6. 检查当前用户是否点赞了这些表白
     const likesMap: Record<string, boolean> = {};
-    const likesCountMap: Record<string, number> = {};
     
-    if (confessionIds.length > 0) {
-      // 批量获取点赞信息
-      if (userId) {
-        const { data: userLikes, error: userLikesError } = await supabase
-          .from('likes')
-          .select('confession_id')
-          .in('confession_id', confessionIds)
-          .eq('user_id', userId);
-        
-        if (!userLikesError && userLikes) {
-          userLikes.forEach(like => {
-            likesMap[like.confession_id] = true;
-          });
-        }
-      }
-
-      // 获取所有表白的点赞计数
-      const { data: allLikes, error: allLikesError } = await supabase
+    if (userId) {
+      // 批量获取当前用户的所有点赞记录，不限制confession_id
+      // 这样可以确保所有点赞记录都被正确映射
+      const { data: userLikes, error: userLikesError } = await supabase
         .from('likes')
-        .select('confession_id')
-        .in('confession_id', confessionIds);
+        .select('id, confession_id')
+        .eq('user_id', userId);
       
-      if (!allLikesError && allLikes) {
-        allLikes.forEach(like => {
-          likesCountMap[like.confession_id] = (likesCountMap[like.confession_id] || 0) + 1;
+      if (!userLikesError && userLikes && userLikes.length > 0) {
+        // 修复：确保正确处理所有返回的点赞记录
+        userLikes.forEach(like => {
+          if (like.confession_id) {
+            likesMap[like.confession_id] = true;
+          }
         });
+        
+        console.log('User likes:', userLikes);
+        console.log('Likes map:', likesMap);
       }
     }
 
@@ -110,7 +101,7 @@ export const confessionService = {
       ...confession,
       profile: confession.user_id ? profilesMap[confession.user_id] : undefined,
       images: imagesByConfessionId[confession.id] || [],
-      likes_count: likesCountMap[confession.id] || 0,
+      likes_count: Number(confession.likes_count) || 0, // 确保是数字类型，避免出现NaN
       liked_by_user: likesMap[confession.id] || false
     })) as Confession[];
 
@@ -123,10 +114,10 @@ export const confessionService = {
     const user = await supabase.auth.getUser();
     const userId = user.data.user?.id;
 
-    // 2. 优化查询，只获取需要的字段
+    // 2. 优化查询，包含likes_count字段
     const { data: confession, error: confessionError } = await supabase
       .from('confessions')
-      .select('id, content, is_anonymous, user_id, created_at')
+      .select('id, content, is_anonymous, user_id, created_at, likes_count')
       .eq('id', id)
       .single();
 
@@ -173,19 +164,11 @@ export const confessionService = {
       }
     }
 
-    // 6. 计算实际点赞数
-    const { data: likes, error: likesError } = await supabase
-      .from('likes')
-      .select('id')
-      .eq('confession_id', id);
-    
-    const likes_count = likesError ? 0 : (likes?.length || 0);
-
     return {
       ...confession,
       profile,
       images: images as ConfessionImage[],
-      likes_count,
+      likes_count: Number(confession.likes_count) || 0, // 确保是数字类型，避免出现NaN
       liked_by_user
     } as Confession;
   },
@@ -324,13 +307,14 @@ export const confessionService = {
       ...confession,
       profile,
       images: mediaItems,
+      likes_count: 0, // 新创建的表白，点赞数初始化为0
       liked_by_user: false // 新创建的表白，当前用户默认未点赞
     } as Confession;
   },
 
   // 更新表白
   updateConfession: async (id: string, formData: Partial<ConfessionFormData>): Promise<Confession> => {
-    // 1. 更新表白
+    // 1. 更新表白，只获取需要的字段，包含likes_count
     const { data: confession, error: confessionError } = await supabase
       .from('confessions')
       .update({
@@ -338,7 +322,7 @@ export const confessionService = {
         is_anonymous: formData.is_anonymous,
       })
       .eq('id', id)
-      .select('*')
+      .select('id, content, is_anonymous, user_id, created_at, likes_count')
       .single();
 
     if (confessionError) {
@@ -383,6 +367,7 @@ export const confessionService = {
     return {
       ...confession,
       profile,
+      likes_count: Number(confession.likes_count) || 0, // 确保是数字类型，避免出现NaN
       liked_by_user
     } as Confession;
   },
@@ -407,6 +392,7 @@ export const confessionService = {
       throw new Error('User not authenticated');
     }
     
+    // 直接执行插入操作
     const { error } = await supabase
       .from('likes')
       .insert({
@@ -415,11 +401,8 @@ export const confessionService = {
       });
 
     if (error) {
-      // 409 Conflict means the like already exists, which is fine
-      if (error.code !== '23505') {
-        throw error;
-      }
-      // If it's a conflict, we can just return since the like already exists
+      // 抛出所有错误，包括唯一约束冲突，由toggleLike函数处理
+      throw error;
     }
   },
 
@@ -431,6 +414,7 @@ export const confessionService = {
       throw new Error('User not authenticated');
     }
     
+    // 直接执行删除操作
     const { error } = await supabase
       .from('likes')
       .delete()
@@ -465,31 +449,38 @@ export const confessionService = {
   },
 
   // 切换点赞状态
-  toggleLike: async (confessionId: string): Promise<void> => {
+  toggleLike: async (confessionId: string): Promise<{ success: boolean; error?: string }> => {
     const user = await supabase.auth.getUser();
     const userId = user.data.user?.id;
     if (!userId) {
-      throw new Error('User not authenticated');
+      return { success: false, error: 'User not authenticated' };
     }
     
-    // 检查当前是否已点赞
-    const { data: existingLike, error: checkError } = await supabase
-      .from('likes')
-      .select('id')
-      .eq('confession_id', confessionId)
-      .eq('user_id', userId)
-      .maybeSingle();
-
-    if (checkError) {
-      throw checkError;
-    }
-
-    if (existingLike) {
-      // 已点赞，取消点赞
-      await confessionService.unlikeConfession(confessionId);
-    } else {
-      // 未点赞，添加点赞
-      await confessionService.likeConfession(confessionId);
+    try {
+      // 检查用户是否已经点赞
+      const isLiked = await confessionService.checkIfLiked(confessionId);
+      
+      if (isLiked) {
+        // 如果已经点赞，执行取消点赞操作
+        await confessionService.unlikeConfession(confessionId);
+      } else {
+        // 如果未点赞，执行点赞操作
+        await confessionService.likeConfession(confessionId);
+      }
+      
+      return { success: true };
+    } catch (error) {
+      // 处理各种类型的错误
+      const errorMessage = error instanceof Error 
+        ? error.message 
+        : typeof error === 'object' && error !== null 
+        ? JSON.stringify(error) 
+        : String(error);
+      
+      return { 
+        success: false, 
+        error: `Failed to toggle like: ${errorMessage}` 
+      };
     }
   },
 
@@ -608,7 +599,7 @@ export const confessionService = {
     const user = await supabase.auth.getUser();
     const userId = user.data.user?.id;
 
-    let confessions: Array<{id: string; content: string; is_anonymous: boolean; user_id: string | null; created_at: string}> = [];
+    let confessions: Array<{id: string; content: string; is_anonymous: boolean; user_id: string | null; created_at: string; likes_count: number}> = [];
 
     // 根据搜索类型执行不同的搜索逻辑
     if (searchType === 'username') {
@@ -626,10 +617,10 @@ export const confessionService = {
         // 获取匹配用户的ID列表
         const matchedUserIds = matchedProfiles.map(profile => profile.id);
         
-        // 然后获取这些用户的表白，仅获取基本字段
+        // 然后获取这些用户的表白，包含likes_count字段
         const { data, error } = await supabase
           .from('confessions')
-          .select('id, content, is_anonymous, user_id, created_at')
+          .select('id, content, is_anonymous, user_id, created_at, likes_count')
           .in('user_id', matchedUserIds)
           .order('created_at', { ascending: false })
           .range(offset, offset + limit - 1);
@@ -638,13 +629,13 @@ export const confessionService = {
           throw error;
         }
         
-        confessions = (data || []) as Array<{id: string; content: string; is_anonymous: boolean; user_id: string | null; created_at: string}>;
+        confessions = (data || []) as Array<{id: string; content: string; is_anonymous: boolean; user_id: string | null; created_at: string; likes_count: number}>;
       }
     } else {
-      // 按表白内容搜索，仅获取基本字段
+      // 按表白内容搜索，包含likes_count字段
       const { data, error } = await supabase
         .from('confessions')
-        .select('id, content, is_anonymous, user_id, created_at')
+        .select('id, content, is_anonymous, user_id, created_at, likes_count')
         .ilike('content', `%${keyword}%`)
         .order('created_at', { ascending: false })
         .range(offset, offset + limit - 1);
@@ -653,7 +644,7 @@ export const confessionService = {
         throw error;
       }
       
-      confessions = (data || []) as Array<{id: string; content: string; is_anonymous: boolean; user_id: string | null; created_at: string}>;
+      confessions = (data || []) as Array<{id: string; content: string; is_anonymous: boolean; user_id: string | null; created_at: string; likes_count: number}>;
     }
 
     // 处理confessions为null或undefined的情况
@@ -709,33 +700,21 @@ export const confessionService = {
 
     // 6. 检查当前用户是否点赞了这些表白
     const likesMap: Record<string, boolean> = {};
-    const likesCountMap: Record<string, number> = {};
     
-    if (confessionIds.length > 0) {
-      // 批量获取点赞信息
-      if (userId) {
-        const { data: userLikes, error: userLikesError } = await supabase
-          .from('likes')
-          .select('confession_id')
-          .in('confession_id', confessionIds)
-          .eq('user_id', userId);
-        
-        if (!userLikesError && userLikes) {
-          userLikes.forEach(like => {
-            likesMap[like.confession_id] = true;
-          });
-        }
-      }
-
-      // 获取所有表白的点赞计数
-      const { data: allLikes, error: allLikesError } = await supabase
+    if (userId) {
+      // 批量获取当前用户的所有点赞记录，不限制confession_id
+      // 这样可以确保所有点赞记录都被正确映射
+      const { data: userLikes, error: userLikesError } = await supabase
         .from('likes')
-        .select('confession_id')
-        .in('confession_id', confessionIds);
+        .select('id, confession_id')
+        .eq('user_id', userId);
       
-      if (!allLikesError && allLikes) {
-        allLikes.forEach(like => {
-          likesCountMap[like.confession_id] = (likesCountMap[like.confession_id] || 0) + 1;
+      if (!userLikesError && userLikes && userLikes.length > 0) {
+        // 修复：确保正确处理所有返回的点赞记录
+        userLikes.forEach(like => {
+          if (like.confession_id) {
+            likesMap[like.confession_id] = true;
+          }
         });
       }
     }
@@ -745,7 +724,7 @@ export const confessionService = {
       ...confession,
       profile: confession.user_id ? profilesMap[confession.user_id] : undefined,
       images: imagesByConfessionId[confession.id] || [],
-      likes_count: likesCountMap[confession.id] || 0,
+      likes_count: Number(confession.likes_count) || 0, // 确保是数字类型，避免出现NaN
       liked_by_user: likesMap[confession.id] || false
     })) as Confession[];
 

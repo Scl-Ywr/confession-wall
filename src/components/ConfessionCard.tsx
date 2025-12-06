@@ -1,14 +1,14 @@
 'use client';
 
-import React, { useState } from 'react';
+import { useState } from 'react';
 import Image from 'next/image';
 import { useRouter } from 'next/navigation';
 import { motion } from 'framer-motion';
 import { Confession } from '@/types/confession';
 import CommentSection from '@/components/CommentSection';
 import VideoPlayer from '@/components/VideoPlayer';
+import LikeButton from './LikeButton';
 import { TrashIcon } from '@heroicons/react/24/outline';
-import { HeartIcon as HeartIconSolid } from '@heroicons/react/24/solid';
 import { PhotoProvider, PhotoView } from 'react-photo-view';
 import 'react-photo-view/dist/react-photo-view.css';
 
@@ -25,7 +25,7 @@ export default function ConfessionCard({
   currentUserId,
   onLike,
   onDelete,
-  isLikeLoading
+  // isLikeLoading不再使用，因为LikeButton内部管理loading状态
 }: ConfessionCardProps) {
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const router = useRouter();
@@ -139,18 +139,16 @@ export default function ConfessionCard({
 
       <div className="flex items-center justify-between pt-4 border-t border-gray-100 dark:border-gray-700/50">
         <div className="flex items-center space-x-6">
-          <button
-            onClick={() => onLike(confession.id)}
-            disabled={isLikeLoading}
-            className={`flex items-center gap-2 transition-all duration-300 group ${isLikeLoading ? 'opacity-50' : 'hover:scale-105'}`}
-          >
-            <div className={`p-2 rounded-full transition-colors ${confession.liked_by_user ? 'bg-red-50 text-red-500 dark:bg-red-900/20' : 'bg-gray-50 text-gray-400 group-hover:bg-red-50 group-hover:text-red-500 dark:bg-gray-800 dark:group-hover:bg-red-900/20'}`}>
-               <HeartIconSolid className={`w-5 h-5 ${confession.liked_by_user ? 'text-red-500' : 'text-gray-300 group-hover:text-red-500'}`} />
-            </div>
-            <span className="font-semibold text-gray-600 dark:text-gray-300 group-hover:text-red-500">
-              {confession.likes_count}
-            </span>
-          </button>
+          {/* 使用现代化点赞按钮组件 */}
+          <LikeButton
+            confessionId={confession.id}
+            initialLikesCount={Math.max(0, Number(confession.likes_count) || 0)}
+            initialLiked={confession.liked_by_user || false}
+            onLikeStatusChange={() => {
+              // 调用父组件的onLike回调
+              onLike(confession.id);
+            }}
+          />
         </div>
 
         {currentUserId && confession.user_id === currentUserId && (

@@ -206,7 +206,10 @@ const Navbar: React.FC = () => {
 
   const handleLogout = async () => {
     try {
-      await logout();
+      await logout({ 
+        redirect: true, 
+        redirectUrl: '/' // 确保登出后返回首页
+      });
     } catch (error) {
       console.error('Logout error:', error);
     }

@@ -23,35 +23,17 @@ export default function Home() {
   const [searchType, setSearchType] = useState<'content' | 'username'>('content');
   const queryClient = useQueryClient();
 
-  // 处理点赞操作，使用React Query的乐观更新
+  // 处理点赞操作
   const handleLike = async (confessionId: string) => {
     try {
-      // 乐观更新本地缓存
-      queryClient.setQueryData<{ pages: Confession[][] }>(['confessions'], (oldData) => {
-        if (!oldData || !oldData.pages) return oldData;
-        
-        return {
-          ...oldData,
-          pages: oldData.pages.map((page) =>
-            page.map((confession) =>
-              confession.id === confessionId
-                ? {
-                    ...confession,
-                    likes_count: confession.liked_by_user ? confession.likes_count - 1 : confession.likes_count + 1,
-                    liked_by_user: !confession.liked_by_user
-                  }
-                : confession
-            )
-          )
-        };
-      });
-      
       // 执行实际的点赞/取消点赞操作
+      // toggleLike函数内部已经包含了invalidateQueries调用，无需重复调用
       await toggleLike(confessionId);
     } catch (error) {
       console.error('Failed to toggle like:', error);
-      // 出错时刷新数据以恢复正确状态
+      // 出错时刷新所有相关数据以恢复正确状态
       await queryClient.invalidateQueries({ queryKey: ['confessions'] });
+      await queryClient.invalidateQueries({ queryKey: ['search'] });
     }
   };
 
@@ -72,6 +54,8 @@ export default function Home() {
       return lastPage.length > 0 ? allPages.length + 1 : undefined;
     },
     initialPageParam: 1,
+    staleTime: 5 * 60 * 1000, // 5分钟缓存有效期
+    // cacheTime已移到queryClient默认选项中，不再在单个查询中设置
   });
 
   // 使用React Query管理搜索结果
@@ -79,13 +63,15 @@ export default function Home() {
     data: searchResults = [], 
     isLoading: isSearching,
     refetch: refetchSearch
-  } = useQuery({
+  } = useQuery<Confession[]>({
     queryKey: ['search', searchKeyword, searchType],
     queryFn: () => {
       if (!searchKeyword.trim()) return [];
       return confessionService.searchConfessions(searchKeyword, searchType, 1);
     },
     enabled: false, // 禁用自动执行，手动触发
+    staleTime: 3 * 60 * 1000, // 3分钟缓存有效期
+    // cacheTime已移到queryClient默认选项中，不再在单个查询中设置
   });
 
   // 在输入变化时触发防抖搜索
@@ -235,12 +221,22 @@ export default function Home() {
                 disabled={isLoading}
               >
                 {isLoading ? (
-                  <>
-                    <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
+                  <motion.div 
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    className="flex items-center gap-2"
+                  >
+                    <div className="animate-spin rounded-full h-4 w-4 border-2 border-white border-t-transparent"></div>
                     搜索中...
-                  </>
+                  </motion.div>
                 ) : (
-                  '搜索'
+                  <motion.span 
+                    initial={{ opacity: 0, scale: 0.9 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    transition={{ duration: 0.2 }}
+                  >
+                    搜索
+                  </motion.span>
                 )}
               </button>
             </form>
@@ -248,8 +244,15 @@ export default function Home() {
           
           {isLoading ? (
             <div className="text-center py-20">
-              <LoadingSpinner type="climbingBox" size={30} color="#f97316" className="mx-auto mb-4" />
-              <p className="text-gray-500">{searchKeyword ? '搜索中...' : '加载秘密中...'}</p>
+              <LoadingSpinner 
+                type="climbingBox" 
+                size={40} 
+                color="#f97316" 
+                className="mx-auto"
+                message={searchKeyword ? '搜索秘密中...' : '加载秘密中...'}
+                showMessage={true}
+                gradient={true}
+              />
             </div>
           ) : isError ? (
             <div className="bg-red-50 border border-red-200 rounded-xl p-6 text-center">

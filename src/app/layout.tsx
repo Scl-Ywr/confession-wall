@@ -36,11 +36,11 @@ export default function RootLayout({
       >
         <ThemeProvider>
           <AuthProvider>
-            <LikeProvider>
-              <Providers>
+            <Providers>
+              <LikeProvider>
                 {children}
-              </Providers>
-            </LikeProvider>
+              </LikeProvider>
+            </Providers>
           </AuthProvider>
         </ThemeProvider>
       </body>

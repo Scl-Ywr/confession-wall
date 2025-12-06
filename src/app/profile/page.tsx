@@ -23,6 +23,8 @@ const ProfilePage: React.FC = () => {
   const [avatarPreview, setAvatarPreview] = useState<string | null>(null);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [deleteLoading, setDeleteLoading] = useState(false);
+  const [showResetPasswordPrompt, setShowResetPasswordPrompt] = useState(false);
+  const [showLogoutAfterDeletePrompt, setShowLogoutAfterDeletePrompt] = useState(false);
 
   // Fetch user profile
   const fetchProfile = useCallback(async () => {
@@ -94,11 +96,11 @@ const ProfilePage: React.FC = () => {
 
     try {
       // 表单验证
-      if (!formData.username || formData.username.trim() === '') {
+      if (!formData.username || (formData.username as string).trim() === '') {
         throw new Error('请设置用户名');
       }
       
-      if (!formData.display_name || formData.display_name.trim() === '') {
+      if (!formData.display_name || (formData.display_name as string).trim() === '') {
         throw new Error('请设置显示名称');
       }
       
@@ -106,14 +108,16 @@ const ProfilePage: React.FC = () => {
       const updatedData: ProfileUpdateData = {};
       
       // 处理用户名
-      updatedData.username = formData.username.trim();
+      updatedData.username = (formData.username as string).trim();
       
       // 处理显示名称
-      updatedData.display_name = formData.display_name.trim();
+      updatedData.display_name = (formData.display_name as string).trim();
       
       // 处理个人简介
-      if (formData.bio !== undefined) {
-        updatedData.bio = formData.bio.trim();
+      if (formData.bio !== undefined && formData.bio !== null) {
+        updatedData.bio = (formData.bio as string).trim();
+      } else {
+        updatedData.bio = '';
       }
 
       // Upload avatar if a new one is selected
@@ -144,15 +148,15 @@ const ProfilePage: React.FC = () => {
 
   const handleLogout = async () => {
     try {
-      await logout();
+      await logout({ redirect: false });
       router.push('/auth/login');
     } catch (error) {
       console.error('Logout failed', error);
     }
   };
 
-  // Handle account deletion
-  const handleDeleteAccount = async () => {
+  // 执行实际的注销操作
+  const executeAccountDeletion = async () => {
     if (!user) {
       return;
     }
@@ -160,13 +164,41 @@ const ProfilePage: React.FC = () => {
     setDeleteLoading(true);
     try {
       const userId = user.id;
+      const errors: string[] = [];
 
-      // 1. 删除用户的存储文件
-      const { error: storageError } = await supabase.storage
-        .from('confession_images')
-        .remove([`avatars/${userId}/*`, `confession_images/${userId}/*`]);
-      if (storageError) {
-        console.error('Error deleting images:', storageError);
+      // 1. 获取并删除用户的表白记录
+      const { data: confessions, error: getConfessionsError } = await supabase
+        .from('confessions')
+        .select('id')
+        .eq('user_id', userId);
+      
+      if (getConfessionsError) {
+        console.error('Error getting user confessions:', getConfessionsError);
+        errors.push('获取表白记录失败');
+      } else if (confessions && confessions.length > 0) {
+        // 获取所有表白ID
+        const confessionIds = confessions.map(confession => confession.id);
+        
+        // 删除这些表白的图片记录
+        const { error: confessionImagesError } = await supabase
+          .from('confession_images')
+          .delete()
+          .in('confession_id', confessionIds);
+        
+        if (confessionImagesError) {
+          console.error('Error deleting confession images:', confessionImagesError);
+          errors.push('删除表白图片记录失败');
+        }
+
+        // 删除用户的表白记录
+        const { error: confessionsError } = await supabase
+          .from('confessions')
+          .delete()
+          .eq('user_id', userId);
+        if (confessionsError) {
+          console.error('Error deleting confessions:', confessionsError);
+          errors.push('删除表白记录失败');
+        }
       }
 
       // 2. 删除用户的点赞记录
@@ -176,6 +208,7 @@ const ProfilePage: React.FC = () => {
         .eq('user_id', userId);
       if (likesError) {
         console.error('Error deleting likes:', likesError);
+        errors.push('删除点赞记录失败');
       }
 
       // 3. 删除用户的评论
@@ -185,60 +218,56 @@ const ProfilePage: React.FC = () => {
         .eq('user_id', userId);
       if (commentsError) {
         console.error('Error deleting comments:', commentsError);
+        errors.push('删除评论记录失败');
       }
 
-      // 4. 先获取用户的所有表白ID
-      const { data: confessions, error: getConfessionsError } = await supabase
-        .from('confessions')
-        .select('id')
-        .eq('user_id', userId);
-      
-      if (getConfessionsError) {
-        console.error('Error getting user confessions:', getConfessionsError);
-      } else if (confessions && confessions.length > 0) {
-        // 获取所有表白ID
-        const confessionIds = confessions.map(confession => confession.id);
-        
-        // 5. 删除这些表白的图片记录
-        const { error: confessionImagesError } = await supabase
-          .from('confession_images')
-          .delete()
-          .in('confession_id', confessionIds);
-        
-        if (confessionImagesError) {
-          console.error('Error deleting confession images:', confessionImagesError);
-        }
-      }
-
-      // 6. 删除用户的表白记录
-      const { error: confessionsError } = await supabase
-        .from('confessions')
-        .delete()
-        .eq('user_id', userId);
-      if (confessionsError) {
-        console.error('Error deleting confessions:', confessionsError);
-      }
-
-      // 7. 删除用户的个人资料
+      // 4. 尝试删除用户的个人资料
       const { error: profileError } = await supabase
         .from('profiles')
         .delete()
         .eq('id', userId);
       if (profileError) {
         console.error('Error deleting profile:', profileError);
-        throw new Error('Failed to delete profile');
+        // 不抛出错误，继续执行后续操作
+        errors.push('删除个人资料失败');
       }
 
-      // 8. Logout and redirect to login page
-      await logout();
-      router.push('/auth/login');
+      // 核心目标：确保用户被登出，即使某些步骤失败
+      // 5. 确保用户被登出，但不进行重定向
+      await logout({ redirect: false });
+      
+      // 6. 显示错误信息（如果有）
+      if (errors.length > 0) {
+        console.warn('Some cleanup operations failed:', errors);
+      }
+      
+      // 7. 显示注销成功提示
+      setShowLogoutAfterDeletePrompt(false);
+      setShowResetPasswordPrompt(true);
     } catch (error) {
       console.error('Error deleting account:', error);
-      alert('注销失败：' + (error instanceof Error ? error.message : '未知错误'));
+      
+      // 即使发生异常，也要确保用户被登出
+      try {
+        await logout({ redirect: false });
+        setShowLogoutAfterDeletePrompt(false);
+        setShowResetPasswordPrompt(true);
+      } catch (logoutError) {
+        console.error('Error during logout:', logoutError);
+      }
+      
+      alert('注销过程中遇到问题，但您已被成功登出：' + (error instanceof Error ? error.message : '未知错误'));
     } finally {
       setDeleteLoading(false);
       setShowDeleteConfirm(false);
     }
+  };
+
+  // Handle account deletion confirmation
+  const handleDeleteAccount = () => {
+    // 不直接执行注销操作，而是显示提示组件
+    setShowDeleteConfirm(false);
+    setShowLogoutAfterDeletePrompt(true);
   };
 
   if (authLoading || loading) {
@@ -503,6 +532,84 @@ const ProfilePage: React.FC = () => {
                     <span>注销中...</span>
                   </div>
                 ) : '确认注销'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Logout After Delete Prompt */}
+      {showLogoutAfterDeletePrompt && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50">
+          <div className="glass-card rounded-2xl p-8 max-w-md w-full mx-4 animate-fade-in">
+            <h3 className="text-2xl font-bold text-gray-900 dark:text-white mb-4">确认注销账号</h3>
+            <p className="text-gray-700 dark:text-gray-300 mb-6">
+              注销账号后，您将无法直接登录。如果您希望重新使用此邮箱登录，需要先进行密码重置。
+            </p>
+            <div className="flex flex-col gap-4 mb-6">
+              <p className="text-gray-600 dark:text-gray-400">
+                <span className="font-bold">注意：</span>
+                注销操作将永久删除您的所有数据，包括表白、评论和点赞记录。
+              </p>
+            </div>
+            <div className="flex flex-col sm:flex-row items-center justify-end gap-3">
+              <button
+                onClick={() => {
+                  // 点击取消，关闭提示组件，回到之前的状态
+                  setShowLogoutAfterDeletePrompt(false);
+                  setShowDeleteConfirm(true);
+                }}
+                className="w-full sm:w-auto px-6 py-3 border border-gray-400 dark:border-gray-500 rounded-xl text-gray-900 dark:text-white bg-white/50 hover:bg-white/80 dark:bg-gray-800/50 dark:hover:bg-gray-700/80 transition-all font-bold shadow-sm min-h-12 flex items-center justify-center"
+              >
+                取消
+              </button>
+              <button
+                onClick={() => {
+                  // 点击重置密码，执行注销操作
+                  executeAccountDeletion();
+                }}
+                className={`w-full sm:w-auto px-8 py-3 bg-gradient-to-r from-primary-600 to-secondary-600 text-black dark:text-white rounded-xl font-bold shadow-lg shadow-primary-500/30 hover:shadow-primary-500/50 transform hover:-translate-y-0.5 transition-all min-h-12 flex items-center justify-center`}
+              >
+                确认注销
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Reset Password Prompt */}
+      {showResetPasswordPrompt && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50">
+          <div className="glass-card rounded-2xl p-8 max-w-md w-full mx-4 animate-fade-in">
+            <h3 className="text-2xl font-bold text-gray-900 dark:text-white mb-4">账号已成功注销</h3>
+            <p className="text-gray-700 dark:text-gray-300 mb-6">
+              您的账号已成功注销，所有关联数据已被清理。如果您希望重新使用此邮箱登录，请重置您的密码。
+            </p>
+            <div className="flex flex-col gap-4 mb-6">
+              <p className="text-gray-600 dark:text-gray-400">
+                <span className="font-bold">注意：</span>
+                由于系统安全机制，您的账号并未被完全删除，而是被设置为注销状态。
+                您需要通过密码重置流程重新激活账号。
+              </p>
+            </div>
+            <div className="flex flex-col sm:flex-row items-center justify-end gap-3">
+              <button
+                onClick={() => {
+                  setShowResetPasswordPrompt(false);
+                  router.push('/auth/login');
+                }}
+                className="w-full sm:w-auto px-6 py-3 border border-gray-400 dark:border-gray-500 rounded-xl text-gray-900 dark:text-white bg-white/50 hover:bg-white/80 dark:bg-gray-800/50 dark:hover:bg-gray-700/80 transition-all font-bold shadow-sm min-h-12 flex items-center justify-center"
+              >
+                前往登录页面
+              </button>
+              <button
+                onClick={() => {
+                  setShowResetPasswordPrompt(false);
+                  router.push('/auth/forgot-password');
+                }}
+                className={`w-full sm:w-auto px-8 py-3 bg-gradient-to-r from-primary-600 to-secondary-600 text-black dark:text-white rounded-xl font-bold shadow-lg shadow-primary-500/30 hover:shadow-primary-500/50 transform hover:-translate-y-0.5 transition-all min-h-12 flex items-center justify-center`}
+              >
+                前往密码重置页面
               </button>
             </div>
           </div>

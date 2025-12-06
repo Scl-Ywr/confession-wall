@@ -8,6 +8,7 @@ import Image from 'next/image';
 import { useAuth } from '@/context/AuthContext';
 import { supabase } from '@/lib/supabase/client';
 import MultimediaMessage from './MultimediaMessage';
+import LoadingSpinner from './LoadingSpinner';
 
 type ChatInterfaceProps = {
   otherUserId: string;
@@ -685,8 +686,15 @@ export function ChatInterface({ otherUserId, otherUserProfile: initialOtherUserP
       {/* 消息列表 */}
       <div className="flex-grow overflow-y-auto p-4 bg-gray-50 dark:bg-gray-900">
         {(loading || !initialCheckDone) ? (
-          <div className="flex justify-center items-center py-8">
-            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary-500"></div>
+          <div className="flex justify-center items-center py-16">
+            <LoadingSpinner 
+              type="moon" 
+              size={40} 
+              color="#f97316" 
+              message="加载消息中..."
+              showMessage={true}
+              gradient={true}
+            />
           </div>
         ) : messages.length === 0 ? (
           <div className="text-center py-8 text-gray-500 dark:text-gray-400">
@@ -698,7 +706,15 @@ export function ChatInterface({ otherUserId, otherUserProfile: initialOtherUserP
             {/* 顶部加载更多指示器 */}
             <div ref={messagesStartRef} className="flex justify-center py-4">
               {loadingMore && (
-                <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-primary-500"></div>
+                <LoadingSpinner 
+                  type="bar" 
+                  size={30} 
+                  color="#f97316" 
+                  message="加载更多消息..."
+                  showMessage={false}
+                  gradient={true}
+                  className="h-6"
+                />
               )}
               {!hasMore && messages.length > 50 && (
                 <div className="text-xs text-gray-400">没有更多历史消息了</div>

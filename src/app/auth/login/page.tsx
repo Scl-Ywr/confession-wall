@@ -22,7 +22,12 @@ type LoginFormData = z.infer<typeof loginSchema>;
 
 const LoginPage: React.FC = () => {
   const router = useRouter();
-  const { login, loading, error } = useAuth();
+  const { login, loading, error, clearError } = useAuth();
+
+  // 组件挂载时清除错误信息
+  React.useEffect(() => {
+    clearError();
+  }, [clearError]);
 
   // 使用react-hook-form
   const {
@@ -68,6 +73,12 @@ const LoginPage: React.FC = () => {
             还没有账号？
             <Link href="/auth/register" className="font-medium text-primary-600 hover:text-primary-500 transition-colors dark:text-primary-400 dark:hover:text-primary-300 ml-1">
               立即注册
+            </Link>
+          </p>
+          <p className="mt-1 text-sm text-gray-600 dark:text-gray-300">
+            忘记密码？
+            <Link href="/auth/forgot-password" className="font-medium text-primary-600 hover:text-primary-500 transition-colors dark:text-primary-400 dark:hover:text-primary-300 ml-1">
+              重置密码
             </Link>
           </p>
         </div>
