@@ -2,6 +2,7 @@
 
 import React, { useState, useRef } from 'react';
 import { supabase } from '@/lib/supabase/client';
+import LoadingSpinner from './LoadingSpinner';
 
 interface VideoUploaderProps {
   onUploadSuccess?: (videoUrl: string, posterUrl?: string) => void;
@@ -409,7 +410,15 @@ export default function VideoUploader({ onUploadSuccess }: VideoUploaderProps) {
       case 'checking_size':
         return (
           <div className="glass-card rounded-2xl p-8 text-center">
-            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary-600 mx-auto mb-4"></div>
+            <LoadingSpinner 
+              type="moon" 
+              size={40} 
+              color="#f97316" 
+              message="检测文件大小..."
+              showMessage={false}
+              gradient={true}
+              className="mb-4"
+            />
             <h3 className="text-xl font-bold text-gray-900 dark:text-white mb-2">检测文件大小...</h3>
           </div>
         );
