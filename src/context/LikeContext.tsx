@@ -74,12 +74,16 @@ export const LikeProvider: React.FC<LikeProviderProps> = ({ children }) => {
       const result = await confessionService.toggleLike(confessionId);
       
       if (result.success) {
-        // 使用refetchQueries确保数据一致性，等待重新获取完成
-        // 这样可以确保UI更新时使用的是最新数据
-        await queryClient.refetchQueries({ queryKey: ['confessions'] });
+        // 使用invalidateQueries让React Query自动重新获取最新数据，确保数据一致性
+        // 不等待刷新完成，让刷新在后台进行，减少UI延迟
+        queryClient.invalidateQueries({ queryKey: ['confessions'] }).catch(err => {
+          console.error('Error invalidating confessions query:', err);
+        });
         
         // 同时更新search缓存
-        await queryClient.refetchQueries({ queryKey: ['search'] });
+        queryClient.invalidateQueries({ queryKey: ['search'] }).catch(err => {
+          console.error('Error invalidating search query:', err);
+        });
       } else {
         console.error('Failed to toggle like:', result.error);
         throw new Error(result.error);

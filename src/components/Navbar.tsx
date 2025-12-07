@@ -148,60 +148,71 @@ const Navbar: React.FC = () => {
     }
   }, [user]);
 
-  // 初始获取未读消息数量
+  // 初始获取未读消息数量 - 延迟执行，优先渲染UI
   useEffect(() => {
     if (!user) return;
-    fetchUnreadMessageCount();
+    
+    // 延迟1秒执行，让UI先渲染完成
+    const timer = setTimeout(() => {
+      fetchUnreadMessageCount();
+    }, 1000);
+    
+    return () => clearTimeout(timer);
   }, [user, fetchUnreadMessageCount]);
 
-  // 实时订阅通知和未读消息
+  // 实时订阅通知和未读消息 - 延迟执行，优先渲染UI
   useEffect(() => {
     if (!user) return;
     
-    // 初始获取通知
-    fetchNotifications();
+    // 延迟2秒执行，让UI先渲染完成
+    const timer = setTimeout(() => {
+      // 初始获取通知
+      fetchNotifications();
+      
+      // 订阅新通知
+      const subscription = chatService.subscribeToNotifications(user.id, (newNotification) => {
+        setNotifications(prev => [newNotification, ...prev]);
+      });
+      
+      // 订阅未读消息变化
+      const messageChannel = supabase
+        .channel('unread-messages')
+        // 监听私聊消息变化
+        .on(
+          'postgres_changes',
+          {
+            event: '*', // 监听所有事件类型
+            schema: 'public',
+            table: 'chat_messages',
+            filter: `receiver_id.eq.${user.id}`
+          },
+          () => {
+            fetchUnreadMessageCount();
+          }
+        )
+        // 监听群聊消息未读状态变化
+        .on(
+          'postgres_changes',
+          {
+            event: '*', // 监听所有事件类型
+            schema: 'public',
+            table: 'group_message_read_status',
+            filter: `user_id.eq.${user.id}`
+          },
+          () => {
+            fetchUnreadMessageCount();
+          }
+        )
+        .subscribe();
+      
+      // 清理订阅
+      return () => {
+        subscription.unsubscribe();
+        supabase.removeChannel(messageChannel);
+      };
+    }, 2000);
     
-    // 订阅新通知
-    const subscription = chatService.subscribeToNotifications(user.id, (newNotification) => {
-      setNotifications(prev => [newNotification, ...prev]);
-    });
-    
-    // 订阅未读消息变化
-    const messageChannel = supabase
-      .channel('unread-messages')
-      // 监听私聊消息变化
-      .on(
-        'postgres_changes',
-        {
-          event: '*', // 监听所有事件类型
-          schema: 'public',
-          table: 'chat_messages',
-          filter: `receiver_id.eq.${user.id}`
-        },
-        () => {
-          fetchUnreadMessageCount();
-        }
-      )
-      // 监听群聊消息未读状态变化
-      .on(
-        'postgres_changes',
-        {
-          event: '*', // 监听所有事件类型
-          schema: 'public',
-          table: 'group_message_read_status',
-          filter: `user_id.eq.${user.id}`
-        },
-        () => {
-          fetchUnreadMessageCount();
-        }
-      )
-      .subscribe();
-    
-    // 清理订阅
-    return () => {
-      subscription.unsubscribe();
-      supabase.removeChannel(messageChannel);
-    };
+    return () => clearTimeout(timer);
   }, [user, fetchNotifications, fetchUnreadMessageCount]);
 
   const handleLogout = async () => {

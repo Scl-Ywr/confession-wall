@@ -236,37 +236,37 @@ export function ChatInterface({ otherUserId, otherUserProfile: initialOtherUserP
 
   // 初始加载消息和检查好友关系
   useEffect(() => {
-    fetchMessages();
-    checkFriendship();
-    
-    // 标记未读消息为已读
-    const markMessagesAsRead = async () => {
-      try {
-        const { data: unreadMessages } = await supabase
-          .from('chat_messages')
-          .select('id')
-          .eq('sender_id', otherUserId)
-          .eq('receiver_id', currentUserId)
-          .eq('is_read', false);
+    // 并行执行多个异步操作，减少初始化时间
+    Promise.all([
+      fetchMessages(),
+      checkFriendship(),
+      (async () => {
+        // 标记未读消息为已读
+        if (!currentUserId || !otherUserId) return;
         
-        if (unreadMessages && unreadMessages.length > 0) {
-          const messageIds = unreadMessages.map(msg => msg.id);
-          await supabase
+        try {
+          const { data: unreadMessages } = await supabase
             .from('chat_messages')
-            .update({ is_read: true })
-            .in('id', messageIds);
+            .select('id')
+            .eq('sender_id', otherUserId)
+            .eq('receiver_id', currentUserId)
+            .eq('is_read', false);
           
-          // 触发自定义事件，通知好友列表更新未读消息数量
-          window.dispatchEvent(new CustomEvent('privateMessagesRead', { detail: { friendId: otherUserId } }));
+          if (unreadMessages && unreadMessages.length > 0) {
+            const messageIds = unreadMessages.map(msg => msg.id);
+            await supabase
+              .from('chat_messages')
+              .update({ is_read: true })
+              .in('id', messageIds);
+            
+            // 触发自定义事件，通知好友列表更新未读消息数量
+            window.dispatchEvent(new CustomEvent('privateMessagesRead', { detail: { friendId: otherUserId } }));
+          }
+        } catch {
+          // ignore error
         }
-      } catch {
-        // ignore error
-      }
-    };
-    
-    if (currentUserId && otherUserId) {
-      markMessagesAsRead();
-    }
+      })()
+    ]);
   }, [fetchMessages, checkFriendship, currentUserId, otherUserId]);
 
   // 当消息列表变化时，滚动到最新消息（仅在初始加载时）
@@ -276,7 +276,7 @@ export function ChatInterface({ otherUserId, otherUserProfile: initialOtherUserP
     }
   }, [messages, loading, loadingMore]);
 
-  // 定期检查好友关系状态和对方用户资料
+  // 定期检查好友关系状态和对方用户资料 - 降低检查频率，减少网络请求
   useEffect(() => {
     const interval = setInterval(async () => {
       checkFriendship();
@@ -289,7 +289,7 @@ export function ChatInterface({ otherUserId, otherUserProfile: initialOtherUserP
       } catch {
         // ignore error
       }
-    }, 30000); // 每30秒检查一次
+    }, 60000); // 每60秒检查一次，降低网络请求频率
 
     return () => clearInterval(interval);
   }, [checkFriendship, otherUserId]);
@@ -723,9 +723,11 @@ export function ChatInterface({ otherUserId, otherUserProfile: initialOtherUserP
             
             {/* 消息列表 */}
             {messages.map((message, index) => {
-              // 日期分隔逻辑
-              const currentDate = new Date(message.created_at).toISOString().split('T')[0];
-              const showDateSeparator = index === 0 || new Date(messages[index - 1].created_at).toISOString().split('T')[0] !== currentDate;
+              // 优化日期分隔逻辑，避免频繁创建Date对象
+              const currentDate = message.created_at.split('T')[0];
+              const prevMessage = index > 0 ? messages[index - 1] : null;
+              const prevDate = prevMessage ? prevMessage.created_at.split('T')[0] : null;
+              const showDateSeparator = index === 0 || prevDate !== currentDate;
               
               return (
                 <div key={message.id}>

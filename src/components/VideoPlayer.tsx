@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 
 import { ExpandIcon, ShrinkIcon } from 'lucide-react';
 import { motion } from 'framer-motion';
@@ -15,18 +15,8 @@ interface VideoPlayerProps {
   posterUrl?: string;
 }
 
-// 格式化时间函数
-const formatTime = (seconds: number): string => {
-  if (isNaN(seconds)) return '0:00';
-  const mins = Math.floor(seconds / 60);
-  const secs = Math.floor(seconds % 60);
-  return `${mins}:${secs.toString().padStart(2, '0')}`;
-};
-
 export default function VideoPlayer({ videoUrl, className = '', posterUrl }: VideoPlayerProps) {
-  const [isEnlarged, setIsEnlarged] = useState(false); // 控制视频在当前区域放大
-  const [showOverlay, setShowOverlay] = useState(false); // 控制背景遮罩显示
-  const [style, setStyle] = useState<React.CSSProperties>({}); // 动态样式用于动画
+  const [fullscreen, setFullscreen] = useState(false); // 控制浏览器全屏状态
   const [videoDimensions] = useState({ width: 0, height: 0 });
   
   // 视频切换过渡状态
@@ -35,7 +25,7 @@ export default function VideoPlayer({ videoUrl, className = '', posterUrl }: Vid
   
   // 视频缓冲状态
   const [isBuffering, setIsBuffering] = useState(false);
-  
+  const [bufferProgress, setBufferProgress] = useState(0); // 缓冲进度百分比
   // 视频播放状态
   const [isPaused, setIsPaused] = useState(true);
   const [currentTime, setCurrentTime] = useState(0);
@@ -44,12 +34,148 @@ export default function VideoPlayer({ videoUrl, className = '', posterUrl }: Vid
   const [volume, setVolume] = useState(1);
   const [pip, setPip] = useState(false); // 画中画模式
   const [showControls, setShowControls] = useState(true); // 控制组件显示状态
+  const [playbackRate, setPlaybackRate] = useState(1); // 播放速度
+  const [showPlaybackMenu, setShowPlaybackMenu] = useState(false); // 播放速度菜单显示状态
+  const [isAutoBuffering, setIsAutoBuffering] = useState(false); // 是否正在自动缓冲
+  const [isCaching, setIsCaching] = useState(false); // 是否正在缓存视频
+  // 网络状况
+  const [networkQuality, setNetworkQuality] = useState<'excellent' | 'good' | 'fair' | 'poor'>('good');
   const controlsTimeoutRef = useRef<NodeJS.Timeout | null>(null); // 控制组件隐藏定时器
+  const bufferTimeoutRef = useRef<NodeJS.Timeout | null>(null); // 缓冲定时器
   
   const playerRef = useRef<HTMLVideoElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
-  const placeholderRef = useRef<HTMLDivElement>(null); // 占位符引用
-  const containerRectRef = useRef<DOMRect | null>(null); // 保存容器原始尺寸和位置
+  const cacheRef = useRef<Cache | null>(null); // 缓存引用
+
+  // 格式化时间函数
+  const formatTime = (seconds: number): string => {
+    if (isNaN(seconds)) return '0:00';
+    const mins = Math.floor(seconds / 60);
+    const secs = Math.floor(seconds % 60);
+    return `${mins}:${secs.toString().padStart(2, '0')}`;
+  };
+
+  // 初始化缓存
+  const initCache = async () => {
+    if ('caches' in window) {
+      try {
+        cacheRef.current = await caches.open('confession-videos');
+      } catch (error) {
+        console.error('Failed to open cache:', error);
+      }
+    }
+  };
+
+  // 检查视频是否已缓存
+  const checkVideoCache = useCallback(async (url: string): Promise<boolean> => {
+    if (!('caches' in window) || !cacheRef.current) {
+      return false;
+    }
+    
+    try {
+      const cachedResponse = await cacheRef.current.match(url);
+      return !!cachedResponse;
+    } catch (error) {
+      console.error('Failed to check cache:', error);
+      return false;
+    }
+  }, []);
+
+  // 将视频缓存到CacheStorage
+  const cacheVideo = useCallback(async (url: string) => {
+    if (!('caches' in window) || !cacheRef.current || isCaching) {
+      return;
+    }
+    
+    // 仅在良好网络环境下自动缓存
+    if (networkQuality === 'poor' || networkQuality === 'fair') {
+      return;
+    }
+    
+    setIsCaching(true);
+    try {
+      // 检查是否已缓存
+      const isAlreadyCached = await checkVideoCache(url);
+      if (isAlreadyCached) {
+        setIsCaching(false);
+        return;
+      }
+      
+      // 发起网络请求并缓存响应
+      const response = await fetch(url, { 
+        headers: { 
+          'Cache-Control': 'no-cache',
+          'Content-Type': 'video/mp4'
+        }
+      });
+      
+      if (response.ok) {
+        // 克隆响应以同时用于播放和缓存
+        const responseToCache = response.clone();
+        await cacheRef.current.put(url, responseToCache);
+      }
+    } catch (error) {
+      console.error('Failed to cache video:', error);
+    } finally {
+      setIsCaching(false);
+    }
+  }, [isCaching, networkQuality, checkVideoCache]);
+
+  // 检测网络质量
+  const detectNetworkQuality = useCallback(() => {
+    // 安全检测navigator.connection API（实验性API）
+    const nav = navigator as Navigator & { connection?: { effectiveType?: string } };
+    if (nav.connection?.effectiveType) {
+      // 根据网络类型判断质量
+      switch (nav.connection.effectiveType) {
+        case '4g':
+        case '5g':
+          setNetworkQuality('excellent');
+          break;
+        case '3g':
+          setNetworkQuality('good');
+          break;
+        case '2g':
+          setNetworkQuality('fair');
+          break;
+        default:
+          setNetworkQuality('poor');
+      }
+    }
+  }, [setNetworkQuality]);
+
+  // 监听网络变化
+  useEffect(() => {
+    // 初始检测
+    detectNetworkQuality();
+    
+    // 安全检测navigator.connection API（实验性API）
+    const nav = navigator as Navigator & { 
+      connection?: { 
+        addEventListener?: (type: string, listener: () => void) => void;
+        removeEventListener?: (type: string, listener: () => void) => void;
+      } 
+    };
+    
+    // 保存connection引用，避免在清理函数中出现问题
+    const connection = nav.connection;
+    if (connection?.addEventListener && connection?.removeEventListener) {
+      const handleChange = () => detectNetworkQuality();
+      connection.addEventListener('change', handleChange);
+      
+      return () => {
+        if (connection?.removeEventListener) {
+          connection.removeEventListener('change', handleChange);
+        }
+      };
+    }
+  }, [detectNetworkQuality]);
+
+  // 初始化缓存并检查视频缓存状态
+  useEffect(() => {
+    // 初始化缓存
+    initCache();
+  }, []);
 
   // 处理视频URL变化，实现平滑过渡
   useEffect(() => {
@@ -78,6 +204,23 @@ export default function VideoPlayer({ videoUrl, className = '', posterUrl }: Vid
     }
   }, [videoUrl, currentVideoUrl]);
 
+  // 视频加载完成后自动缓存
+  useEffect(() => {
+    const video = playerRef.current;
+    if (!video) return;
+    
+    const handleLoadedData = () => {
+      // 视频加载完成后，异步缓存视频
+      cacheVideo(currentVideoUrl);
+    };
+    
+    video.addEventListener('loadeddata', handleLoadedData);
+    
+    return () => {
+      video.removeEventListener('loadeddata', handleLoadedData);
+    };
+  }, [currentVideoUrl, cacheVideo]);
+
   // 视频URL变化后，确保正确获取时长
   useEffect(() => {
     if (currentVideoUrl) {
@@ -102,6 +245,112 @@ export default function VideoPlayer({ videoUrl, className = '', posterUrl }: Vid
   const handleResize = () => {
     // 视口变化时的逻辑（如果需要）
   };
+
+  // 计算缓冲进度
+  const calculateBufferProgress = useCallback(() => {
+    const video = playerRef.current;
+    if (!video || duration <= 0) return;
+
+    const buffered = video.buffered;
+    if (buffered.length === 0) {
+      setBufferProgress(0);
+      return;
+    }
+
+    // 找到当前播放时间所在的缓冲区间
+    let maxBufferEnd = 0;
+    for (let i = 0; i < buffered.length; i++) {
+      if (buffered.start(i) <= currentTime && buffered.end(i) >= currentTime) {
+        // 计算当前缓冲区间的结束位置
+        maxBufferEnd = buffered.end(i);
+        break;
+      }
+    }
+
+    // 计算缓冲进度百分比
+    const bufferPercent = (maxBufferEnd / duration) * 100;
+    setBufferProgress(bufferPercent);
+
+    // 根据网络质量调整缓冲阈值
+    let minBufferTime = 30; // 缓冲不足时暂停的阈值
+    let maxBufferTime = 60; // 缓冲足够时恢复的阈值
+    
+    switch (networkQuality) {
+      case 'excellent':
+        minBufferTime = 20; // 网络好，降低暂停阈值
+        maxBufferTime = 80; // 网络好，增加缓冲目标
+        break;
+      case 'good':
+        minBufferTime = 25; // 网络良好，中等阈值
+        maxBufferTime = 60; // 网络良好，中等目标
+        break;
+      case 'fair':
+        minBufferTime = 35; // 网络一般，提高暂停阈值
+        maxBufferTime = 50; // 网络一般，降低缓冲目标
+        break;
+      case 'poor':
+        minBufferTime = 45; // 网络差，更高暂停阈值
+        maxBufferTime = 40; // 网络差，更低缓冲目标
+        break;
+    }
+
+    // 智能缓冲管理：当缓冲不足时，自动暂停进行缓冲
+    const bufferTime = maxBufferEnd - currentTime;
+    if (bufferTime < minBufferTime && !isPaused && !isAutoBuffering && video.paused === false) {
+      setIsAutoBuffering(true);
+      video.pause();
+      setIsPaused(true);
+      
+      // 设置缓冲定时器，当缓冲足够时自动恢复播放
+      bufferTimeoutRef.current = setTimeout(() => {
+        if (video.buffered.length > 0) {
+          const newMaxBufferEnd = video.buffered.end(video.buffered.length - 1);
+          if (newMaxBufferEnd - video.currentTime >= maxBufferTime) {
+            // 当缓冲达到目标时，恢复播放
+            video.play();
+            setIsPaused(false);
+            setIsAutoBuffering(false);
+          } else {
+            // 否则继续检查
+            calculateBufferProgress();
+          }
+        }
+      }, 1000);
+    } else if (bufferTime >= maxBufferTime && isAutoBuffering && video.paused === true) {
+      // 当缓冲足够时，自动恢复播放
+      video.play();
+      setIsPaused(false);
+      setIsAutoBuffering(false);
+      if (bufferTimeoutRef.current) {
+        clearTimeout(bufferTimeoutRef.current);
+      }
+    }
+  }, [currentTime, duration, isPaused, isAutoBuffering, networkQuality, setBufferProgress, setIsAutoBuffering, setIsPaused]);
+
+  // 定期计算缓冲进度
+  useEffect(() => {
+    const video = playerRef.current;
+    if (!video) return;
+
+    const intervalId = setInterval(() => {
+      calculateBufferProgress();
+    }, 1000);
+
+    // 添加progress事件监听器，实时更新缓冲进度
+    const handleProgress = () => {
+      calculateBufferProgress();
+    };
+
+    video.addEventListener('progress', handleProgress);
+
+    return () => {
+      clearInterval(intervalId);
+      video.removeEventListener('progress', handleProgress);
+      if (bufferTimeoutRef.current) {
+        clearTimeout(bufferTimeoutRef.current);
+      }
+    };
+  }, [currentTime, duration, isPaused, isAutoBuffering, calculateBufferProgress, networkQuality]);
 
   useEffect(() => {
     window.addEventListener('resize', handleResize);
@@ -147,146 +396,20 @@ export default function VideoPlayer({ videoUrl, className = '', posterUrl }: Vid
 
   // 处理放大按钮点击 (影院模式)
   const handleFullscreenToggle = () => {
-    if (!isEnlarged) {
-      // 进入放大模式
-      const container = containerRef.current;
-      if (!container) return;
-      
-      const rect = container.getBoundingClientRect();
-      containerRectRef.current = rect;
-      
-      // 响应式影院模式尺寸计算
-      const isMobile = window.innerWidth < 768;
-      const isTablet = window.innerWidth < 1024;
-      
-      // 计算目标尺寸和位置
-      let targetWidth, targetHeight, targetTop, targetLeft;
-      let finalStyle: React.CSSProperties;
-      
-      if (isMobile) {
-        // 移动端：全屏体验，充分利用屏幕空间
-        targetWidth = window.innerWidth;
-        targetHeight = window.innerHeight;
-        targetTop = 0;
-        targetLeft = 0;
-        
-        // 移动端简化样式，更接近全屏体验
-        finalStyle = {
-          position: 'fixed',
-          top: `${targetTop}px`,
-          left: `${targetLeft}px`,
-          width: `${targetWidth}px`,
-          height: `${targetHeight}px`,
-          zIndex: 9999,
-          transition: 'all 0.3s ease',
-          borderRadius: '0',
-          boxShadow: 'none',
-          backgroundColor: 'black',
-          border: 'none',
-          backdropFilter: 'none'
-        };
-      } else {
-        // 平板和桌面端：保持原有影院模式
-        // 计算目标尺寸和位置 (平板：90% 视口，桌面：85% 视口)
-        const widthRatio = isTablet ? 0.9 : 0.85;
-        const heightRatio = isTablet ? 0.9 : 0.9;
-        
-        targetWidth = Math.min(window.innerWidth * widthRatio, 1920);
-        targetHeight = Math.min(window.innerHeight * heightRatio, 1080);
-        
-        // 保持宽高比
-        const videoRatio = (videoDimensions.width / videoDimensions.height) || (16/9);
-        const screenRatio = targetWidth / targetHeight;
-        
-        let finalWidth, finalHeight;
-        if (videoRatio > screenRatio) {
-          finalWidth = targetWidth;
-          finalHeight = targetWidth / videoRatio;
-        } else {
-          finalHeight = targetHeight;
-          finalWidth = targetHeight * videoRatio;
-        }
-        
-        // 计算居中位置
-        const horizontalPadding = isTablet ? 20 : 40;
-        const verticalPadding = isTablet ? 30 : 50;
-        
-        targetTop = Math.max((window.innerHeight - finalHeight) / 2, verticalPadding);
-        targetLeft = Math.max((window.innerWidth - finalWidth) / 2, horizontalPadding);
-        
-        // 桌面端样式
-        finalStyle = {
-          position: 'fixed',
-          top: `${targetTop}px`,
-          left: `${targetLeft}px`,
-          width: `${finalWidth}px`,
-          height: `${finalHeight}px`,
-          zIndex: 9999,
-          transition: 'all 0.4s cubic-bezier(0.2, 0, 0.2, 1)',
-          borderRadius: '1rem',
-          boxShadow: '0 20px 60px rgba(249, 115, 22, 0.3)',
-          backgroundColor: 'rgba(0, 0, 0, 0.85)',
-          border: '1px solid rgba(249, 115, 22, 0.2)',
-          backdropFilter: 'blur(20px)'
-        };
-      }
-      
-      // 1. 设置初始固定位置（在当前位置）
-      setStyle({
-        position: 'fixed',
-        top: `${rect.top}px`,
-        left: `${rect.left}px`,
-        width: `${rect.width}px`,
-        height: `${rect.height}px`,
-        zIndex: 9999,
-        transition: 'none',
-        borderRadius: isMobile ? '0' : '0.75rem',
-        backgroundColor: 'rgba(0,0,0,0)'
+    const container = containerRef.current;
+    if (!container) return;
+    
+    if (!document.fullscreenElement) {
+      // 进入浏览器全屏模式
+      container.requestFullscreen().catch(err => {
+        console.error(`Error attempting to enable full-screen mode: ${err.message}`);
       });
-      
-      setIsEnlarged(true);
-      setShowOverlay(true);
-      
-      // 2. 强制重绘后开始动画
-      requestAnimationFrame(() => {
-        requestAnimationFrame(() => {
-          setStyle(finalStyle);
-        });
-      });
-      
     } else {
-      // 退出放大模式
-      const placeholder = placeholderRef.current;
-      if (placeholder) {
-        const rect = placeholder.getBoundingClientRect();
-        
-        // 1. 动画回到原位
-        setStyle({
-          position: 'fixed',
-          top: `${rect.top}px`,
-          left: `${rect.left}px`,
-          width: `${rect.width}px`,
-          height: `${rect.height}px`,
-          zIndex: 9999,
-          transition: 'all 0.35s cubic-bezier(0.4, 0, 0.2, 1)',
-          borderRadius: '0.75rem',
-          boxShadow: 'none',
-          backgroundColor: 'rgba(0,0,0,0)',
-          border: 'none',
-          backdropFilter: 'none'
+      // 退出浏览器全屏模式
+      if (document.exitFullscreen) {
+        document.exitFullscreen().catch(err => {
+          console.error(`Error attempting to exit full-screen mode: ${err.message}`);
         });
-        
-        setShowOverlay(false);
-        
-        // 2. 动画结束后重置状态
-        setTimeout(() => {
-          setIsEnlarged(false);
-          setStyle({});
-        }, 350);
-      } else {
-        setIsEnlarged(false);
-        setShowOverlay(false);
-        setStyle({});
       }
     }
   };
@@ -336,6 +459,13 @@ export default function VideoPlayer({ videoUrl, className = '', posterUrl }: Vid
     }
   }, [volume]);
 
+  // 控制播放速度
+  useEffect(() => {
+    if (playerRef.current) {
+      playerRef.current.playbackRate = playbackRate;
+    }
+  }, [playbackRate]);
+
   // 屏幕旋转检测 - 自动切换全屏模式
   useEffect(() => {
     // 检测是否为横屏
@@ -367,62 +497,30 @@ export default function VideoPlayer({ videoUrl, className = '', posterUrl }: Vid
     };
   }, [isPaused]);
 
-  // 确保页面加载时不会自动全屏
+  // 监听全屏状态变化
   useEffect(() => {
-    // 检查是否有元素处于全屏状态，如果有则退出
-    if (document.fullscreenElement) {
-      document.exitFullscreen().catch(err => {
-        console.error(`Error attempting to exit full-screen mode: ${err.message}`);
-      });
-    }
+    const handleFullscreenChange = () => {
+      setFullscreen(!!document.fullscreenElement);
+    };
+
+    document.addEventListener('fullscreenchange', handleFullscreenChange);
+
+    return () => {
+      document.removeEventListener('fullscreenchange', handleFullscreenChange);
+    };
   }, []);
 
   return (
     <>
-      {/* 背景遮罩层 */}
-      {showOverlay && (
-        <motion.div 
-          className="fixed inset-0 z-[999] backdrop-blur-sm"
-          style={{
-            background: 'linear-gradient(135deg, rgba(249, 115, 22, 0.1), rgba(245, 158, 11, 0.1), rgba(0, 0, 0, 0.9))'
-          }}
-          onClick={(e) => {
-            e.stopPropagation();
-            handleFullscreenToggle();
-          }}
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          exit={{ opacity: 0 }}
-          transition={{ duration: 0.5 }}
-        />
-      )}
-      
-      {/* 占位符 - 当视频放大时占据原位，防止页面抖动 */}
-      {isEnlarged && (
-        <div 
-          ref={placeholderRef}
-          className={`w-full ${className}`}
-          style={{
-            ...getAspectRatioStyle(),
-            visibility: 'hidden'
-          }}
-        />
-      )}
-      
       {/* 视频容器 */}
       <div 
         ref={containerRef}
         className={`relative overflow-hidden group ${className}`}
         style={{
           ...getAspectRatioStyle(),
-          ...style,
-          ...(Object.keys(style).length === 0 ? {
-            borderRadius: '0.75rem',
-            transition: 'transform 0.3s ease',
-            backgroundColor: 'black'
-          } : {
-            willChange: 'top, left, width, height'
-          })
+          borderRadius: '0.75rem',
+          transition: 'transform 0.3s ease',
+          backgroundColor: 'black'
         }}
       >
         {/* 视频切换过渡遮罩 */}
@@ -450,9 +548,9 @@ export default function VideoPlayer({ videoUrl, className = '', posterUrl }: Vid
         <video
           ref={playerRef}
           src={currentVideoUrl}
-          className="w-full h-full object-contain"
+          className="w-full h-full object-cover"
           poster={posterUrl || ''}
-          preload="metadata"
+          preload="auto"
           autoPlay={false}
           muted={isMuted}
           playsInline
@@ -530,9 +628,14 @@ export default function VideoPlayer({ videoUrl, className = '', posterUrl }: Vid
         />
         
         {/* 中央播放/暂停按钮 - 点击视频时显示 */}
-        <div className={`absolute inset-0 flex items-center justify-center pointer-events-auto ${(isPaused || showControls) ? 'opacity-100' : 'opacity-0'} group-hover:opacity-100 transition-opacity duration-300`}>
-          <button 
-            className="w-16 h-16 rounded-full bg-primary-500/90 hover:bg-primary-600/90 text-white shadow-lg transition-all duration-300 transform hover:scale-110 active:scale-95 flex items-center justify-center"
+        <motion.div 
+          className={`absolute inset-0 flex items-center justify-center pointer-events-auto ${(isPaused || showControls) ? 'opacity-100' : 'opacity-0'} group-hover:opacity-100`}
+          initial={{ opacity: 0 }}
+          animate={{ opacity: (isPaused || showControls) ? 1 : 0 }}
+          transition={{ duration: 500, ease: "easeInOut" }}
+        >
+          <motion.button 
+            className="relative w-16 h-16 rounded-full bg-gradient-to-r from-orange-500 to-orange-600 text-white flex items-center justify-center shadow-lg shadow-orange-500/30"
             onClick={(e) => {
               e.stopPropagation();
               if (playerRef.current) {
@@ -543,29 +646,39 @@ export default function VideoPlayer({ videoUrl, className = '', posterUrl }: Vid
                 }
               }
             }}
+            whileHover={{ scale: 1.1, boxShadow: '0 0 20px rgba(249, 115, 22, 0.6)' }}
+            whileTap={{ scale: 0.95 }}
+            transition={{ duration: 300, ease: "easeOut" }}
           >
+            <div className="absolute inset-0 rounded-full bg-gradient-to-r from-orange-400 to-orange-500 opacity-0 hover:opacity-100 transition-opacity duration-500 animate-pulse"></div>
+            <div className="absolute inset-0 rounded-full bg-gradient-to-r from-orange-500/30 to-orange-600/30 animate-spin opacity-0 hover:opacity-100 transition-opacity duration-500"></div>
             {isPaused ? (
-              <svg className="w-8 h-8 ml-1" fill="currentColor" viewBox="0 0 20 20">
+              <svg className="w-7 h-7 ml-1 relative z-10" fill="currentColor" viewBox="0 0 20 20">
                 <path d="M6.3 2.841A1.5 1.5 0 004 4.11V15.89a1.5 1.5 0 002.3 1.269l9.344-5.89a1.5 1.5 0 000-2.538L6.3 2.84z" />
               </svg>
             ) : (
-              <svg className="w-8 h-8" fill="currentColor" viewBox="0 0 20 20">
+              <svg className="w-7 h-7 relative z-10" fill="currentColor" viewBox="0 0 20 20">
                 <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zM7 8a1 1 0 012 0v4a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v4a1 1 0 102 0V8a1 1 0 00-1-1z" clipRule="evenodd" />
               </svg>
             )}
-          </button>
-        </div>
+          </motion.button>
+        </motion.div>
 
         {/* 自定义控制栏 */}
-        <div className={`absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 to-transparent p-4 ${showControls ? 'opacity-100' : 'opacity-0'} group-hover:opacity-100 transition-opacity duration-300 pointer-events-auto`}>
+        <div className={`absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/95 via-black/85 to-transparent p-3 md:p-4 ${showControls ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-full'} group-hover:opacity-100 group-hover:translate-y-0 transition-all duration-400 ease-in-out pointer-events-auto`} style={{ boxShadow: '0 -10px 40px rgba(0, 0, 0, 0.5)' }}>
           {/* 进度条组件 */}
-          <div className="relative mb-3">
+          <div className="relative mb-3 group">
+            {/* 进度条背景 */}
+          <div className="absolute inset-0 h-2 bg-white/10 rounded-full overflow-hidden">
+            {/* 缓冲进度 */}
+            <div className="absolute inset-y-0 left-0 bg-white/20 rounded-full transition-all duration-300 ease-out" style={{ width: `${bufferProgress}%` }}></div>
+            {/* 播放进度 */}
+            <div className="absolute inset-y-0 left-0 bg-gradient-to-r from-orange-400 via-orange-500 to-red-500 rounded-full transition-all duration-300 ease-out" style={{ width: `${currentTime / (duration || 1) * 100}%` }}></div>
+          </div>
+            {/* 可交互的滑块 */}
             <input 
               type="range" 
-              className="w-full h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer"
-              style={{
-                background: `linear-gradient(to right, var(--warm-primary) 0%, var(--warm-primary) ${currentTime / (duration || 1) * 100}%, rgba(255, 255, 255, 0.2) ${currentTime / (duration || 1) * 100}%, rgba(255, 255, 255, 0.2) 100%)`
-              }}
+              className="w-full h-8 appearance-none cursor-pointer bg-transparent absolute inset-0 z-10"
               value={currentTime}
               min="0"
               max={duration || 1}
@@ -590,15 +703,20 @@ export default function VideoPlayer({ videoUrl, className = '', posterUrl }: Vid
                 showControlsWithTimeout();
               }}
             />
+            {/* 滑块指示器 */}
+            <div 
+              className="absolute top-1/2 -translate-y-1/2 w-4 h-4 bg-white rounded-full shadow-lg transform scale-0 group-hover:scale-100 transition-transform duration-200" 
+              style={{ left: `${currentTime / (duration || 1) * 100}%`, boxShadow: '0 0 10px rgba(255, 255, 255, 0.5)' }}
+            ></div>
           </div>
           
           {/* 控制按钮和时间显示 */}
-          <div className="flex items-center justify-between">
+          <div className="flex items-center justify-between flex-wrap gap-2">
             {/* 左侧控制按钮 */}
-            <div className="flex items-center space-x-3">
+            <div className="flex items-center space-x-2">
               {/* 快退按钮 */}
               <button 
-                className="w-8 h-8 text-white hover:text-primary-400 transition-colors duration-200 flex items-center justify-center"
+                className="w-8 h-8 rounded-full bg-white/10 hover:bg-white/20 text-white flex items-center justify-center transition-all duration-300 ease-out hover:scale-105 active:scale-95 backdrop-blur-sm"
                 onClick={(e) => {
                   e.stopPropagation();
                   const newTime = Math.max(0, currentTime - 10);
@@ -610,14 +728,14 @@ export default function VideoPlayer({ videoUrl, className = '', posterUrl }: Vid
                   showControlsWithTimeout();
                 }}
               >
-                <svg className="w-6 h-6" fill="currentColor" viewBox="0 0 20 20">
+                <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
                   <path d="M8.445 14.832A1 1 0 0010 14v-2.798l5.445 3.63A1 1 0 0017 14V6a1 1 0 00-1.555-.832L10 8.798V6a1 1 0 00-1.555-.832l-6 4a1 1 0 000 1.664l6 4z" />
                 </svg>
               </button>
               
               {/* 播放/暂停按钮 */}
               <button 
-                className="w-10 h-10 text-white hover:text-primary-400 transition-colors duration-200 flex items-center justify-center"
+                className="relative w-10 h-10 rounded-full bg-gradient-to-r from-orange-500 to-orange-600 text-white flex items-center justify-center transition-all duration-300 ease-out hover:scale-105 hover:shadow-lg hover:shadow-orange-500/50 active:scale-95"
                 onClick={(e) => {
                   e.stopPropagation();
                   if (playerRef.current) {
@@ -631,12 +749,13 @@ export default function VideoPlayer({ videoUrl, className = '', posterUrl }: Vid
                   showControlsWithTimeout();
                 }}
               >
+                <div className="absolute inset-0 rounded-full bg-gradient-to-r from-orange-400 to-orange-500 opacity-0 hover:opacity-100 transition-opacity duration-300 animate-pulse"></div>
                 {isPaused ? (
-                  <svg className="w-7 h-7 ml-1" fill="currentColor" viewBox="0 0 20 20">
+                  <svg className="w-6 h-6 ml-0.5 relative z-10" fill="currentColor" viewBox="0 0 20 20">
                     <path d="M6.3 2.841A1.5 1.5 0 004 4.11V15.89a1.5 1.5 0 002.3 1.269l9.344-5.89a1.5 1.5 0 000-2.538L6.3 2.84z" />
                   </svg>
                 ) : (
-                  <svg className="w-7 h-7" fill="currentColor" viewBox="0 0 20 20">
+                  <svg className="w-6 h-6 relative z-10" fill="currentColor" viewBox="0 0 20 20">
                     <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zM7 8a1 1 0 012 0v4a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v4a1 1 0 102 0V8a1 1 0 00-1-1z" clipRule="evenodd" />
                   </svg>
                 )}
@@ -644,7 +763,7 @@ export default function VideoPlayer({ videoUrl, className = '', posterUrl }: Vid
               
               {/* 快进按钮 */}
               <button 
-                className="w-8 h-8 text-white hover:text-primary-400 transition-colors duration-200 flex items-center justify-center"
+                className="w-8 h-8 rounded-full bg-white/10 hover:bg-white/20 text-white flex items-center justify-center transition-all duration-300 ease-out hover:scale-105 active:scale-95 backdrop-blur-sm"
                 onClick={(e) => {
                   e.stopPropagation();
                   const newTime = Math.min(duration || 0, currentTime + 10);
@@ -656,72 +775,88 @@ export default function VideoPlayer({ videoUrl, className = '', posterUrl }: Vid
                   showControlsWithTimeout();
                 }}
               >
-                <svg className="w-6 h-6" fill="currentColor" viewBox="0 0 20 20">
+                <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
                   <path d="M11.555 5.168A1 1 0 0010 6v2.798l-5.445-3.63A1 1 0 003 6v8a1 1 0 001.555.832L10 11.202V14a1 1 0 001.555.832l6-4a1 1 0 000-1.664l-6-4z" />
                 </svg>
               </button>
-            </div>
-            
-            {/* 时间显示 */}
-            <div className="text-white text-sm font-medium">
-              <span>{formatTime(currentTime)}</span>
-              <span className="text-gray-400 mx-2">/</span>
-              <span>{formatTime(duration)}</span>
+              
+              {/* 时间显示 */}
+              <div className="text-white text-sm font-medium whitespace-nowrap">
+                <span>{formatTime(currentTime)}</span>
+                <span className="text-gray-400 mx-2">/</span>
+                <span>{formatTime(duration)}</span>
+              </div>
             </div>
             
             {/* 右侧控制按钮 */}
-            <div className="flex items-center space-x-2">
-              {/* 音量控制 */}
-              <div className="flex items-center space-x-1">
+            <div className="flex items-center space-x-1">
+              {/* 音量控制 - 简化为只显示音量按钮 */}
+              <button 
+                className="w-8 h-8 rounded-full bg-white/10 hover:bg-white/20 text-white flex items-center justify-center transition-all duration-300 ease-out hover:scale-105 active:scale-95 backdrop-blur-sm"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setIsMuted(!isMuted);
+                  // 重置控制组件隐藏定时器
+                  showControlsWithTimeout();
+                }}
+              >
+                {isMuted ? (
+                  <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
+                    <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM7 8a1 1 0 012 0v4a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v4a1 1 0 102 0V8a1 1 0 00-1-1z" clipRule="evenodd" />
+                  </svg>
+                ) : (
+                  <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
+                    <path fillRule="evenodd" d="M9.383 3.076A1 1 0 0110 4v12a1 1 0 01-1.707.707L4.586 13H2a1 1 0 01-1-1V8a1 1 0 011-1h2.586l3.707-3.707a1 1 0 011.09-.217zM12.293 7.293a1 1 0 011.414 0L15 8.586l1.293-1.293a1 1 0 111.414 1.414L16.414 10l1.293 1.293a1 1 0 01-1.414 1.414L15 11.414l-1.293 1.293a1 1 0 01-1.414-1.414L13.586 10l-1.293-1.293a1 1 0 010-1.414z" clipRule="evenodd" />
+                  </svg>
+                )}
+              </button>
+              
+              {/* 播放速度控制 */}
+              <div className="relative">
                 <button 
-                  className="w-8 h-8 text-white hover:text-primary-400 transition-colors duration-200 flex items-center justify-center"
+                  className="w-8 h-8 rounded-full bg-white/10 hover:bg-white/20 text-white flex items-center justify-center transition-all duration-300 ease-out hover:scale-105 active:scale-95 backdrop-blur-sm"
                   onClick={(e) => {
                     e.stopPropagation();
-                    setIsMuted(!isMuted);
+                    setShowPlaybackMenu(!showPlaybackMenu);
                     // 重置控制组件隐藏定时器
                     showControlsWithTimeout();
                   }}
+                  title="播放速度"
                 >
-                  {isMuted ? (
-                    <svg className="w-6 h-6" fill="currentColor" viewBox="0 0 20 20">
-                      <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM7 8a1 1 0 012 0v4a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v4a1 1 0 102 0V8a1 1 0 00-1-1z" clipRule="evenodd" />
-                    </svg>
-                  ) : (
-                    <svg className="w-6 h-6" fill="currentColor" viewBox="0 0 20 20">
-                      <path fillRule="evenodd" d="M9.383 3.076A1 1 0 0110 4v12a1 1 0 01-1.707.707L4.586 13H2a1 1 0 01-1-1V8a1 1 0 011-1h2.586l3.707-3.707a1 1 0 011.09-.217zM12.293 7.293a1 1 0 011.414 0L15 8.586l1.293-1.293a1 1 0 111.414 1.414L16.414 10l1.293 1.293a1 1 0 01-1.414 1.414L15 11.414l-1.293 1.293a1 1 0 01-1.414-1.414L13.586 10l-1.293-1.293a1 1 0 010-1.414z" clipRule="evenodd" />
-                    </svg>
-                  )}
+                  <span className="text-xs font-medium">{playbackRate}x</span>
                 </button>
-                <input 
-                  type="range" 
-                  className="w-16 h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer"
-                  min="0"
-                  max="1"
-                  step="0.01"
-                  value={volume}
-                  onChange={(e) => {
-                    const newVolume = parseFloat(e.target.value);
-                    setVolume(newVolume);
-                    setIsMuted(newVolume === 0);
-                    // 重置控制组件隐藏定时器
-                    showControlsWithTimeout();
-                  }}
-                  onMouseDown={(e) => {
-                    e.stopPropagation();
-                    // 重置控制组件隐藏定时器
-                    showControlsWithTimeout();
-                  }}
-                  onTouchStart={(e) => {
-                    e.stopPropagation();
-                    // 重置控制组件隐藏定时器
-                    showControlsWithTimeout();
-                  }}
-                />
+                
+                {/* 播放速度菜单 */}
+                {showPlaybackMenu && (
+                  <motion.div 
+                    className="absolute bottom-full right-0 mb-2 bg-black/90 backdrop-blur-lg rounded-lg shadow-xl border border-white/10 overflow-hidden z-20"
+                    initial={{ opacity: 0, y: 10, scale: 0.95 }}
+                    animate={{ opacity: 1, y: 0, scale: 1 }}
+                    exit={{ opacity: 0, y: 10, scale: 0.95 }}
+                    transition={{ duration: 200, ease: "easeOut" }}
+                  >
+                    {[0.5, 0.75, 1, 1.25, 1.5, 1.75, 2].map((rate) => (
+                      <button
+                        key={rate}
+                        className={`px-3 py-1.5 text-left text-xs text-white hover:bg-orange-500/20 transition-colors duration-200 ${playbackRate === rate ? 'bg-orange-500/30 font-medium' : ''}`}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setPlaybackRate(rate);
+                          setShowPlaybackMenu(false);
+                          // 重置控制组件隐藏定时器
+                          showControlsWithTimeout();
+                        }}
+                      >
+                        {rate}x
+                      </button>
+                    ))}
+                  </motion.div>
+                )}
               </div>
               
               {/* 画中画按钮 */}
               <button 
-                className="w-8 h-8 text-white hover:text-primary-400 transition-colors duration-200 flex items-center justify-center"
+                className="w-8 h-8 rounded-full bg-white/10 hover:bg-white/20 text-white flex items-center justify-center transition-all duration-300 ease-out hover:scale-105 active:scale-95 backdrop-blur-sm"
                 onClick={(e) => {
                   e.stopPropagation();
                   togglePIP();
@@ -730,14 +865,14 @@ export default function VideoPlayer({ videoUrl, className = '', posterUrl }: Vid
                 }}
                 title={pip ? "退出画中画" : "画中画模式"}
               >
-                <svg className="w-6 h-6" fill="currentColor" viewBox="0 0 20 20">
+                <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
                   <path d="M10 3a1 1 0 011 1v6a1 1 0 11-2 0V4a1 1 0 011-1zM3 10a1 1 0 011-1h6a1 1 0 110 2H4a1 1 0 01-1-1zM16 10a1 1 0 011-1h2a1 1 0 110 2h-2a1 1 0 01-1-1zM10 16a1 1 0 011-1v2a1 1 0 11-2 0v-2a1 1 0 011-1zM6.293 16.293a1 1 0 011.414 0l2-2a1 1 0 011.414 1.414l-2 2a1 1 0 01-1.414-1.414zM13.707 3.707a1 1 0 011.414 0l2 2a1 1 0 01-1.414 1.414l-2-2a1 1 0 010-1.414z" />
                 </svg>
               </button>
               
               {/* 全屏按钮 */}
               <button 
-                className="w-8 h-8 text-white hover:text-primary-400 transition-colors duration-200 flex items-center justify-center"
+                className="w-8 h-8 rounded-full bg-white/10 hover:bg-white/20 text-white flex items-center justify-center transition-all duration-300 ease-out hover:scale-105 active:scale-95 backdrop-blur-sm"
                 onClick={(e) => {
                   e.stopPropagation();
                   const container = containerRef.current;
@@ -757,7 +892,7 @@ export default function VideoPlayer({ videoUrl, className = '', posterUrl }: Vid
                 }}
                 title="全屏模式"
               >
-                <svg className="w-6 h-6" fill="currentColor" viewBox="0 0 20 20">
+                <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
                   <path d="M10 3.586L13.586 7H10V3.586zM14 8H10V4l4 4zM9.414 13L6 9.414V13H9.414zM4 12h4v4L4 12z" />
                 </svg>
               </button>
@@ -766,23 +901,31 @@ export default function VideoPlayer({ videoUrl, className = '', posterUrl }: Vid
         </div>
 
         {/* 自定义影院模式按钮 - 悬浮在右上角 */}
-        <div className={`absolute top-4 right-4 z-50 ${showControls ? 'opacity-100' : 'opacity-0'} group-hover:opacity-100 transition-opacity duration-300 pointer-events-auto`}>
-           <button 
+        <motion.div 
+          className={`absolute top-4 right-4 z-50 ${showControls ? 'opacity-100' : 'opacity-0'} group-hover:opacity-100 pointer-events-auto`}
+          initial={{ opacity: 0, scale: 0.8 }}
+          animate={{ opacity: showControls ? 1 : 0, scale: showControls ? 1 : 0.8 }}
+          transition={{ duration: 300, ease: "easeOut" }}
+        >
+           <motion.button 
               type="button"
-              className="bg-black/50 hover:bg-primary-500/90 text-white p-2.5 rounded-full backdrop-blur-md border border-primary-300/30 shadow-lg transition-all duration-300 transform hover:scale-110 active:scale-95"
+              className="bg-black/50 hover:bg-orange-500/90 text-white p-2 rounded-full backdrop-blur-md border border-orange-300/30 shadow-lg"
               onClick={(e) => {
                 e.stopPropagation();
                 handleFullscreenToggle();
               }}
-              title={isEnlarged ? "退出影院模式" : "影院模式"}
+              title={fullscreen ? "退出影院模式" : "影院模式"}
+              whileHover={{ scale: 1.1, boxShadow: '0 0 15px rgba(249, 115, 22, 0.5)' }}
+              whileTap={{ scale: 0.95 }}
+              transition={{ duration: 300, ease: "easeOut" }}
             >
-              {isEnlarged ? (
-                <ShrinkIcon className="w-5 h-5 text-primary-100" />
+              {fullscreen ? (
+                <ShrinkIcon className="w-4 h-4 text-white" />
               ) : (
-                <ExpandIcon className="w-5 h-5 text-primary-100" />
+                <ExpandIcon className="w-4 h-4 text-white" />
               )}
-            </button>
-        </div>
+            </motion.button>
+        </motion.div>
       </div>
     </>
   );

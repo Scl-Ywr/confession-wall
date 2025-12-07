@@ -153,31 +153,37 @@ const LikeButton: React.FC<LikeButtonProps> = ({
   const handleLike = useCallback(async () => {
     if (isLoading) return;
     
-    setIsLoading(true);
-    setIsAnimating(true);
-    setError(null); // 清除之前的错误
-    
     const prevLiked = liked;
     const prevLikesCount = likesCount;
     const newLiked = !prevLiked;
     // 确保newLikesCount永远不小于0
     const newLikesCount = Math.max(0, prevLikesCount + (prevLiked ? -1 : 1));
     
+    // 立即开始动画，减少延迟
+    setIsAnimating(true);
+    // 乐观更新UI
+    setLiked(newLiked);
+    setLikesCount(newLikesCount);
+    // 设置loading状态
+    setIsLoading(true);
+    setError(null); // 清除之前的错误
+    
     // 调用点赞开始回调
     onLikeStart?.();
     
     try {
-      // 乐观更新UI
-      setLiked(newLiked);
-      setLikesCount(newLikesCount);
-      
       // 调用API
       const result = await confessionService.toggleLike(confessionId);
       
       if (result.success) {
         // 使用invalidateQueries让React Query自动重新获取最新数据，确保数据一致性
-        await queryClient.invalidateQueries({ queryKey: ['confessions'] });
-        await queryClient.invalidateQueries({ queryKey: ['search'] });
+        // 不等待刷新完成，让刷新在后台进行，减少UI延迟
+        queryClient.invalidateQueries({ queryKey: ['confessions'] }).catch(err => {
+          console.error('Error invalidating confessions query:', err);
+        });
+        queryClient.invalidateQueries({ queryKey: ['search'] }).catch(err => {
+          console.error('Error invalidating search query:', err);
+        });
         
         // 回调通知父组件
         onLikeStatusChange?.(newLiked, newLikesCount);
@@ -205,8 +211,6 @@ const LikeButton: React.FC<LikeButtonProps> = ({
         
         // 调用点赞失败回调
         onLikeError?.(likeError);
-        
-        return; // 终止后续执行
       }
     } catch (error) {
       // 处理意外的错误情况
@@ -226,9 +230,10 @@ const LikeButton: React.FC<LikeButtonProps> = ({
       // 调用点赞失败回调
       onLikeError?.(likeError);
     } finally {
+      // 确保在finally块中设置isLoading为false，无论前面的代码是否出错
       setIsLoading(false);
       // 动画结束后重置动画状态
-      setTimeout(() => setIsAnimating(false), 500);
+      setTimeout(() => setIsAnimating(false), 300);
     }
   }, [liked, likesCount, confessionId, isLoading, onLikeStatusChange, onLikeStart, onLikeSuccess, onLikeError, queryClient]);
   
@@ -303,29 +308,34 @@ const LikeButton: React.FC<LikeButtonProps> = ({
         {/* 点赞状态切换动画 */}
         <div className="relative">
           {/* 心形图标 */}
-          <motion.div
-            animate={
-              isAnimating
-                ? {
-                    scale: [1, 1.3, 0.9, 1.2, 1],
-                    rotate: [0, -5, 5, -5, 0],
-                    transition: {
-                      duration: 0.6,
-                      ease: "easeInOut"
+          <AnimatePresence mode="wait">
+            <motion.div
+              key={liked ? 'solid' : 'outline'}
+              initial={{ opacity: 0, scale: 0.9 }}
+              animate={
+                isAnimating
+                  ? {
+                      scale: [1, 1.2, 1],
+                      opacity: 1,
+                      transition: {
+                        duration: 0.2,
+                        ease: "easeInOut"
+                      }
                     }
-                  }
-                : { scale: 1, rotate: 0 }
-            }
-            whileHover={{ scale: 1.1 }}
-            whileTap={{ scale: 0.9 }}
-            className="relative"
-          >
-            {liked ? (
-              <HeartIconSolid style={{ ...computedIconSize, color }} />
-            ) : (
-              <HeartIconOutline style={{ ...computedIconSize, color: '#9ca3af' }} />
-            )}
-          </motion.div>
+                  : { scale: 1, opacity: 1 }
+              }
+              exit={{ opacity: 0, scale: 0.9 }}
+              whileHover={{ scale: 1.1 }}
+              whileTap={{ scale: 0.9 }}
+              className="flex items-center justify-center"
+            >
+              {liked ? (
+                <HeartIconSolid style={{ ...computedIconSize, color }} />
+              ) : (
+                <HeartIconOutline style={{ ...computedIconSize, color: '#9ca3af' }} />
+              )}
+            </motion.div>
+          </AnimatePresence>
           
           {/* 点赞动画效果 */}
           <AnimatePresence>
@@ -336,7 +346,7 @@ const LikeButton: React.FC<LikeButtonProps> = ({
                 animate={{ 
                   scale: [0, 1.2, 1], 
                   opacity: [0, 1, 0],
-                  transition: { duration: 0.6 }
+                  transition: { duration: 0.2 }
                 }}
                 exit={{ scale: 0, opacity: 0 }}
               >

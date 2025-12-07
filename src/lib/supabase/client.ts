@@ -17,6 +17,12 @@ export const supabase = createClient(
     realtime: {
       // 设置心跳间隔
       heartbeatIntervalMs: 30000
+    },
+    storage: {
+      // 配置存储的缓存控制头
+      cacheControl: 'public, max-age=31536000, immutable',
+      // 设置请求超时时间
+      timeout: 30000,
     }
   }
 );

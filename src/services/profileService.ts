@@ -1,5 +1,7 @@
 import { supabase } from '@/lib/supabase/client';
 import { Profile } from '@/types/confession';
+import { getCache, setCache, removeCache } from '@/utils/cache';
+import { getUserProfileCacheKey, EXPIRY } from '@/lib/redis/cache';
 
 export interface ProfileUpdateData {
   username?: string;
@@ -19,8 +21,15 @@ export const profileService = {
     if (!userId) {
       throw new Error('User not authenticated');
     }
+
+    // Try to get profile from cache first
+    const cacheKey = getUserProfileCacheKey(userId);
+    const cachedProfile = await getCache<Profile>(cacheKey);
+    if (cachedProfile) {
+      return cachedProfile;
+    }
     
-    // Try to get existing profile
+    // Try to get existing profile from database
     const { data, error } = await supabase
       .from('profiles')
       .select('*')
@@ -31,8 +40,9 @@ export const profileService = {
       throw error;
     }
     
-    // If profile exists, return it
+    // If profile exists, cache it and return
     if (data) {
+      await setCache(cacheKey, data, EXPIRY.MEDIUM);
       return data as Profile;
     }
     
@@ -54,12 +64,22 @@ export const profileService = {
     if (createError) {
       throw createError;
     }
+
+    // Cache the newly created profile
+    await setCache(cacheKey, newProfile, EXPIRY.MEDIUM);
     
     return newProfile as Profile;
   },
 
   // Get a user's profile by ID
   getProfileById: async (userId: string): Promise<Profile | null> => {
+    // Try to get profile from cache first
+    const cacheKey = getUserProfileCacheKey(userId);
+    const cachedProfile = await getCache<Profile>(cacheKey);
+    if (cachedProfile) {
+      return cachedProfile;
+    }
+
     const { data, error } = await supabase
       .from('profiles')
       .select('*')
@@ -69,6 +89,9 @@ export const profileService = {
     if (error) {
       throw error;
     }
+
+    // Cache the profile
+    await setCache(cacheKey, data, EXPIRY.MEDIUM);
 
     return data as Profile;
   },
@@ -83,6 +106,7 @@ export const profileService = {
     // 解码URL编码的用户名
     const decodedUsername = decodeURIComponent(username);
 
+    // Note: 不缓存按用户名查询的结果，因为用户名可能会变化
     const { data, error } = await supabase
       .from('profiles')
       .select('*')
@@ -92,6 +116,12 @@ export const profileService = {
     if (error) {
       console.error('获取用户资料失败:', error);
       return null;
+    }
+
+    // 如果找到用户，缓存其按ID查询的结果
+    if (data) {
+      const cacheKey = getUserProfileCacheKey(data.id);
+      await setCache(cacheKey, data, EXPIRY.MEDIUM);
     }
 
     return data as Profile;
@@ -156,24 +186,33 @@ export const profileService = {
       throw new Error(`更新个人资料失败: ${updateError.message} (${updateError.code || 'Unknown error'})`);
     }
     
+    let updatedProfile;
     // 如果更新成功，返回更新后的资料
     if (updateResult && updateResult.length > 0) {
-      return updateResult[0] as Profile;
+      updatedProfile = updateResult[0] as Profile;
+    } else {
+      // 如果没有返回结果，重新获取用户资料
+      const { data: fetchedUpdatedProfile, error: fetchUpdatedError } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('id', userId)
+        .single();
+
+      if (fetchUpdatedError) {
+        // 返回当前资料，因为更新已经成功
+        return currentProfile as Profile;
+      }
+      updatedProfile = fetchedUpdatedProfile as Profile;
     }
+
+    // Invalidate cache
+    const cacheKey = getUserProfileCacheKey(userId);
+    await removeCache(cacheKey);
     
-    // 如果没有返回结果，重新获取用户资料
-    const { data: updatedProfile, error: fetchUpdatedError } = await supabase
-      .from('profiles')
-      .select('*')
-      .eq('id', userId)
-      .single();
+    // Cache the updated profile
+    await setCache(cacheKey, updatedProfile, EXPIRY.MEDIUM);
 
-    if (fetchUpdatedError) {
-      // 返回当前资料，因为更新已经成功
-      return currentProfile as Profile;
-    }
-
-    return updatedProfile as Profile;
+    return updatedProfile;
   },
 
   // Upload avatar image
@@ -203,6 +242,10 @@ export const profileService = {
     const { data: urlData } = supabase.storage
       .from('confession_images')
       .getPublicUrl(filePath);
+
+    // Invalidate user profile cache since avatar has changed
+    const cacheKey = getUserProfileCacheKey(userId);
+    await removeCache(cacheKey);
 
     return urlData.publicUrl;
   },

@@ -2,175 +2,277 @@ import { supabase } from '@/lib/supabase/client';
 import { Profile } from '@/types/confession';
 import { Confession, ConfessionFormData, Comment, CommentFormData, ConfessionImage } from '@/types/confession';
 import { profileService } from './profileService';
+import {
+  getCache,
+  setCache,
+  deleteCache,
+  getConfessionCacheKey,
+  getConfessionListCacheKey,
+  setNullCache,
+  acquireLock,
+  releaseLock,
+  EXPIRY
+} from '@/lib/redis/cache';
 
 export const confessionService = {
   // 获取表白列表
   getConfessions: async (page: number = 1, limit: number = 10): Promise<Confession[]> => {
-    // 1. 获取当前用户ID
-    const user = await supabase.auth.getUser();
-    const userId = user.data.user?.id;
-
-    // 2. 优化查询，包含likes_count字段
-    const { data: confessions, error: confessionsError } = await supabase
-      .from('confessions')
-      .select('id, content, is_anonymous, user_id, created_at, likes_count')
-      .order('created_at', { ascending: false })
-      .range((page - 1) * limit, page * limit - 1);
-
-    if (confessionsError) {
-      throw confessionsError;
+    // 生成缓存键
+    const cacheKey = getConfessionListCacheKey(page, limit);
+    
+    // 1. 尝试从缓存获取数据
+    const cachedData = await getCache<Confession[]>(cacheKey);
+    if (cachedData) {
+      return cachedData;
     }
 
-    // 处理confessions为null或undefined的情况
-    if (!confessions) {
+    // 2. 缓存穿透防护：检查是否是空值缓存
+    const nullCacheKey = `${cacheKey}:null`;
+    const isNullCached = await getCache<boolean>(nullCacheKey);
+    if (isNullCached) {
       return [];
     }
 
-    // 3. 获取所有表白的图片
-    const confessionIds = confessions.map(confession => confession.id);
-    const { data: images, error: imagesError } = await supabase
-      .from('confession_images')
-      .select('id, confession_id, image_url, file_type')
-      .in('confession_id', confessionIds);
-
-    if (imagesError) {
-      throw imagesError;
+    // 3. 缓存击穿防护：获取互斥锁
+    const lockKey = `${cacheKey}:lock`;
+    const acquiredLock = await acquireLock(lockKey);
+    
+    if (!acquiredLock) {
+      // 4. 获取锁失败，等待50-100ms后重试
+      await new Promise(resolve => setTimeout(resolve, Math.random() * 50 + 50));
+      return confessionService.getConfessions(page, limit);
     }
 
-    // 4. 获取所有相关用户的资料
-    const userIds = confessions
-      .filter(confession => confession.user_id)
-      .map(confession => confession.user_id)
-      .filter((id): id is string => !!id);
-    
-    const profilesMap: Record<string, {id: string; username: string; display_name: string; avatar_url: string | null}> = {};
-    if (userIds.length > 0) {
-      // 去重处理
-      const uniqueUserIds = [...new Set(userIds)];
-      
-      const { data: profiles, error: profilesError } = await supabase
-        .from('profiles')
-        .select('id, username, display_name, avatar_url')
-        .in('id', uniqueUserIds);
-      
-      if (profilesError) {
-        throw profilesError;
+    try {
+      // 5. 再次检查缓存（双重检查锁）
+      const doubleCheckCachedData = await getCache<Confession[]>(cacheKey);
+      if (doubleCheckCachedData) {
+        return doubleCheckCachedData;
       }
+
+      // 6. 获取当前用户ID
+      const user = await supabase.auth.getUser();
+      const userId = user.data.user?.id;
+
+      // 7. 优化查询，包含likes_count字段
+      const { data: confessions, error: confessionsError } = await supabase
+        .from('confessions')
+        .select('id, content, is_anonymous, user_id, created_at, likes_count')
+        .order('created_at', { ascending: false })
+        .range((page - 1) * limit, page * limit - 1);
+
+      if (confessionsError) {
+        throw confessionsError;
+      }
+
+      // 处理confessions为null或undefined的情况
+      if (!confessions) {
+        // 8. 缓存穿透防护：设置空值缓存
+        await setNullCache(nullCacheKey);
+        return [];
+      }
+
+      const confessionIds = confessions.map(confession => confession.id);
       
-      // 将profile按user_id分组
-      profiles?.forEach(profile => {
+      // 9. 并行执行多个查询，减少整体加载时间
+      const [images, profiles, userLikes] = await Promise.all([
+        // 获取所有表白的图片
+        supabase
+          .from('confession_images')
+          .select('id, confession_id, image_url, file_type')
+          .in('confession_id', confessionIds),
+        
+        // 获取所有相关用户的资料
+        (async () => {
+          const userIds = confessions
+            .filter(confession => confession.user_id)
+            .map(confession => confession.user_id)
+            .filter((id): id is string => !!id);
+          
+          if (userIds.length === 0) return { data: [], error: null };
+          
+          // 去重处理
+          const uniqueUserIds = [...new Set(userIds)];
+          
+          return supabase
+            .from('profiles')
+            .select('id, username, display_name, avatar_url')
+            .in('id', uniqueUserIds);
+        })(),
+        
+        // 检查当前用户是否点赞了这些表白
+        (async () => {
+          if (!userId) return { data: [], error: null };
+          
+          // 只获取当前页表白的点赞记录，减少数据传输
+          return supabase
+            .from('likes')
+            .select('id, confession_id')
+            .eq('user_id', userId)
+            .in('confession_id', confessionIds);
+        })()
+      ]);
+
+      // 处理错误
+      if (images.error) throw images.error;
+      if (profiles.error) throw profiles.error;
+      if (userLikes.error) throw userLikes.error;
+
+      // 10. 将图片分组到对应的表白
+      const imagesByConfessionId = (images.data || []).reduce((acc: Record<string, Array<{id: string; image_url: string; file_type: string}>>, image: {id: string; confession_id: string; image_url: string; file_type: string}) => {
+        if (!acc[image.confession_id]) {
+          acc[image.confession_id] = [];
+        }
+        acc[image.confession_id].push({ id: image.id, image_url: image.image_url, file_type: image.file_type });
+        return acc;
+      }, {});
+
+      // 11. 将profile按user_id分组
+      const profilesMap: Record<string, {id: string; username: string; display_name: string; avatar_url: string | null}> = {};
+      profiles.data?.forEach(profile => {
         profilesMap[profile.id] = profile;
       });
-    }
 
-    // 5. 将图片分组到对应的表白
-    const imagesByConfessionId = (images || []).reduce((acc: Record<string, Array<{id: string; image_url: string; file_type: string}>>, image: {id: string; confession_id: string; image_url: string; file_type: string}) => {
-      if (!acc[image.confession_id]) {
-        acc[image.confession_id] = [];
-      }
-      acc[image.confession_id].push({ id: image.id, image_url: image.image_url, file_type: image.file_type });
-      return acc;
-    }, {});
+      // 12. 构建点赞映射
+      const likesMap: Record<string, boolean> = {};
+      userLikes.data?.forEach(like => {
+        if (like.confession_id) {
+          likesMap[like.confession_id] = true;
+        }
+      });
 
-    // 6. 检查当前用户是否点赞了这些表白
-    const likesMap: Record<string, boolean> = {};
-    
-    if (userId) {
-      // 批量获取当前用户的所有点赞记录，不限制confession_id
-      // 这样可以确保所有点赞记录都被正确映射
-      const { data: userLikes, error: userLikesError } = await supabase
-        .from('likes')
-        .select('id, confession_id')
-        .eq('user_id', userId);
+      // 13. 合并图片、profile和点赞状态到表白对象
+      const confessionsWithImages = confessions.map(confession => ({
+        ...confession,
+        profile: confession.user_id ? profilesMap[confession.user_id] : undefined,
+        images: imagesByConfessionId[confession.id] || [],
+        likes_count: Number(confession.likes_count) || 0, // 确保是数字类型，避免出现NaN
+        liked_by_user: likesMap[confession.id] || false
+      })) as Confession[];
+
+      // 14. 缓存雪崩防护：添加随机过期时间（5-10分钟）
+      const expiry = EXPIRY.MEDIUM + Math.random() * EXPIRY.MEDIUM;
       
-      if (!userLikesError && userLikes && userLikes.length > 0) {
-        // 修复：确保正确处理所有返回的点赞记录
-        userLikes.forEach(like => {
-          if (like.confession_id) {
-            likesMap[like.confession_id] = true;
-          }
-        });
-        
-        console.log('User likes:', userLikes);
-        console.log('Likes map:', likesMap);
-      }
+      // 15. 设置缓存
+      await setCache(cacheKey, confessionsWithImages, expiry);
+      
+      return confessionsWithImages;
+    } finally {
+      // 16. 释放互斥锁
+      await releaseLock(lockKey);
     }
-
-    // 7. 合并图片、profile和点赞状态到表白对象
-    const confessionsWithImages = confessions.map(confession => ({
-      ...confession,
-      profile: confession.user_id ? profilesMap[confession.user_id] : undefined,
-      images: imagesByConfessionId[confession.id] || [],
-      likes_count: Number(confession.likes_count) || 0, // 确保是数字类型，避免出现NaN
-      liked_by_user: likesMap[confession.id] || false
-    })) as Confession[];
-
-    return confessionsWithImages;
   },
 
   // 获取单个表白
   getConfession: async (id: string): Promise<Confession | null> => {
-    // 1. 获取当前用户ID
-    const user = await supabase.auth.getUser();
-    const userId = user.data.user?.id;
-
-    // 2. 优化查询，包含likes_count字段
-    const { data: confession, error: confessionError } = await supabase
-      .from('confessions')
-      .select('id, content, is_anonymous, user_id, created_at, likes_count')
-      .eq('id', id)
-      .single();
-
-    if (confessionError) {
-      throw confessionError;
+    // 生成缓存键
+    const cacheKey = getConfessionCacheKey(id);
+    
+    // 1. 尝试从缓存获取数据
+    const cachedData = await getCache<Confession>(cacheKey);
+    if (cachedData) {
+      return cachedData;
     }
 
-    // 3. 获取表白的图片
-    const { data: images, error: imagesError } = await supabase
-      .from('confession_images')
-      .select('id, image_url, file_type')
-      .eq('confession_id', id);
-
-    if (imagesError) {
-      throw imagesError;
+    // 2. 缓存穿透防护：检查是否是空值缓存
+    const nullCacheKey = `${cacheKey}:null`;
+    const isNullCached = await getCache<boolean>(nullCacheKey);
+    if (isNullCached) {
+      return null;
     }
 
-    // 4. 获取用户资料
-    let profile = undefined;
-    if (confession.user_id) {
-      const { data: profileData, error: profileError } = await supabase
-        .from('profiles')
-        .select('id, username, display_name, avatar_url')
-        .eq('id', confession.user_id)
+    // 3. 缓存击穿防护：获取互斥锁
+    const lockKey = `${cacheKey}:lock`;
+    const acquiredLock = await acquireLock(lockKey);
+    
+    if (!acquiredLock) {
+      // 4. 获取锁失败，等待50-100ms后重试
+      await new Promise(resolve => setTimeout(resolve, Math.random() * 50 + 50));
+      return confessionService.getConfession(id);
+    }
+
+    try {
+      // 5. 再次检查缓存（双重检查锁）
+      const doubleCheckCachedData = await getCache<Confession>(cacheKey);
+      if (doubleCheckCachedData) {
+        return doubleCheckCachedData;
+      }
+
+      // 6. 获取当前用户ID
+      const user = await supabase.auth.getUser();
+      const userId = user.data.user?.id;
+
+      // 7. 优化查询，包含likes_count字段
+      const { data: confession, error: confessionError } = await supabase
+        .from('confessions')
+        .select('id, content, is_anonymous, user_id, created_at, likes_count')
+        .eq('id', id)
         .single();
-      
-      if (!profileError && profileData) {
-        profile = profileData;
-      }
-    }
 
-    // 5. 检查当前用户是否点赞了该表白
-    let liked_by_user = false;
-    if (userId) {
-      const { data: like, error: likeError } = await supabase
-        .from('likes')
-        .select('id')
-        .eq('confession_id', id)
-        .eq('user_id', userId)
-        .maybeSingle();
-      
-      if (!likeError && like) {
-        liked_by_user = true;
+      if (confessionError) {
+        // 8. 缓存穿透防护：设置空值缓存
+        await setNullCache(nullCacheKey);
+        return null;
       }
-    }
 
-    return {
-      ...confession,
-      profile,
-      images: images as ConfessionImage[],
-      likes_count: Number(confession.likes_count) || 0, // 确保是数字类型，避免出现NaN
-      liked_by_user
-    } as Confession;
+      // 9. 获取表白的图片
+      const { data: images, error: imagesError } = await supabase
+        .from('confession_images')
+        .select('id, image_url, file_type')
+        .eq('confession_id', id);
+
+      if (imagesError) {
+        throw imagesError;
+      }
+
+      // 10. 获取用户资料
+      let profile = undefined;
+      if (confession.user_id) {
+        const { data: profileData, error: profileError } = await supabase
+          .from('profiles')
+          .select('id, username, display_name, avatar_url')
+          .eq('id', confession.user_id)
+          .single();
+        
+        if (!profileError && profileData) {
+          profile = profileData;
+        }
+      }
+
+      // 11. 检查当前用户是否点赞了该表白
+      let liked_by_user = false;
+      if (userId) {
+        const { data: like, error: likeError } = await supabase
+          .from('likes')
+          .select('id')
+          .eq('confession_id', id)
+          .eq('user_id', userId)
+          .maybeSingle();
+        
+        if (!likeError && like) {
+          liked_by_user = true;
+        }
+      }
+
+      const confessionData = {
+        ...confession,
+        profile,
+        images: images as ConfessionImage[],
+        likes_count: Number(confession.likes_count) || 0, // 确保是数字类型，避免出现NaN
+        liked_by_user
+      } as Confession;
+
+      // 12. 缓存雪崩防护：添加随机过期时间（30分钟-1小时）
+      const expiry = EXPIRY.MEDIUM + Math.random() * EXPIRY.MEDIUM;
+      
+      // 13. 设置缓存
+      await setCache(cacheKey, confessionData, expiry);
+      
+      return confessionData;
+    } finally {
+      // 14. 释放互斥锁
+      await releaseLock(lockKey);
+    }
   },
 
   // 上传图片到Supabase Storage
@@ -303,13 +405,23 @@ export const confessionService = {
       }
     }
 
-    return {
+    const newConfession = {
       ...confession,
       profile,
       images: mediaItems,
       likes_count: 0, // 新创建的表白，点赞数初始化为0
       liked_by_user: false // 新创建的表白，当前用户默认未点赞
     } as Confession;
+
+    // 3. 缓存更新：清除表白列表缓存，确保新表白能显示
+    // 清除前5页的缓存，覆盖常见访问场景
+    for (let page = 1; page <= 5; page++) {
+      const listCacheKey = getConfessionListCacheKey(page, 10);
+      await deleteCache(listCacheKey);
+      await deleteCache(`${listCacheKey}:null`);
+    }
+
+    return newConfession;
   },
 
   // 更新表白
@@ -364,12 +476,26 @@ export const confessionService = {
       }
     }
 
-    return {
+    const updatedConfession = {
       ...confession,
       profile,
       likes_count: Number(confession.likes_count) || 0, // 确保是数字类型，避免出现NaN
       liked_by_user
     } as Confession;
+
+    // 4. 缓存更新：清除该表白的缓存
+    const cacheKey = getConfessionCacheKey(id);
+    await deleteCache(cacheKey);
+    await deleteCache(`${cacheKey}:null`);
+
+    // 5. 清除表白列表缓存，确保更新后的数据能显示
+    for (let page = 1; page <= 5; page++) {
+      const listCacheKey = getConfessionListCacheKey(page, 10);
+      await deleteCache(listCacheKey);
+      await deleteCache(`${listCacheKey}:null`);
+    }
+
+    return updatedConfession;
   },
 
   // 删除表白
@@ -381,6 +507,18 @@ export const confessionService = {
 
     if (error) {
       throw error;
+    }
+
+    // 缓存更新：清除该表白的缓存
+    const cacheKey = getConfessionCacheKey(id);
+    await deleteCache(cacheKey);
+    await deleteCache(`${cacheKey}:null`);
+
+    // 清除表白列表缓存
+    for (let page = 1; page <= 5; page++) {
+      const listCacheKey = getConfessionListCacheKey(page, 10);
+      await deleteCache(listCacheKey);
+      await deleteCache(`${listCacheKey}:null`);
     }
   },
 
@@ -398,11 +536,24 @@ export const confessionService = {
       .insert({
         confession_id: confessionId,
         user_id: userId,
-      });
+      })
+      .select();
 
     if (error) {
       // 抛出所有错误，包括唯一约束冲突，由toggleLike函数处理
       throw error;
+    }
+
+    // 缓存更新：清除该表白的缓存
+    const cacheKey = getConfessionCacheKey(confessionId);
+    await deleteCache(cacheKey);
+    await deleteCache(`${cacheKey}:null`);
+
+    // 清除表白列表缓存，确保点赞数更新
+    for (let page = 1; page <= 5; page++) {
+      const listCacheKey = getConfessionListCacheKey(page, 10);
+      await deleteCache(listCacheKey);
+      await deleteCache(`${listCacheKey}:null`);
     }
   },
 
@@ -419,10 +570,23 @@ export const confessionService = {
       .from('likes')
       .delete()
       .eq('confession_id', confessionId)
-      .eq('user_id', userId);
+      .eq('user_id', userId)
+      .select();
 
     if (error) {
       throw error;
+    }
+
+    // 缓存更新：清除该表白的缓存
+    const cacheKey = getConfessionCacheKey(confessionId);
+    await deleteCache(cacheKey);
+    await deleteCache(`${cacheKey}:null`);
+
+    // 清除表白列表缓存，确保点赞数更新
+    for (let page = 1; page <= 5; page++) {
+      const listCacheKey = getConfessionListCacheKey(page, 10);
+      await deleteCache(listCacheKey);
+      await deleteCache(`${listCacheKey}:null`);
     }
   },
 
@@ -463,7 +627,8 @@ export const confessionService = {
         .insert({
           confession_id: confessionId,
           user_id: userId,
-        });
+        })
+        .select();
       
       if (insertError) {
         // 检查是否是唯一约束冲突（已点赞）
@@ -473,15 +638,30 @@ export const confessionService = {
             .from('likes')
             .delete()
             .eq('confession_id', confessionId)
-            .eq('user_id', userId);
+            .eq('user_id', userId)
+            .select();
           
           if (deleteError) {
-            throw deleteError;
+            console.error('Failed to unlike confession:', deleteError);
+            return { success: false, error: 'Failed to unlike confession' };
           }
         } else {
           // 其他插入错误
-          throw insertError;
+          console.error('Failed to like confession:', insertError);
+          return { success: false, error: 'Failed to like confession' };
         }
+      }
+      
+      // 缓存更新：清除该表白的缓存，不等待完成，让清除操作在后台进行
+      const cacheKey = getConfessionCacheKey(confessionId);
+      deleteCache(cacheKey).catch(err => console.error('Error deleting cache:', err));
+      deleteCache(`${cacheKey}:null`).catch(err => console.error('Error deleting null cache:', err));
+
+      // 清除表白列表缓存，确保点赞数更新，不等待完成
+      for (let page = 1; page <= 5; page++) {
+        const listCacheKey = getConfessionListCacheKey(page, 10);
+        deleteCache(listCacheKey).catch(err => console.error('Error deleting list cache:', err));
+        deleteCache(`${listCacheKey}:null`).catch(err => console.error('Error deleting list null cache:', err));
       }
       
       return { success: true };
@@ -493,6 +673,7 @@ export const confessionService = {
         ? JSON.stringify(error) 
         : String(error);
       
+      console.error('Failed to toggle like:', error);
       return { 
         success: false, 
         error: `Failed to toggle like: ${errorMessage}` 

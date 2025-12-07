@@ -12,6 +12,8 @@ import {
   NotificationType,
   Profile
 } from '@/types/chat';
+import { getCache, setCache, removeCache } from '@/utils/cache';
+import { getUserProfileCacheKey, EXPIRY } from '@/lib/redis/cache';
 
 // 创建通知的辅助函数
 const createNotification = async (
@@ -580,7 +582,15 @@ export const chatService = {
       }
       
       const userId = user.data.user.id;
-
+      
+      // 生成缓存键
+      const cacheKey = `chat:friends:${userId}`;
+      
+      // 尝试从缓存获取
+      const cachedFriends = await getCache<Friendship[]>(cacheKey);
+      if (cachedFriends) {
+        return cachedFriends;
+      }
 
       // 查询好友关系
       const { data: friendships, error: friendshipsError } = await supabase
@@ -593,16 +603,14 @@ export const chatService = {
         throw new Error(`Failed to fetch friends: ${friendshipsError.message || 'Unknown error'}`);
       }
 
-
-
-      // 如果没有好友关系，直接返回空数组
+      // 如果没有好友关系，缓存空数组并返回
       if (!friendships || friendships.length === 0) {
+        await setCache(cacheKey, [], EXPIRY.SHORT);
         return [] as Friendship[];
       }
 
       // 获取所有好友的 ID，确保没有重复
       const friendIds = [...new Set(friendships.map(friendship => friendship.friend_id))];
-
 
       // 初始化好友资料对象
       const friendsProfiles: Record<string, Profile> = {};
@@ -610,24 +618,31 @@ export const chatService = {
       // 逐个查询好友资料，避免 in 查询可能出现的问题
       for (const friendId of friendIds) {
         try {
-
-          const { data: profile, error: profileError } = await supabase
-            .from('profiles')
-            .select('id, username, display_name, avatar_url, online_status, last_seen')
-            .eq('id', friendId)
-            .single();
+          // 尝试从缓存获取好友资料
+          const profileCacheKey = getUserProfileCacheKey(friendId);
+          const cachedProfile = await getCache<Profile>(profileCacheKey);
           
-          if (profileError) {
-            // ignore error
-          } else if (profile) {
-            friendsProfiles[friendId] = profile;
+          if (cachedProfile) {
+            friendsProfiles[friendId] = cachedProfile;
+          } else {
+            const { data: profile, error: profileError } = await supabase
+              .from('profiles')
+              .select('id, username, display_name, avatar_url, online_status, last_seen')
+              .eq('id', friendId)
+              .single();
+            
+            if (profileError) {
+              // ignore error
+            } else if (profile) {
+              friendsProfiles[friendId] = profile;
+              // 缓存好友资料
+              await setCache(profileCacheKey, profile, EXPIRY.MEDIUM);
+            }
           }
         } catch {
           // ignore error
         }
       }
-
-
 
       // 查询每个好友的未读消息数量
       const { data: chatMessages } = await supabase
@@ -636,8 +651,6 @@ export const chatService = {
         .in('sender_id', friendIds)
         .eq('receiver_id', userId)
         .eq('is_read', false);
-
-
 
       // 计算每个好友的未读消息数量
       const unreadCounts: Record<string, number> = {};
@@ -654,6 +667,8 @@ export const chatService = {
         unread_count: unreadCounts[friendship.friend_id] || 0
       }));
 
+      // 缓存好友列表，设置较短的过期时间（5分钟）
+      await setCache(cacheKey, friendsWithProfiles, EXPIRY.SHORT);
 
       return friendsWithProfiles as Friendship[];
     } catch {
@@ -732,6 +747,12 @@ export const chatService = {
         return cachedMessages;
       });
 
+      // 清除好友列表缓存，确保未读消息数量更新
+      const friendListCacheKey = `chat:friends:${senderId}`;
+      const receiverFriendListCacheKey = `chat:friends:${receiverId}`;
+      await removeCache(friendListCacheKey);
+      await removeCache(receiverFriendListCacheKey);
+
       // 返回包含发送者资料的消息
       return completeMessage;
     } catch (error) {
@@ -759,7 +780,7 @@ export const chatService = {
       let cachedMessages: ChatMessage[] = [];
       if (offset === 0) {
         const cacheKey = getChatCacheKey(userId, otherUserId, false);
-        const cachedData = getCache<ChatMessage[]>(cacheKey);
+        const cachedData = await getCache<ChatMessage[]>(cacheKey);
         if (cachedData) {
           cachedMessages = cachedData;
         }
@@ -1062,6 +1083,15 @@ export const chatService = {
       
       const userId = user.data.user.id;
       
+      // 生成缓存键
+      const cacheKey = `chat:groups:${userId}`;
+      
+      // 尝试从缓存获取群列表
+      const cachedGroups = await getCache<Group[]>(cacheKey);
+      if (cachedGroups) {
+        return cachedGroups;
+      }
+      
       // 查询用户所在的群聊成员关系
       const { data: groupMemberships, error: membershipError } = await supabase
         .from('group_members')
@@ -1073,6 +1103,7 @@ export const chatService = {
       }
       
       if (!groupMemberships || groupMemberships.length === 0) {
+        await setCache(cacheKey, [], EXPIRY.SHORT);
         return [];
       }
       
@@ -1088,6 +1119,7 @@ export const chatService = {
       
       if (groupsError) {
         console.error('Error getting groups:', groupsError);
+        await setCache(cacheKey, [], EXPIRY.SHORT);
         return [];
       }
       
@@ -1155,9 +1187,9 @@ export const chatService = {
         unread_count: unreadCountsMap[group.id] || 0
       })) || [];
       
+      // 缓存群列表，设置较短的过期时间（5分钟）
+      await setCache(cacheKey, groupsWithUnreadCounts, EXPIRY.SHORT);
 
-
-      
       return groupsWithUnreadCounts as Group[];
     } catch (error) {
       console.error('Error in getGroups:', error);
@@ -1168,6 +1200,15 @@ export const chatService = {
   // 获取单个群信息
   getGroup: async (groupId: string): Promise<Group | null> => {
     try {
+      // 生成缓存键
+      const cacheKey = `chat:group:${groupId}`;
+      
+      // 尝试从缓存获取群信息
+      const cachedGroup = await getCache<Group>(cacheKey);
+      if (cachedGroup) {
+        return cachedGroup;
+      }
+      
       // 从数据库中获取实际的群聊信息
       const { data: group, error } = await supabase
         .from('groups')
@@ -1178,7 +1219,7 @@ export const chatService = {
       if (error) {
         console.error('Error getting group:', error);
         // 如果获取失败，返回一个包含 groupId 的默认群对象
-        return {
+        const defaultGroup = {
           id: groupId,
           name: `群聊 ${groupId.substring(0, 8)}`, // 使用 groupId 的前 8 个字符作为默认名称
           description: '',
@@ -1188,13 +1229,21 @@ export const chatService = {
           created_at: new Date().toISOString(),
           updated_at: new Date().toISOString()
         } as Group;
+        
+        // 缓存默认群对象，避免频繁查询
+        await setCache(cacheKey, defaultGroup, EXPIRY.MEDIUM);
+        
+        return defaultGroup;
       }
 
+      // 缓存群信息
+      await setCache(cacheKey, group, EXPIRY.MEDIUM);
+      
       return group as Group;
     } catch (error) {
       console.error('Error in getGroup:', error);
       // 返回一个包含 groupId 的默认群对象，避免页面崩溃
-      return {
+      const defaultGroup = {
         id: groupId,
         name: `群聊 ${groupId.substring(0, 8)}`, // 使用 groupId 的前 8 个字符作为默认名称
         description: '',
@@ -1204,12 +1253,27 @@ export const chatService = {
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString()
       } as Group;
+      
+      // 缓存默认群对象，避免频繁查询
+      const cacheKey = `chat:group:${groupId}`;
+      await setCache(cacheKey, defaultGroup, EXPIRY.MEDIUM);
+      
+      return defaultGroup;
     }
   },
 
   // 获取群成员列表
   getGroupMembers: async (groupId: string): Promise<GroupMember[]> => {
     try {
+      // 生成缓存键
+      const cacheKey = `chat:group:${groupId}:members`;
+      
+      // 尝试从缓存获取群成员列表
+      const cachedMembers = await getCache<GroupMember[]>(cacheKey);
+      if (cachedMembers) {
+        return cachedMembers;
+      }
+      
       // 先获取群成员基本信息
       const { data: members, error } = await supabase
         .from('group_members')
@@ -1223,34 +1287,57 @@ export const chatService = {
       }
 
       if (!members || members.length === 0) {
+        await setCache(cacheKey, [], EXPIRY.SHORT);
         return members as GroupMember[];
       }
 
       // 获取所有成员的用户ID
       const userIds = members.map(member => member.user_id);
       
-      // 单独获取所有用户的资料，包含在线状态
-      const { data: profiles, error: profilesError } = await supabase
-        .from('profiles')
-        .select('id, username, display_name, avatar_url, online_status, last_seen')
-        .in('id', userIds);
+      // 初始化成员资料对象
+      const memberProfiles: Record<string, Profile> = {};
+      
+      // 尝试从缓存获取成员资料
+      for (const userId of userIds) {
+        const profileCacheKey = getUserProfileCacheKey(userId);
+        const cachedProfile = await getCache<Profile>(profileCacheKey);
+        if (cachedProfile) {
+          memberProfiles[userId] = cachedProfile;
+        }
+      }
+      
+      // 获取缓存中没有的成员资料
+      const uncachedUserIds = userIds.filter(userId => !memberProfiles[userId]);
+      if (uncachedUserIds.length > 0) {
+        // 单独获取所有未缓存用户的资料，包含在线状态
+        const { data: profiles, error: profilesError } = await supabase
+          .from('profiles')
+          .select('id, username, display_name, avatar_url, online_status, last_seen')
+          .in('id', uncachedUserIds);
 
-      if (profilesError) {
-        console.error('Error getting profiles for group members:', profilesError);
-        // 即使获取用户资料失败，也返回群成员基本信息
-        return members as GroupMember[];
+        if (!profilesError && profiles) {
+          // 缓存新获取的用户资料
+          for (const profile of profiles) {
+            const profileCacheKey = getUserProfileCacheKey(profile.id);
+            await setCache(profileCacheKey, profile, EXPIRY.MEDIUM);
+            memberProfiles[profile.id] = profile;
+          }
+        }
       }
 
       // 将用户资料映射到群成员信息中
       const membersWithProfiles = members.map(member => {
         // 查找对应的用户资料
-        const profile = profiles?.find(p => p.id === member.user_id);
+        const profile = memberProfiles[member.user_id];
         return {
           ...member,
           user_profile: profile // 将用户资料添加到群成员对象中
         };
       });
 
+      // 缓存群成员列表，设置较短的过期时间（5分钟）
+      await setCache(cacheKey, membersWithProfiles, EXPIRY.SHORT);
+      
       return membersWithProfiles as GroupMember[];
     } catch (error) {
       console.error('Error in getGroupMembers:', error);
@@ -1341,6 +1428,12 @@ export const chatService = {
           console.error('Error inserting group message read status:', insertError);
           // 继续执行，不中断发送消息流程
         }
+        
+        // 清除所有群成员的群列表缓存，确保未读消息数量更新
+        for (const member of groupMembers) {
+          const groupListCacheKey = `chat:groups:${member.user_id}`;
+          await removeCache(groupListCacheKey);
+        }
       }
 
     // 获取发送者资料
@@ -1369,6 +1462,10 @@ export const chatService = {
       return cachedMessages;
     });
 
+    // 清除发送者的群列表缓存，确保未读消息数量更新
+    const senderGroupListCacheKey = `chat:groups:${senderId}`;
+    await removeCache(senderGroupListCacheKey);
+
     // 返回包含发送者资料的消息
     return completeMessage;
   },
@@ -1391,7 +1488,7 @@ export const chatService = {
       let cachedMessages: ChatMessage[] = [];
       if (offset === 0) {
         const cacheKey = getChatCacheKey(userId, groupId, true);
-        const cachedData = getCache<ChatMessage[]>(cacheKey);
+        const cachedData = await getCache<ChatMessage[]>(cacheKey);
         if (cachedData) {
           cachedMessages = cachedData;
         }
@@ -1421,28 +1518,41 @@ export const chatService = {
 
       // 获取所有发送者的ID
       const senderIds = [...new Set(chatMessages.map(msg => msg.sender_id))];
-
-      // 单独获取发送者的资料，包含在线状态
-      const { data: profiles, error: profilesError } = await supabase
-        .from('profiles')
-        .select('id, username, display_name, avatar_url, online_status, last_seen')
-        .in('id', senderIds);
-
-      if (profilesError) {
-        console.error('Error getting sender profiles:', profilesError.message || JSON.stringify(profilesError));
-        // 即使获取不到资料，也返回消息
-        const result = chatMessages as ChatMessage[];
-        // 如果是初始加载，缓存结果
-        if (offset === 0) {
-          const cacheKey = getChatCacheKey(userId, groupId, true);
-          setCache(cacheKey, result);
+      
+      // 初始化发送者资料对象
+      const senderProfiles: Record<string, Profile> = {};
+      
+      // 尝试从缓存获取发送者资料
+      for (const senderId of senderIds) {
+        const profileCacheKey = getUserProfileCacheKey(senderId);
+        const cachedProfile = await getCache<Profile>(profileCacheKey);
+        if (cachedProfile) {
+          senderProfiles[senderId] = cachedProfile;
         }
-        return result;
+      }
+      
+      // 获取缓存中没有的发送者资料
+      const uncachedSenderIds = senderIds.filter(senderId => !senderProfiles[senderId]);
+      if (uncachedSenderIds.length > 0) {
+        // 单独获取发送者的资料，包含在线状态
+        const { data: profiles, error: profilesError } = await supabase
+          .from('profiles')
+          .select('id, username, display_name, avatar_url, online_status, last_seen')
+          .in('id', uncachedSenderIds);
+
+        if (!profilesError && profiles) {
+          // 缓存新获取的发送者资料
+          for (const profile of profiles) {
+            const profileCacheKey = getUserProfileCacheKey(profile.id);
+            await setCache(profileCacheKey, profile, EXPIRY.MEDIUM);
+            senderProfiles[profile.id] = profile;
+          }
+        }
       }
 
       // 将发送者资料合并到消息中
       const messagesWithProfiles = chatMessages.map(msg => {
-        const senderProfile = profiles?.find(profile => profile.id === msg.sender_id);
+        const senderProfile = senderProfiles[msg.sender_id];
         return {
           ...msg,
           sender_profile: senderProfile
@@ -1452,7 +1562,7 @@ export const chatService = {
       // 如果是初始加载，缓存结果
       if (offset === 0) {
         const cacheKey = getChatCacheKey(userId, groupId, true);
-        setCache(cacheKey, messagesWithProfiles);
+        await setCache(cacheKey, messagesWithProfiles);
       }
 
       // 与私聊一致，不反转消息顺序，保持API返回的顺序
