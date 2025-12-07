@@ -19,6 +19,9 @@ import redis from './client';
 // 缓存键前缀
 const CACHE_PREFIX = 'confession_wall:';
 
+// 受保护的系统键列表，这些键不会被意外清除
+const PROTECTED_KEYS = ['system:cache_version'];
+
 // 缓存数据结构
 interface CacheItem<T> {
   data: T;
@@ -34,6 +37,19 @@ interface CacheStatistics {
   requests: number;
   hitRate: number;
   lastUpdated: number;
+  totalKeys: number;
+  cacheSize: number;
+  averageHitTime: number;
+  averageMissTime: number;
+ 热点键: string[];
+  moduleStats: Record<string, { hits: number; misses: number; hitRate: number }>;
+  errorCount: number;
+  cacheOperations: {
+    get: number;
+    set: number;
+    delete: number;
+    clear: number;
+  };
 }
 
 /**
@@ -42,6 +58,40 @@ interface CacheStatistics {
 export class RedisCacheManager {
   private static instance: RedisCacheManager;
   private isInitialized: boolean = false;
+  
+  // 增强的统计属性
+  private stats: CacheStatistics = {
+    hits: 0,
+    misses: 0,
+    requests: 0,
+    hitRate: 0,
+    lastUpdated: Date.now(),
+    totalKeys: 0,
+    cacheSize: 0,
+    averageHitTime: 0,
+    averageMissTime: 0,
+    热点键: [],
+    moduleStats: {},
+    errorCount: 0,
+    cacheOperations: {
+      get: 0,
+      set: 0,
+      delete: 0,
+      clear: 0
+    }
+  };
+  
+  // 性能监控
+  private hitTimes: number[] = [];
+  private missTimes: number[] = [];
+  
+  // 操作计数
+  private operations = {
+    get: 0,
+    set: 0,
+    delete: 0,
+    clear: 0
+  };
 
   private constructor() {
     this.initialize();
@@ -126,43 +176,93 @@ export class RedisCacheManager {
   /**
    * 更新缓存统计
    */
-  private async updateStatistics(isHit: boolean): Promise<void> {
+  private async updateStatistics(isHit: boolean, startTime: number = Date.now(), key: string = ''): Promise<void> {
     if (!CACHE_STATISTICS.ENABLED || !redis) return;
 
     // 采样率控制
     if (Math.random() > CACHE_STATISTICS.SAMPLE_RATE) return;
 
+    const endTime = Date.now();
+    const duration = endTime - startTime;
     const statsKey = this.getFullCacheKey('statistics:cache:main');
     
     try {
       // 获取当前统计数据
       const statsStr = await redis.get(statsKey);
-      let stats: CacheStatistics = {
-        hits: 0,
-        misses: 0,
-        requests: 0,
-        hitRate: 0,
-        lastUpdated: Date.now()
-      };
-
+      
       if (statsStr) {
-        stats = JSON.parse(statsStr);
+        this.stats = JSON.parse(statsStr);
       }
 
       // 更新统计数据
-      stats.requests++;
+      this.stats.requests++;
+      this.operations.get++;
+      
       if (isHit) {
-        stats.hits++;
+        this.stats.hits++;
+        this.hitTimes.push(duration);
+        // 只保留最近100个记录
+        if (this.hitTimes.length > 100) {
+          this.hitTimes.shift();
+        }
       } else {
-        stats.misses++;
+        this.stats.misses++;
+        this.missTimes.push(duration);
+        // 只保留最近100个记录
+        if (this.missTimes.length > 100) {
+          this.missTimes.shift();
+        }
       }
-      stats.hitRate = stats.requests > 0 ? stats.hits / stats.requests : 0;
-      stats.lastUpdated = Date.now();
+      
+      // 更新平均响应时间
+      this.stats.averageHitTime = this.hitTimes.length > 0 
+        ? this.hitTimes.reduce((sum, time) => sum + time, 0) / this.hitTimes.length 
+        : 0;
+      this.stats.averageMissTime = this.missTimes.length > 0 
+        ? this.missTimes.reduce((sum, time) => sum + time, 0) / this.missTimes.length 
+        : 0;
+      
+      // 更新命中率
+      this.stats.hitRate = this.stats.requests > 0 ? this.stats.hits / this.stats.requests : 0;
+      
+      // 更新模块统计
+      const keyParts = key.split(':');
+      if (keyParts.length > 1) {
+        const moduleName = keyParts[0];
+        if (!this.stats.moduleStats[moduleName]) {
+          this.stats.moduleStats[moduleName] = { hits: 0, misses: 0, hitRate: 0 };
+        }
+        
+        const moduleStats = this.stats.moduleStats[moduleName];
+        if (isHit) {
+          moduleStats.hits++;
+        } else {
+          moduleStats.misses++;
+        }
+        moduleStats.hitRate = (moduleStats.hits + moduleStats.misses) > 0 
+          ? moduleStats.hits / (moduleStats.hits + moduleStats.misses) 
+          : 0;
+      }
+      
+      // 更新操作计数
+      this.stats.cacheOperations = this.operations;
+      
+      // 更新缓存键总数和大小
+      const keys = await redis.keys(`${CACHE_PREFIX}*`);
+      this.stats.totalKeys = keys.length;
+      
+      // 计算热点键
+      const hotKeys = await this.getHotKeys(5);
+      this.stats.热点键 = hotKeys;
+      
+      // 更新最后更新时间
+      this.stats.lastUpdated = Date.now();
 
       // 保存统计数据
-      await redis.set(statsKey, JSON.stringify(stats), 'PX', CACHE_EXPIRY.MEDIUM);
+      await redis.set(statsKey, JSON.stringify(this.stats), 'PX', CACHE_EXPIRY.MEDIUM);
     } catch (error) {
       console.error('Failed to update cache statistics:', error);
+      this.stats.errorCount++;
     }
   }
 
@@ -180,6 +280,9 @@ export class RedisCacheManager {
     try {
       await this.ensureInitialized();
       if (typeof window === 'undefined' && redis && this.isInitialized) {
+        // 记录缓存设置操作
+        console.log(`[RedisCache] Setting cache for key: ${key} with expiry: ${expiry}ms at ${new Date().toISOString()}`);
+        
         const cacheKey = this.getFullCacheKey(key);
         const adjustedExpiry = this.applyAvalancheProtection(expiry);
         
@@ -196,11 +299,12 @@ export class RedisCacheManager {
           await redis.set(cacheKey, JSON.stringify(cacheItem));
         }
         
+        console.log(`[RedisCache] Cache set successfully for key: ${key} at ${new Date().toISOString()}`);
         return true;
       }
       return false;
     } catch (error) {
-      console.error('Error setting cache:', error);
+      console.error(`[RedisCache] Error setting cache for key: ${key}`, error);
       return false;
     }
   }
@@ -215,9 +319,13 @@ export class RedisCacheManager {
       await this.ensureInitialized();
       if (typeof window === 'undefined' && redis && this.isInitialized) {
         const cacheKey = this.getFullCacheKey(key);
+        
+        console.log(`[RedisCache] Getting cache for key: ${key} at ${new Date().toISOString()}`);
+        
         const cacheItemStr = await redis.get(cacheKey);
         
         if (!cacheItemStr) {
+          console.log(`[RedisCache] Cache miss for key: ${key} at ${new Date().toISOString()}`);
           await this.updateStatistics(false);
           return null;
         }
@@ -229,10 +337,11 @@ export class RedisCacheManager {
           cacheItem.hits++;
           await redis.set(cacheKey, JSON.stringify(cacheItem), 'PX', await redis.pttl(cacheKey));
           
+          console.log(`[RedisCache] Cache hit for key: ${key}, hits: ${cacheItem.hits} at ${new Date().toISOString()}`);
           await this.updateStatistics(true);
           return cacheItem.data;
         } catch (parseError) {
-          console.error('Error parsing cache item:', parseError);
+          console.error(`[RedisCache] Error parsing cache item for key: ${key}`, parseError);
           await this.updateStatistics(false);
           return null;
         }
@@ -240,7 +349,7 @@ export class RedisCacheManager {
       await this.updateStatistics(false);
       return null;
     } catch (error) {
-      console.error('Error getting cache:', error);
+      console.error(`[RedisCache] Error getting cache for key: ${key}`, error);
       await this.updateStatistics(false);
       return null;
     }
@@ -468,15 +577,28 @@ export class RedisCacheManager {
 
   /**
    * 清空所有缓存
+   * 注意：受保护的系统键不会被清除
    */
   public async clearCache(): Promise<boolean> {
     try {
       await this.ensureInitialized();
       if (typeof window === 'undefined' && redis && this.isInitialized) {
         const keys = await redis.keys(`${CACHE_PREFIX}*`);
-        if (keys.length > 0) {
-          await redis.del(keys);
-        }
+        
+        // 过滤掉受保护的键       
+        const keysToDelete = keys.filter((key: string) => {
+          const keyWithoutPrefix = key.replace(CACHE_PREFIX, '');
+          return !PROTECTED_KEYS.includes(keyWithoutPrefix);
+        });
+        
+        // 记录要删除的键数量和受保护的键数量
+        console.log(`[RedisCache] Clearing cache: ${keysToDelete.length} keys to delete, ${keys.length - keysToDelete.length} keys protected`);
+        
+        if (keysToDelete.length > 0) {
+        // ioredis的del方法不支持直接传递数组，需要使用展开运算符
+        await redis.del(...keysToDelete);
+      }
+        
         return true;
       }
       return false;
@@ -514,9 +636,9 @@ export class RedisCacheManager {
   public async getCacheKeys(pattern: string = '*'): Promise<string[]> {
     try {
       await this.ensureInitialized();
-      if (typeof window === 'undefined' && redis && this.isInitialized) {
+      if (typeof window === 'undefined' && redis && this.isInitialized) {   
         const keys = await redis.keys(`${CACHE_PREFIX}${pattern}`);
-        return keys.map(key => key.replace(CACHE_PREFIX, ''));
+        return keys.map((key: string) => key.replace(CACHE_PREFIX, ''));
       }
       return [];
     } catch (error) {
@@ -525,6 +647,137 @@ export class RedisCacheManager {
     }
   }
 
+  /**
+   * 根据键列表清除缓存
+   * @param keys 缓存键列表
+   */
+  public async deleteCacheKeys(keys: string[]): Promise<number> {
+    try {
+      await this.ensureInitialized();
+      if (typeof window === 'undefined' && redis && this.isInitialized) {
+        let deletedCount = 0;
+        
+        for (const key of keys) {
+          // 检查是否为受保护的键
+          if (PROTECTED_KEYS.includes(key)) {
+            console.log(`[RedisCache] Skipping deletion of protected key: ${key}`);
+            continue;
+          }
+          
+          const cacheKey = this.getFullCacheKey(key);
+          await redis.del(cacheKey);
+          deletedCount++;
+        }
+        
+        console.log(`[RedisCache] Deleted ${deletedCount} out of ${keys.length} requested keys`);
+        return deletedCount;
+      }
+      return 0;
+    } catch (error) {
+      console.error('Error deleting cache keys:', error);
+      return 0;
+    }
+  }
+
+  /**
+   * 根据模式清除缓存
+   * @param pattern 键模式
+   */
+  public async deleteCacheByPattern(pattern: string): Promise<number> {
+    try {
+      await this.ensureInitialized();
+      if (typeof window === 'undefined' && redis && this.isInitialized) {
+        const keys = await redis.keys(`${CACHE_PREFIX}${pattern}`);
+        
+        // 过滤掉受保护的键       
+        const keysToDelete = keys.filter((key: string) => {
+          const keyWithoutPrefix = key.replace(CACHE_PREFIX, '');
+          return !PROTECTED_KEYS.includes(keyWithoutPrefix);
+        });
+        
+        if (keysToDelete.length > 0) {
+          // ioredis的del方法不支持直接传递数组，需要使用展开运算符
+          await redis.del(...keysToDelete);
+        }
+        
+        console.log(`[RedisCache] Deleted ${keysToDelete.length} keys matching pattern: ${pattern}`);
+        return keysToDelete.length;
+      }
+      return 0;
+    } catch (error) {
+      console.error('Error deleting cache by pattern:', error);
+      return 0;
+    }
+  }
+
+  /**
+   * 根据模块清除缓存
+   * @param module 模块名称
+   */
+  public async deleteCacheByModule(module: string): Promise<number> {
+    try {
+      await this.ensureInitialized();
+      const pattern = `${module}:*`;
+      return await this.deleteCacheByPattern(pattern);
+    } catch (error) {
+      console.error('Error deleting cache by module:', error);
+      return 0;
+    }
+  }
+
+  /**
+   * 获取热点键
+   * @param limit 返回的热点键数量
+   */
+  private async getHotKeys(limit: number = 5): Promise<string[]> {
+    if (!redis) return [];
+    
+    try {
+      const keys = await redis.keys(`${CACHE_PREFIX}*`);
+      
+      // 过滤掉系统键和统计键     
+      const cacheKeys = keys.filter((key: string) => {
+        const keyWithoutPrefix = key.replace(CACHE_PREFIX, '');
+        return !keyWithoutPrefix.startsWith('system:') && !keyWithoutPrefix.startsWith('statistics:');
+      });
+      
+      // 获取每个键的命中次数
+      const keyHits = await Promise.all(
+        cacheKeys.map(async (key: string) => {
+          try {
+            if (redis) {
+              const cacheItemStr = await redis.get(key);
+              if (cacheItemStr) {
+                const cacheItem = JSON.parse(cacheItemStr);
+                return { key: key.replace(CACHE_PREFIX, ''), hits: cacheItem.hits || 0 };
+              }
+            }
+            return { key: key.replace(CACHE_PREFIX, ''), hits: 0 };
+          } catch (error) {
+            console.error(`Error getting hits for key ${key}:`, error);
+            return { key: key.replace(CACHE_PREFIX, ''), hits: 0 };
+          }
+        })
+      );
+      
+      // 按命中次数排序，返回前N个
+      return keyHits
+        .sort((a, b) => b.hits - a.hits)
+        .slice(0, limit)
+        .map(item => item.key);
+    } catch (error) {
+      console.error('Error getting hot keys:', error);
+      return [];
+    }
+  }
+  
+  /**
+   * 更新操作计数
+   */
+  private updateOperationCount(type: keyof typeof this.operations): void {
+    this.operations[type]++;
+  }
+  
   /**
    * 检查缓存管理器是否初始化成功
    */
@@ -540,6 +793,9 @@ export const cacheManager = RedisCacheManager.getInstance();
 export const getCache = cacheManager.getCache.bind(cacheManager);
 export const setCache = cacheManager.setCache.bind(cacheManager);
 export const deleteCache = cacheManager.deleteCache.bind(cacheManager);
+export const deleteCacheKeys = cacheManager.deleteCacheKeys.bind(cacheManager);
+export const deleteCacheByPattern = cacheManager.deleteCacheByPattern.bind(cacheManager);
+export const deleteCacheByModule = cacheManager.deleteCacheByModule.bind(cacheManager);
 export const updateCache = cacheManager.updateCache.bind(cacheManager);
 export const getOrSetCache = cacheManager.getOrSetCache.bind(cacheManager);
 export const getCacheStatistics = cacheManager.getCacheStatistics.bind(cacheManager);

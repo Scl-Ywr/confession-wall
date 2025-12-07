@@ -38,8 +38,11 @@ export default function VideoPlayer({ videoUrl, className = '', posterUrl }: Vid
   const [showPlaybackMenu, setShowPlaybackMenu] = useState(false); // 播放速度菜单显示状态
   const [isAutoBuffering, setIsAutoBuffering] = useState(false); // 是否正在自动缓冲
   const [isCaching, setIsCaching] = useState(false); // 是否正在缓存视频
+  const [videoRotation, setVideoRotation] = useState(0); // 视频旋转角度
   // 网络状况
   const [networkQuality, setNetworkQuality] = useState<'excellent' | 'good' | 'fair' | 'poor'>('good');
+  // 检测是否为移动设备
+  const isMobile = typeof window !== 'undefined' && /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
   const controlsTimeoutRef = useRef<NodeJS.Timeout | null>(null); // 控制组件隐藏定时器
   const bufferTimeoutRef = useRef<NodeJS.Timeout | null>(null); // 缓冲定时器
   
@@ -57,18 +60,24 @@ export default function VideoPlayer({ videoUrl, className = '', posterUrl }: Vid
 
   // 初始化缓存
   const initCache = async () => {
-    if ('caches' in window) {
+    // 检查是否为开发环境，Turbopack可能与CacheStorage存在兼容性问题
+    const isDevelopment = process.env.NODE_ENV === 'development';
+    
+    if ('caches' in window && !isDevelopment) {
       try {
+        // 尝试打开缓存，添加更健壮的错误处理
         cacheRef.current = await caches.open('confession-videos');
       } catch (error) {
         console.error('Failed to open cache:', error);
+        // 缓存初始化失败，将cacheRef设置为null以避免后续调用失败
+        cacheRef.current = null;
       }
     }
   };
 
   // 检查视频是否已缓存
   const checkVideoCache = useCallback(async (url: string): Promise<boolean> => {
-    if (!('caches' in window) || !cacheRef.current) {
+    if (typeof window === 'undefined' || !('caches' in window) || !cacheRef.current) {
       return false;
     }
     
@@ -83,7 +92,8 @@ export default function VideoPlayer({ videoUrl, className = '', posterUrl }: Vid
 
   // 将视频缓存到CacheStorage
   const cacheVideo = useCallback(async (url: string) => {
-    if (!('caches' in window) || !cacheRef.current || isCaching) {
+    // 添加更严格的检查，确保caches API可用且缓存已初始化
+    if (typeof window === 'undefined' || !('caches' in window) || !cacheRef.current || isCaching) {
       return;
     }
     
@@ -109,7 +119,7 @@ export default function VideoPlayer({ videoUrl, className = '', posterUrl }: Vid
         }
       });
       
-      if (response.ok) {
+      if (response.ok && cacheRef.current) {
         // 克隆响应以同时用于播放和缓存
         const responseToCache = response.clone();
         await cacheRef.current.put(url, responseToCache);
@@ -121,10 +131,22 @@ export default function VideoPlayer({ videoUrl, className = '', posterUrl }: Vid
     }
   }, [isCaching, networkQuality, checkVideoCache]);
 
+  // 定义网络连接API的类型
+  interface NetworkConnection {
+    effectiveType?: string;
+    addEventListener?: (type: string, listener: () => void) => void;
+    removeEventListener?: (type: string, listener: () => void) => void;
+  }
+  
+  // 扩展Navigator接口
+  interface ExtendedNavigator extends Navigator {
+    connection?: NetworkConnection;
+  }
+
   // 检测网络质量
   const detectNetworkQuality = useCallback(() => {
     // 安全检测navigator.connection API（实验性API）
-    const nav = navigator as Navigator & { connection?: { effectiveType?: string } };
+    const nav = navigator as ExtendedNavigator;
     if (nav.connection?.effectiveType) {
       // 根据网络类型判断质量
       switch (nav.connection.effectiveType) {
@@ -150,12 +172,7 @@ export default function VideoPlayer({ videoUrl, className = '', posterUrl }: Vid
     detectNetworkQuality();
     
     // 安全检测navigator.connection API（实验性API）
-    const nav = navigator as Navigator & { 
-      connection?: { 
-        addEventListener?: (type: string, listener: () => void) => void;
-        removeEventListener?: (type: string, listener: () => void) => void;
-      } 
-    };
+    const nav = navigator as ExtendedNavigator;
     
     // 保存connection引用，避免在清理函数中出现问题
     const connection = nav.connection;
@@ -397,19 +414,52 @@ export default function VideoPlayer({ videoUrl, className = '', posterUrl }: Vid
   // 处理放大按钮点击 (影院模式)
   const handleFullscreenToggle = () => {
     const container = containerRef.current;
-    if (!container) return;
+    const video = playerRef.current;
+    if (!container || !video) return;
     
-    if (!document.fullscreenElement) {
-      // 进入浏览器全屏模式
-      container.requestFullscreen().catch(err => {
-        console.error(`Error attempting to enable full-screen mode: ${err.message}`);
-      });
+    // 检查当前是否处于全屏状态
+    const isFullscreen = !!(document.fullscreenElement || document.webkitFullscreenElement || document.mozFullScreenElement || document.msFullscreenElement);
+    
+    if (!isFullscreen) {
+      try {
+        // 针对Safari/iOS的特殊处理
+        if (typeof video.webkitEnterFullscreen !== 'undefined') {
+          // Safari/iOS原生视频全屏
+          video.webkitEnterFullscreen();
+        } else if (typeof video.webkitRequestFullscreen !== 'undefined') {
+          // Safari桌面版全屏
+          video.webkitRequestFullscreen();
+        } else if (typeof video.requestFullscreen !== 'undefined') {
+          // 标准全屏API
+          video.requestFullscreen();
+        } else if (typeof container.webkitRequestFullscreen !== 'undefined') {
+          // Safari容器全屏
+          container.webkitRequestFullscreen();
+        } else if (typeof container.requestFullscreen !== 'undefined') {
+          // 标准容器全屏
+          container.requestFullscreen();
+        } else {
+          console.error('Fullscreen API is not supported in this browser');
+        }
+      } catch (err) {
+        console.error(`Error attempting to enable full-screen mode: ${(err as Error).message}`);
+      }
     } else {
-      // 退出浏览器全屏模式
-      if (document.exitFullscreen) {
-        document.exitFullscreen().catch(err => {
-          console.error(`Error attempting to exit full-screen mode: ${err.message}`);
-        });
+      try {
+        // 退出全屏模式
+        if (typeof document.exitFullscreen !== 'undefined') {
+          document.exitFullscreen();
+        } else if (typeof document.webkitExitFullscreen !== 'undefined') {
+          document.webkitExitFullscreen();
+        } else if (typeof document.mozCancelFullScreen !== 'undefined') {
+          document.mozCancelFullScreen();
+        } else if (typeof document.msExitFullscreen !== 'undefined') {
+          document.msExitFullscreen();
+        } else {
+          console.error('Exit fullscreen API is not supported in this browser');
+        }
+      } catch (err) {
+        console.error(`Error attempting to exit full-screen mode: ${(err as Error).message}`);
       }
     }
   };
@@ -460,11 +510,29 @@ export default function VideoPlayer({ videoUrl, className = '', posterUrl }: Vid
   }, [volume]);
 
   // 控制播放速度
-  useEffect(() => {
+  const updatePlaybackRate = useCallback(() => {
     if (playerRef.current) {
       playerRef.current.playbackRate = playbackRate;
     }
   }, [playbackRate]);
+
+  // 当playbackRate变化时更新视频播放速度
+  useEffect(() => {
+    updatePlaybackRate();
+  }, [updatePlaybackRate]);
+
+  // 当视频旋转角度变化时，应用旋转效果
+  useEffect(() => {
+    if (playerRef.current) {
+      playerRef.current.style.transform = `rotate(${videoRotation}deg)`;
+    }
+  }, [videoRotation]);
+
+  // 旋转屏幕功能
+  const toggleScreenRotation = () => {
+    // 每次点击旋转90度
+    setVideoRotation(prev => (prev + 90) % 360);
+  };
 
   // 屏幕旋转检测 - 自动切换全屏模式
   useEffect(() => {
@@ -479,10 +547,36 @@ export default function VideoPlayer({ videoUrl, className = '', posterUrl }: Vid
       if (isLandscape() && playerRef.current && !isPaused) {
         // 横屏时自动切换到全屏模式
         const container = containerRef.current;
-        if (container && !document.fullscreenElement) {
-          container.requestFullscreen().catch(err => {
-            console.error(`Error attempting to enable full-screen mode: ${err.message}`);
-          });
+        const video = playerRef.current;
+        if (container && video) {
+          // 检查是否已经处于全屏状态
+          const isFullscreen = !!(document.fullscreenElement || document.webkitFullscreenElement || document.mozFullScreenElement || document.msFullscreenElement);
+          
+          if (!isFullscreen) {
+            try {
+              // 针对Safari/iOS的特殊处理
+              if (typeof video.webkitEnterFullscreen !== 'undefined') {
+                // Safari/iOS原生视频全屏
+                video.webkitEnterFullscreen();
+              } else if (typeof video.webkitRequestFullscreen !== 'undefined') {
+                // Safari桌面版全屏
+                video.webkitRequestFullscreen();
+              } else if (typeof video.requestFullscreen !== 'undefined') {
+                // 标准全屏API
+                video.requestFullscreen();
+              } else if (typeof container.webkitRequestFullscreen !== 'undefined') {
+                // Safari容器全屏
+                container.webkitRequestFullscreen();
+              } else if (typeof container.requestFullscreen !== 'undefined') {
+                // 标准容器全屏
+                container.requestFullscreen();
+              } else {
+                console.error('Fullscreen API is not supported in this browser');
+              }
+            } catch (err) {
+              console.error(`Error attempting to enable full-screen mode: ${(err as Error).message}`);
+            }
+          }
         }
       }
     };
@@ -500,13 +594,23 @@ export default function VideoPlayer({ videoUrl, className = '', posterUrl }: Vid
   // 监听全屏状态变化
   useEffect(() => {
     const handleFullscreenChange = () => {
-      setFullscreen(!!document.fullscreenElement);
+      // 检查当前是否处于全屏状态，兼容不同浏览器
+      const isFullscreen = !!(document.fullscreenElement || document.webkitFullscreenElement || document.mozFullScreenElement || document.msFullscreenElement);
+      setFullscreen(isFullscreen);
     };
 
+    // 添加全屏变化事件监听器，兼容不同浏览器
     document.addEventListener('fullscreenchange', handleFullscreenChange);
+    document.addEventListener('webkitfullscreenchange', handleFullscreenChange);
+    document.addEventListener('mozfullscreenchange', handleFullscreenChange);
+    document.addEventListener('MSFullscreenChange', handleFullscreenChange);
 
     return () => {
+      // 移除事件监听器
       document.removeEventListener('fullscreenchange', handleFullscreenChange);
+      document.removeEventListener('webkitfullscreenchange', handleFullscreenChange);
+      document.removeEventListener('mozfullscreenchange', handleFullscreenChange);
+      document.removeEventListener('MSFullscreenChange', handleFullscreenChange);
     };
   }, []);
 
@@ -521,6 +625,15 @@ export default function VideoPlayer({ videoUrl, className = '', posterUrl }: Vid
           borderRadius: '0.75rem',
           transition: 'transform 0.3s ease',
           backgroundColor: 'black'
+        }}
+        onClick={(e) => {
+          // 如果点击的是控制按钮 ，不处理
+          if (e.target instanceof HTMLButtonElement || 
+              (e.target instanceof HTMLElement && e.target.closest('button'))) {
+            return;
+          }
+          // 点击屏幕时显示中央播 放按钮和控制组件
+          showControlsWithTimeout();
         }}
       >
         {/* 视频切换过渡遮罩 */}
@@ -556,14 +669,15 @@ export default function VideoPlayer({ videoUrl, className = '', posterUrl }: Vid
           playsInline
           controlsList="nodownload noremoteplayback"
           onClick={() => {
+            // 点击屏幕时立即显示中央播放按钮和控制组件
+            showControlsWithTimeout();
+            
             if (playerRef.current) {
               if (isPaused) {
                 playerRef.current.play();
               } else {
                 playerRef.current.pause();
               }
-              // 点击视频时显示控制组件并设置定时器自动隐藏
-              showControlsWithTimeout();
             }
           }}
           onPlay={() => {
@@ -617,6 +731,7 @@ export default function VideoPlayer({ videoUrl, className = '', posterUrl }: Vid
             if (playerRef.current) {
               setDuration(playerRef.current.duration || 0);
             }
+            setIsPaused(false); // 确保播放状态正确
             setIsBuffering(false);
           }}
           onVolumeChange={() => {
@@ -627,12 +742,12 @@ export default function VideoPlayer({ videoUrl, className = '', posterUrl }: Vid
           }}
         />
         
-        {/* 中央播放/暂停按钮 - 点击视频时显示 */}
+        {/* 中央播放/暂停按钮 - 仅在暂停时显示，播放时1秒后消失 */}
         <motion.div 
-          className={`absolute inset-0 flex items-center justify-center pointer-events-auto ${(isPaused || showControls) ? 'opacity-100' : 'opacity-0'} group-hover:opacity-100`}
-          initial={{ opacity: 0 }}
-          animate={{ opacity: (isPaused || showControls) ? 1 : 0 }}
-          transition={{ duration: 500, ease: "easeInOut" }}
+          className={`absolute inset-0 flex items-center justify-center ${isPaused ? 'pointer-events-auto' : 'pointer-events-none'}`}
+          initial={{ opacity: 1 }}
+          animate={{ opacity: isPaused ? 1 : 0 }}
+          transition={{ duration: 1, ease: "easeInOut" }}
         >
           <motion.button 
             className="relative w-16 h-16 rounded-full bg-gradient-to-r from-orange-500 to-orange-600 text-white flex items-center justify-center shadow-lg shadow-orange-500/30"
@@ -641,8 +756,10 @@ export default function VideoPlayer({ videoUrl, className = '', posterUrl }: Vid
               if (playerRef.current) {
                 if (isPaused) {
                   playerRef.current.play();
+                  setIsPaused(false); // 立即更新播放状态
                 } else {
                   playerRef.current.pause();
+                  setIsPaused(true); // 立即更新暂停状态
                 }
               }
             }}
@@ -650,17 +767,21 @@ export default function VideoPlayer({ videoUrl, className = '', posterUrl }: Vid
             whileTap={{ scale: 0.95 }}
             transition={{ duration: 300, ease: "easeOut" }}
           >
-            <div className="absolute inset-0 rounded-full bg-gradient-to-r from-orange-400 to-orange-500 opacity-0 hover:opacity-100 transition-opacity duration-500 animate-pulse"></div>
-            <div className="absolute inset-0 rounded-full bg-gradient-to-r from-orange-500/30 to-orange-600/30 animate-spin opacity-0 hover:opacity-100 transition-opacity duration-500"></div>
-            {isPaused ? (
-              <svg className="w-7 h-7 ml-1 relative z-10" fill="currentColor" viewBox="0 0 20 20">
-                <path d="M6.3 2.841A1.5 1.5 0 004 4.11V15.89a1.5 1.5 0 002.3 1.269l9.344-5.89a1.5 1.5 0 000-2.538L6.3 2.84z" />
-              </svg>
-            ) : (
-              <svg className="w-7 h-7 relative z-10" fill="currentColor" viewBox="0 0 20 20">
-                <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zM7 8a1 1 0 012 0v4a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v4a1 1 0 102 0V8a1 1 0 00-1-1z" clipRule="evenodd" />
-              </svg>
-            )}
+            {/* 装饰性背景 - 默认隐藏，悬停时显示 */}
+            <div className="absolute inset-0 rounded-full bg-gradient-to-r from-orange-400 to-orange-500 opacity-0 hover:opacity-100 transition-opacity duration-500 animate-pulse pointer-events-none"></div>
+            <div className="absolute inset-0 rounded-full bg-gradient-to-r from-orange-500/30 to-orange-600/30 animate-spin opacity-0 hover:opacity-100 transition-opacity duration-500 pointer-events-none"></div>
+            {/* 播放/暂停图标 - 确保在最上层 */}
+            <div className="relative z-10">
+              {isPaused ? (
+                <svg className="w-7 h-7 ml-1" fill="currentColor" viewBox="0 0 20 20">
+                  <path d="M6.3 2.841A1.5 1.5 0 004 4.11V15.89a1.5 1.5 0 002.3 1.269l9.344-5.89a1.5 1.5 0 000-2.538L6.3 2.84z" />
+                </svg>
+              ) : (
+                <svg className="w-7 h-7" fill="currentColor" viewBox="0 0 20 20">
+                  <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zM7 8a1 1 0 012 0v4a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v4a1 1 0 102 0V8a1 1 0 00-1-1z" clipRule="evenodd" />
+                </svg>
+              )}
+            </div>
           </motion.button>
         </motion.div>
 
@@ -812,12 +933,12 @@ export default function VideoPlayer({ videoUrl, className = '', posterUrl }: Vid
               </button>
               
               {/* 播放速度控制 */}
-              <div className="relative">
+              <div className="relative z-50">
                 <button 
                   className="w-8 h-8 rounded-full bg-white/10 hover:bg-white/20 text-white flex items-center justify-center transition-all duration-300 ease-out hover:scale-105 active:scale-95 backdrop-blur-sm"
                   onClick={(e) => {
                     e.stopPropagation();
-                    setShowPlaybackMenu(!showPlaybackMenu);
+                    setShowPlaybackMenu(prev => !prev);
                     // 重置控制组件隐藏定时器
                     showControlsWithTimeout();
                   }}
@@ -826,32 +947,28 @@ export default function VideoPlayer({ videoUrl, className = '', posterUrl }: Vid
                   <span className="text-xs font-medium">{playbackRate}x</span>
                 </button>
                 
-                {/* 播放速度菜单 */}
-                {showPlaybackMenu && (
-                  <motion.div 
-                    className="absolute bottom-full right-0 mb-2 bg-black/90 backdrop-blur-lg rounded-lg shadow-xl border border-white/10 overflow-hidden z-20"
-                    initial={{ opacity: 0, y: 10, scale: 0.95 }}
-                    animate={{ opacity: 1, y: 0, scale: 1 }}
-                    exit={{ opacity: 0, y: 10, scale: 0.95 }}
-                    transition={{ duration: 200, ease: "easeOut" }}
-                  >
-                    {[0.5, 0.75, 1, 1.25, 1.5, 1.75, 2].map((rate) => (
-                      <button
-                        key={rate}
-                        className={`px-3 py-1.5 text-left text-xs text-white hover:bg-orange-500/20 transition-colors duration-200 ${playbackRate === rate ? 'bg-orange-500/30 font-medium' : ''}`}
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setPlaybackRate(rate);
-                          setShowPlaybackMenu(false);
-                          // 重置控制组件隐藏定时器
-                          showControlsWithTimeout();
-                        }}
-                      >
-                        {rate}x
-                      </button>
-                    ))}
-                  </motion.div>
-                )}
+                {/* 播放速度菜单 - 最小间距显示 */}
+                  {showPlaybackMenu && (
+                    <div 
+                      className="absolute bottom-full right-0 mb-1.5 bg-black/95 backdrop-blur-lg rounded-md shadow-md border border-white/20 overflow-hidden z-60 min-w-[65px]"
+                    >
+                      {[0.5, 0.75, 1, 1.25, 1.5, 1.75, 2].map((rate) => (
+                        <button
+                          key={rate}
+                          className={`px-2 py-0.75 text-left text-xs text-white hover:bg-orange-500/30 transition-colors duration-200 ${playbackRate === rate ? 'bg-orange-500/40 font-medium' : ''}`}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setPlaybackRate(rate);
+                            setShowPlaybackMenu(false);
+                            // 重置控制组件隐藏定时器
+                            showControlsWithTimeout();
+                          }}
+                        >
+                          {rate}x
+                        </button>
+                      ))}
+                    </div>
+                  )}
               </div>
               
               {/* 画中画按钮 */}
@@ -870,20 +987,75 @@ export default function VideoPlayer({ videoUrl, className = '', posterUrl }: Vid
                 </svg>
               </button>
               
+              {/* 旋转屏幕按钮 - 仅在移动设备且全屏模式下显示 */}
+              {isMobile && fullscreen && (
+                <button 
+                  className="w-8 h-8 rounded-full bg-white/10 hover:bg-white/20 text-white flex items-center justify-center transition-all duration-300 ease-out hover:scale-105 active:scale-95 backdrop-blur-sm"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    toggleScreenRotation();
+                    // 重置控制组件隐藏定时器
+                    showControlsWithTimeout();
+                  }}
+                  title="旋转屏幕"
+                >
+                  <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
+                    <path d="M8.445 14.832A1 1 0 0010 14v-2.798l5.445 3.63A1 1 0 0017 14V6a1 1 0 00-1.555-.832L10 8.798V6a1 1 0 00-1.555-.832l-6 4a1 1 0 000 1.664l6 4z" />
+                  </svg>
+                </button>
+              )}
+              
               {/* 全屏按钮 */}
               <button 
                 className="w-8 h-8 rounded-full bg-white/10 hover:bg-white/20 text-white flex items-center justify-center transition-all duration-300 ease-out hover:scale-105 active:scale-95 backdrop-blur-sm"
                 onClick={(e) => {
                   e.stopPropagation();
                   const container = containerRef.current;
-                  if (container) {
-                    if (!document.fullscreenElement) {
-                      container.requestFullscreen().catch(err => {
-                        console.error(`Error attempting to enable full-screen mode: ${err.message}`);
-                      });
+                  const video = playerRef.current;
+                  if (container && video) {
+                    // 检查当前是否处于全屏状态
+                    const isFullscreen = !!(document.fullscreenElement || document.webkitFullscreenElement || document.mozFullScreenElement || document.msFullscreenElement);
+                    
+                    if (!isFullscreen) {
+                      try {
+                        // 针对Safari/iOS的特殊处理
+                        if (typeof video.webkitEnterFullscreen !== 'undefined') {
+                          // Safari/iOS原生视频全屏
+                          video.webkitEnterFullscreen();
+                        } else if (typeof video.webkitRequestFullscreen !== 'undefined') {
+                          // Safari桌面版全屏
+                          video.webkitRequestFullscreen();
+                        } else if (typeof video.requestFullscreen !== 'undefined') {
+                          // 标准全屏API
+                          video.requestFullscreen();
+                        } else if (typeof container.webkitRequestFullscreen !== 'undefined') {
+                          // Safari容器全屏
+                          container.webkitRequestFullscreen();
+                        } else if (typeof container.requestFullscreen !== 'undefined') {
+                          // 标准容器全屏
+                          container.requestFullscreen();
+                        } else {
+                          console.error('Fullscreen API is not supported in this browser');
+                        }
+                      } catch (err) {
+                        console.error(`Error attempting to enable full-screen mode: ${(err as Error).message}`);
+                      }
                     } else {
-                      if (document.exitFullscreen) {
-                        document.exitFullscreen();
+                      try {
+                        // 退出全屏模式
+                        if (typeof document.exitFullscreen !== 'undefined') {
+                          document.exitFullscreen();
+                        } else if (typeof document.webkitExitFullscreen !== 'undefined') {
+                          document.webkitExitFullscreen();
+                        } else if (typeof document.mozCancelFullScreen !== 'undefined') {
+                          document.mozCancelFullScreen();
+                        } else if (typeof document.msExitFullscreen !== 'undefined') {
+                          document.msExitFullscreen();
+                        } else {
+                          console.error('Exit fullscreen API is not supported in this browser');
+                        }
+                      } catch (err) {
+                        console.error(`Error attempting to exit full-screen mode: ${(err as Error).message}`);
                       }
                     }
                   }

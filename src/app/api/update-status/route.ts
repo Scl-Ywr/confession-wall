@@ -64,7 +64,7 @@ export async function POST(req: NextRequest) {
       .from('profiles')
       .update({
         online_status: status,
-        last_seen: new Date().toISOString()
+        last_seen: 'now()' // 使用数据库的当前时间，避免客户端时间问题
       })
       .eq('id', userId);
 

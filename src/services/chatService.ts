@@ -572,7 +572,7 @@ export const chatService = {
   },
 
   // 获取好友列表
-  getFriends: async (): Promise<Friendship[]> => {
+  getFriends: async (ignoreCache: boolean = false): Promise<Friendship[]> => {
     try {
       // 获取当前认证用户
       const user = await supabase.auth.getUser();
@@ -586,10 +586,12 @@ export const chatService = {
       // 生成缓存键
       const cacheKey = `chat:friends:${userId}`;
       
-      // 尝试从缓存获取
-      const cachedFriends = await getCache<Friendship[]>(cacheKey);
-      if (cachedFriends) {
-        return cachedFriends;
+      // 尝试从缓存获取，但如果ignoreCache为true则跳过
+      if (!ignoreCache) {
+        const cachedFriends = await getCache<Friendship[]>(cacheKey);
+        if (cachedFriends) {
+          return cachedFriends;
+        }
       }
 
       // 查询好友关系
@@ -618,26 +620,18 @@ export const chatService = {
       // 逐个查询好友资料，避免 in 查询可能出现的问题
       for (const friendId of friendIds) {
         try {
-          // 尝试从缓存获取好友资料
-          const profileCacheKey = getUserProfileCacheKey(friendId);
-          const cachedProfile = await getCache<Profile>(profileCacheKey);
+          // 在线状态需要实时更新，所以不使用缓存，直接从数据库获取
+          const { data: profile, error: profileError } = await supabase
+            .from('profiles')
+            .select('id, username, display_name, avatar_url, online_status, last_seen')
+            .eq('id', friendId)
+            .single();
           
-          if (cachedProfile) {
-            friendsProfiles[friendId] = cachedProfile;
-          } else {
-            const { data: profile, error: profileError } = await supabase
-              .from('profiles')
-              .select('id, username, display_name, avatar_url, online_status, last_seen')
-              .eq('id', friendId)
-              .single();
-            
-            if (profileError) {
-              // ignore error
-            } else if (profile) {
-              friendsProfiles[friendId] = profile;
-              // 缓存好友资料
-              await setCache(profileCacheKey, profile, EXPIRY.MEDIUM);
-            }
+          if (!profileError && profile) {
+            friendsProfiles[friendId] = profile;
+            // 仍然缓存好友资料，但在线状态会在下一次调用时重新获取
+            const profileCacheKey = getUserProfileCacheKey(friendId);
+            await setCache(profileCacheKey, profile, EXPIRY.MEDIUM);
           }
         } catch {
           // ignore error

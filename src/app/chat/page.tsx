@@ -30,40 +30,46 @@ const ChatListPage = () => {
     setIsHydrated(true);
   }, []);
 
-  // 获取好友列表和群聊列表
+  // 确保未登录时不自动重定向，只显示登录提示
   useEffect(() => {
-    const fetchFriendsAndGroups = async () => {
-      if (!user) return;
-
-      try {
-        setLoading(true);
-        // 分别获取好友列表和群聊列表，确保即使其中一个失败，另一个也能显示
-        // 获取好友列表
-        try {
-          const friendships = await chatService.getFriends();
-          setFriends(friendships);
-
-        } catch (friendsError) {
-          console.error('Failed to fetch friends:', friendsError);
-          setFriends([]);
-        }
-
-        // 获取群聊列表
-        try {
-          const userGroups = await chatService.getGroups();
-          setGroups(userGroups);
-
-        } catch (groupsError) {
-          console.error('Failed to fetch groups:', groupsError);
-          setGroups([]);
-        }
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    fetchFriendsAndGroups();
+    // 空的useEffect，确保没有自动重定向逻辑
   }, [user]);
+
+  // 获取好友列表和群聊列表
+  const fetchFriendsAndGroups = useCallback(async () => {
+    if (!user) return;
+
+    try {
+      setLoading(true);
+      // 分别获取好友列表和群聊列表，确保即使其中一个失败，另一个也能显示
+      // 获取好友列表
+      try {
+        const friendships = await chatService.getFriends();
+        setFriends(friendships);
+
+      } catch (friendsError) {
+        console.error('Failed to fetch friends:', friendsError);
+        setFriends([]);
+      }
+
+      // 获取群聊列表
+      try {
+        const userGroups = await chatService.getGroups();
+        setGroups(userGroups);
+
+      } catch (groupsError) {
+        console.error('Failed to fetch groups:', groupsError);
+        setGroups([]);
+      }
+    } finally {
+      setLoading(false);
+    }
+  }, [user]);
+
+  // 初始加载好友列表和群聊列表
+  useEffect(() => {
+    fetchFriendsAndGroups();
+  }, [user, fetchFriendsAndGroups]);
 
   // 刷新未读消息数量的辅助函数
   const refreshUnreadCounts = useCallback(async () => {
@@ -378,37 +384,65 @@ const ChatListPage = () => {
   return (
     <div className="min-h-screen">
       <Navbar />
-      <main className="w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        <div className="mb-6">
-          <h1 className="text-2xl font-bold text-gray-800 dark:text-white flex items-center gap-2">
-            <MessageCircleIcon className="h-6 w-6 text-primary-500" />
-            聊天
-          </h1>
-        </div>
+      {!user ? (
+        <main className="w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-[calc(100vh-120px)] flex items-center justify-center">
+          {/* 登录提示框 */}
+          <div className="bg-yellow-50 dark:bg-yellow-900/20 border-l-4 border-yellow-400 p-6 rounded-lg max-w-md w-full shadow-lg">
+            <div className="flex items-center gap-3">
+              <div className="text-yellow-500">
+                <svg className="w-6 h-6" fill="currentColor" viewBox="0 0 20 20">
+                  <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+                </svg>
+              </div>
+              <div className="flex-1">
+                <h3 className="font-medium text-yellow-800 dark:text-yellow-300 text-lg">请登录</h3>
+                <p className="text-sm text-yellow-700 dark:text-yellow-400 mt-2">
+                  您需要登录才能使用聊天功能
+                </p>
+              </div>
+            </div>
+            <div className="mt-4 flex justify-center">
+              <Link
+                href="/auth/login"
+                className="bg-yellow-500 hover:bg-yellow-600 text-white px-6 py-3 rounded-lg text-sm font-medium transition-colors shadow-md hover:shadow-lg"
+              >
+                去登录
+              </Link>
+            </div>
+          </div>
+        </main>
+      ) : (
+        <main className="w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+          <div className="mb-6">
+            <h1 className="text-2xl font-bold text-gray-800 dark:text-white flex items-center gap-2">
+              <MessageCircleIcon className="h-6 w-6 text-primary-500" />
+              聊天
+            </h1>
+          </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
           {/* 好友列表和群聊列表 */}
           <div className="md:col-span-1">
             <div className="glass-card rounded-2xl p-6">
                   {/* 创建群聊按钮 */}
-                  <div className="flex justify-between items-center mb-4">
-                    <h2 className="text-lg font-semibold text-gray-800 dark:text-white">
+                  <div className="flex justify-between items-center mb-4 gap-3 flex-wrap">
+                    <h2 className="text-lg font-semibold text-gray-800 dark:text-white whitespace-nowrap">
                       聊天
                     </h2>
-                    <div className="flex gap-2">
+                    <div className="flex gap-1.5 items-center">
                       <button
                         onClick={() => setShowCreateGroupModal(true)}
-                        className="flex items-center gap-1 bg-gradient-to-r from-pink-400 to-purple-500 text-white px-3 py-1.5 rounded-lg text-sm hover:from-pink-500 hover:to-purple-600 transition-all duration-300 shadow-sm hover:shadow-md"
+                        className="flex items-center gap-1 bg-gradient-to-r from-pink-400 to-purple-500 text-white px-2.5 py-1.25 rounded-lg text-xs hover:from-pink-500 hover:to-purple-600 transition-all duration-300 shadow-sm hover:shadow-md whitespace-nowrap"
                       >
-                        <PlusIcon className="h-3.5 w-3.5" />
+                        <PlusIcon className="h-3 w-3" />
                         <span>创建群聊</span>
                       </button>
                       <Link
                         href="/chat/search"
-                        className="flex items-center gap-1 bg-gradient-to-r from-yellow-400 to-blue-500 bg-clip-text text-transparent hover:from-yellow-500 hover:to-blue-600 transition-all duration-300"
+                        className="flex items-center gap-1 text-primary-600 hover:text-primary-700 dark:text-primary-400 dark:hover:text-primary-300 transition-all duration-300 whitespace-nowrap"
                       >
                         <UserSearchIcon className="h-4 w-4" />
-                        <span className="text-sm font-medium">查找用户</span>
+                        <span className="text-xs font-medium">查找用户</span>
                       </Link>
                     </div>
                   </div>
@@ -481,9 +515,24 @@ const ChatListPage = () => {
                   
                   {/* 好友列表 */}
                   <div>
-                    <h3 className="text-sm font-medium text-gray-600 dark:text-gray-400 mb-3 flex items-center gap-1.5">
-                      <UsersIcon className="h-4 w-4" />
-                      <span>我的好友</span>
+                    <h3 className="text-sm font-medium text-gray-600 dark:text-gray-400 mb-3 flex items-center justify-between gap-1.5">
+                      <div className="flex items-center gap-1.5">
+                        <UsersIcon className="h-4 w-4" />
+                        <span>我的好友</span>
+                      </div>
+                      {/* 刷新好友状态按钮 */}
+                      <button
+                        onClick={() => {
+                          // 重新获取好友列表和群聊列表
+                          fetchFriendsAndGroups();
+                        }}
+                        className="p-1.5 bg-primary-100 dark:bg-primary-900/30 text-primary-600 dark:text-primary-400 rounded-md hover:bg-primary-200 dark:hover:bg-primary-900/50 transition-colors duration-200"
+                        title="刷新好友状态"
+                      >
+                        <svg className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} fill="currentColor" viewBox="0 0 20 20">
+                          <path fillRule="evenodd" d="M4 2a1 1 0 011 1v2.101a7.002 7.002 0 0111.601 2.566 1 1 0 11-1.885.666A5.002 5.002 0 005.999 7H9a1 1 0 010 2H4a1 1 0 01-1-1V3a1 1 0 011-1zm.008 9.057a1 1 0 011.276.61A5.002 5.002 0 0014.001 13H11a1 1 0 110-2h5a1 1 0 011 1v5a1 1 0 11-2 0v-2.101a7.002 7.002 0 01-11.601-2.566 1 1 0 01.61-1.276z" clipRule="evenodd" />
+                        </svg>
+                      </button>
                     </h3>
 
                     {friends.length === 0 ? (
@@ -523,12 +572,28 @@ const ChatListPage = () => {
                                     ) : (
                                       <div className="w-full h-full bg-gradient-to-br from-gray-200 to-gray-300 dark:from-gray-700 dark:to-gray-800 flex items-center justify-center">
                                         <span className="text-lg font-bold text-gray-500 dark:text-gray-400">
-                                          {friend ? (friend.display_name || friend.username).charAt(0).toUpperCase() : '?'}                                    </span>
+                                          {friend ? (friend.display_name || friend.username).charAt(0).toUpperCase() : '?'}
+                                        </span>
                                       </div>
                                     )}
                                   </div>
-                                  {/* 在线状态指示器 */}
-                                  <div className={`absolute bottom-0 right-0 w-4 h-4 rounded-full border-2 border-white dark:border-gray-700 ${friend?.online_status === 'online' ? 'bg-green-500' : friend?.online_status === 'away' ? 'bg-yellow-500' : 'bg-gray-400'}`}></div>
+                                  {/* 在线状态指示器 - 根据lastSeen时间判断，5分钟内视为在线 */}
+                                  <div className={`absolute bottom-0 right-0 w-4 h-4 rounded-full border-2 border-white dark:border-gray-700 ${(() => {
+                                    if (!friend || !friend.last_seen) return 'bg-gray-400';
+                                    
+                                    try {
+                                      const lastSeen = new Date(friend.last_seen);
+                                      const now = new Date();
+                                      const timeDiff = now.getTime() - lastSeen.getTime();
+                                      // 5分钟内且online_status不是offline视为在线
+                                          if (timeDiff >= 0 && timeDiff < 5 * 60 * 1000 && friend.online_status !== 'offline') {
+                                            return friend.online_status === 'away' ? 'bg-yellow-500' : 'bg-green-500';
+                                          }
+                                    } catch {
+                                      // 日期解析错误，视为离线
+                                    }
+                                    return 'bg-gray-400';
+                                  })()}`}></div>
                                   {/* 未读消息指示器 */}
                                   {friendship.unread_count > 0 && (
                                     <div className="absolute top-0 right-0 w-5 h-5 bg-red-500 text-white text-xs font-bold rounded-full flex items-center justify-center border-2 border-white dark:border-gray-700 shadow-md">
@@ -565,25 +630,48 @@ const ChatListPage = () => {
                                       <h3 className="font-semibold text-gray-800 dark:text-white truncate">
                                         {friend?.display_name || friend?.username || '好友'}
                                       </h3>
-                                      {friend?.online_status === 'online' ? (
-                                        <span className="text-xs text-green-500">在线</span>
-                                      ) : (
-                                        <span className="text-xs text-gray-500 dark:text-gray-400">
-                                          {(() => {
-                                            if (friend) {
-                                              const lastActive = friend.last_seen || friend.updated_at;
-                                              if (lastActive) {
-                                                try {
-                                                  return new Date(lastActive).toLocaleString('zh-CN', { hour: '2-digit', minute: '2-digit' });
-                                                } catch {
-                                                  return '离线';
-                                                }
-                                              }
+                                      {(() => {
+                                        if (!friend) {
+                                          return <span className="text-xs text-gray-500 dark:text-gray-400">离线</span>;
+                                        }
+                                        
+                                        // 根据lastSeen时间和online_status字段判断是否在线，5分钟内且online_status不是offline视为在线
+                                        let isOnline = false;
+                                        try {
+                                          if (friend.last_seen) {
+                                            const lastSeen = new Date(friend.last_seen);
+                                            const now = new Date();
+                                            const timeDiff = now.getTime() - lastSeen.getTime();
+                                            // 5分钟内且online_status不是offline视为在线
+                                            isOnline = timeDiff >= 0 && timeDiff < 5 * 60 * 1000 && friend.online_status !== 'offline';
+                                          }
+                                        } catch {
+                                          // 日期解析错误，视为离线
+                                        }
+                                        
+                                        if (isOnline) {
+                                          return friend.online_status === 'away' ? (
+                                            <span className="text-xs text-yellow-500">离开</span>
+                                          ) : (
+                                            <span className="text-xs text-green-500">在线</span>
+                                          );
+                                        } else {
+                                          // 离线状态显示最后活跃时间
+                                          const lastActive = friend.last_seen || friend.updated_at;
+                                          if (lastActive) {
+                                            try {
+                                              return (
+                                                <span className="text-xs text-gray-500 dark:text-gray-400">
+                                                  {new Date(lastActive).toLocaleString('zh-CN', { hour: '2-digit', minute: '2-digit' })}
+                                                </span>
+                                              );
+                                            } catch {
+                                              return <span className="text-xs text-gray-500 dark:text-gray-400">离线</span>;
                                             }
-                                            return '离线';
-                                          })()}
-                                        </span>
-                                      )}
+                                          }
+                                          return <span className="text-xs text-gray-500 dark:text-gray-400">离线</span>;
+                                        }
+                                      })()}
                                     </div>
                                     {/* 这里可以添加最后一条消息的显示 */}
                                   </div>
@@ -721,7 +809,8 @@ const ChatListPage = () => {
 
 
       </main>
-    </div>
+    )}
+  </div>
   );
 };
 

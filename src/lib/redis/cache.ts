@@ -92,7 +92,7 @@ export const getCache = async <T>(key: string): Promise<T | null> => {
   
   try {
     const { getCache: serverGetCache } = await import('./cache-manager');
-    return serverGetCache<T>(key);
+    return (serverGetCache as <T>(key: string) => Promise<T | null>)(key);
   } catch (error) {
     console.error('Error getting cache:', error);
     return null;

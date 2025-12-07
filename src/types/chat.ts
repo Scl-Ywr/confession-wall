@@ -1,13 +1,10 @@
 // 聊天相关类型定义
 
-// 导入Profile类型
-import { Profile } from './confession';
+// 导入Profile和OnlineStatus类型
+import { Profile, OnlineStatus } from './confession';
 
-// 重新导出Profile类型供外部使用
-export type { Profile };
-
-// 用户在线状态
-export type OnlineStatus = 'online' | 'offline' | 'away' | 'busy';
+// 重新导出类型供外部使用
+export type { Profile, OnlineStatus };
 
 // 好友关系状态
 export type FriendshipStatus = 'pending' | 'accepted' | 'rejected';

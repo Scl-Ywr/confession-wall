@@ -65,12 +65,32 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   // 更新用户在线状态的辅助函数
   const updateOnlineStatus = async (userId: string, status: 'online' | 'offline' | 'away') => {
     try {
-      // 移除对state.user的依赖，确保即使用户已登出也能更新状态
+      // 获取当前登录用户，确保只有当前登录用户才能更新自己的状态
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
+        // 如果没有登录用户，忽略状态更新
+        return;
+      }
+      
+      // 确保只有当前登录用户才能更新自己的状态
+      if (user.id !== userId) {
+        // 仅在开发环境下记录日志，生产环境下忽略
+        if (process.env.NODE_ENV === 'development') {
+          console.debug('Online status update rejected: User can only update their own status', {
+            currentUserId: user.id,
+            targetUserId: userId,
+            status
+          });
+        }
+        return;
+      }
+      
       const { error } = await supabase
         .from('profiles')
         .update({
           online_status: status,
-          last_seen: new Date().toISOString()
+          // 使用客户端当前时间，Supabase会自动转换为PostgreSQL时间格式
+          last_seen: new Date()
         })
         .eq('id', userId);
       if (error) {
@@ -217,23 +237,28 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     // 添加心跳机制，定期更新在线状态
     // 只有当用户实际登录时才运行心跳机制
     const heartbeatInterval = setInterval(async () => {
-      // 使用闭包变量中的userId
-      if (currentUserId) {
-        try {
-          // 直接更新在线状态，不获取最新的user对象，避免user对象频繁变化
-          await updateOnlineStatus(currentUserId, 'online');
-        } catch (error) {
-          // 忽略心跳更新失败，这可能是网络问题或用户已离线
-          // 仅在开发环境下记录调试信息
-          if (process.env.NODE_ENV === 'development') {
-            const errorObj = error as Error;
-            console.debug('Heartbeat update info:', {
-              userId: currentUserId,
-              error: errorObj.message || 'Unknown error'
-            });
-          }
-          // 不要在catch块中再次调用updateOnlineStatus，避免潜在的无限循环
+      try {
+        // 每次心跳都获取最新的登录用户信息，确保只更新当前登录用户的状态
+        const { data: { user } } = await supabase.auth.getUser();
+        if (user) {
+          // 只更新当前登录用户的状态
+          await updateOnlineStatus(user.id, 'online');
+          // 更新闭包变量中的userId，确保其他地方也使用正确的userId
+          currentUserId = user.id;
+        } else {
+          // 如果没有登录用户，清空闭包变量
+          currentUserId = null;
         }
+      } catch (error) {
+        // 忽略心跳更新失败，这可能是网络问题或用户已离线
+        // 仅在开发环境下记录调试信息
+        if (process.env.NODE_ENV === 'development') {
+          const errorObj = error as Error;
+          console.debug('Heartbeat update info:', {
+            error: errorObj.message || 'Unknown error'
+          });
+        }
+        // 不要在catch块中再次调用updateOnlineStatus，避免潜在的无限循环
       }
     }, 30000); // 每30秒发送一次心跳
 

@@ -33,4 +33,15 @@ You can check out [the Next.js GitHub repository](https://github.com/vercel/next
 
 The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
 
+### Environment Variables
+
+Before deploying to Vercel, you need to configure the following environment variables. Refer to [VERCEL_ENV_VARS.md](VERCEL_ENV_VARS.md) for a complete list of all required and optional environment variables.
+
+#### Required Environment Variables
+
+- `NEXT_PUBLIC_SUPABASE_URL` - Your Supabase project URL
+- `NEXT_PUBLIC_SUPABASE_ANON_KEY` - Your Supabase anonymous API key
+- `SUPABASE_SERVICE_ROLE_KEY` - Your Supabase service role key
+- `REDIS_URL` or `REDIS_HOST`, `REDIS_PORT`, `REDIS_PASSWORD` - Redis connection details
+
 Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.

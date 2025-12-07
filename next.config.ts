@@ -10,8 +10,15 @@ const nextConfig: NextConfig = {
         hostname: 'ltbacrfoksjzfszpsmow.supabase.co',
         pathname: '/**',
       },
+      {
+        protocol: 'https',
+        hostname: 'ltbacrfoksjzfszpsmow.storage.supabase.co',
+        pathname: '/**',
+      },
     ],
   },
+  serverExternalPackages: ['ioredis'],
+  turbopack: {},
 };
 
 export default nextConfig;
