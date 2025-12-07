@@ -19,10 +19,8 @@ export const supabase = createClient(
       heartbeatIntervalMs: 30000
     },
     storage: {
-      // 配置存储的缓存控制头
-      cacheControl: 'public, max-age=31536000, immutable',
-      // 设置请求超时时间
-      timeout: 30000,
+      // 使用新的主机名配置
+      useNewHostname: true
     }
   }
 );
