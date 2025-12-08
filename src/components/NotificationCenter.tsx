@@ -1,12 +1,13 @@
 'use client';
 
-import React, { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/context/AuthContext';
 import { supabase } from '@/lib/supabase/client';
 import { Notification } from '@/types/chat';
 import { BellIcon, CheckCircleIcon, ClockIcon, XCircleIcon } from '@heroicons/react/24/outline';
 import { chatService } from '@/services/chatService';
+import { queueService, getNotificationChannel, QueueMessage } from '@/lib/redis/queue-service';
 
 interface NotificationCenterProps {
   isOpen: boolean;
@@ -51,7 +52,7 @@ export default function NotificationCenter({ isOpen, onClose, onNotificationClic
   useEffect(() => {
     if (!user) return;
 
-    // 创建Realtime通道监听通知变化
+    // 创建Realtime通道监听通知变化（备用方案）
     const channel = supabase.channel('user-notifications');
 
     channel
@@ -85,8 +86,68 @@ export default function NotificationCenter({ isOpen, onClose, onNotificationClic
       })
       .subscribe();
 
+    // 订阅Redis消息队列
+    const notificationChannel = getNotificationChannel(user.id);
+    
+    // 处理Redis通知消息
+    const handleRedisNotification = (message: QueueMessage<unknown>) => {
+      console.log('Received Redis notification:', message);
+      
+      const payload = message.payload;
+      
+      // 检查payload是否是对象
+      if (typeof payload === 'object' && payload !== null) {
+        // 使用类型断言处理payload属性
+        const payloadObj = payload as {
+          type?: string;
+          notification?: unknown;
+          updateType?: string;
+          notificationId?: string;
+        };
+        
+        // 根据消息类型处理
+        if (payloadObj.type === 'new_notification' && payloadObj.notification) {
+          // 新通知 - 使用类型断言确保返回类型正确
+          setNotifications(prev => {
+            const newNotification = payloadObj.notification as Notification;
+            return [newNotification, ...prev];
+          });
+          setUnreadCount(prev => prev + 1);
+        } else if (payloadObj.type === 'notification_updated' && payloadObj.notification) {
+          // 更新通知状态 - 使用类型断言确保返回类型正确
+          setNotifications(prev => {
+            const updatedNotification = payloadObj.notification as Notification;
+            return prev.map(notification => 
+              notification.id === updatedNotification.id ? updatedNotification : notification
+            );
+          });
+          
+          // 更新未读计数
+          const updatedUnreadCount = notifications.filter(n => !n.read_status).length;
+          setUnreadCount(updatedUnreadCount);
+        } else if (payloadObj.type === 'notifications_updated' && payloadObj.updateType === 'mark_all_as_read') {
+          // 标记所有通知为已读
+          setNotifications(prev => prev.map(notification => ({ ...notification, read_status: true })));
+          setUnreadCount(0);
+        } else if (payloadObj.type === 'notification_deleted' && payloadObj.notificationId) {
+          // 删除通知
+          setNotifications(prev => prev.filter(notification => notification.id !== payloadObj.notificationId));
+          
+          // 更新未读计数
+          const updatedUnreadCount = notifications.filter(n => !n.read_status).length;
+          setUnreadCount(updatedUnreadCount);
+        }
+      }
+    };
+
+    // 订阅Redis频道
+    queueService.subscribe(notificationChannel, handleRedisNotification);
+
     return () => {
+      // 移除Realtime通道
       supabase.removeChannel(channel);
+      // 取消Redis订阅
+      queueService.unsubscribe(notificationChannel, handleRedisNotification);
     };
   }, [user, notifications]);
 

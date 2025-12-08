@@ -14,6 +14,15 @@ import {
 } from '@/types/chat';
 import { getCache, setCache, removeCache } from '@/utils/cache';
 import { getUserProfileCacheKey, EXPIRY } from '@/lib/redis/cache';
+import { queueService, MessagePriority } from '@/lib/redis/queue-service';
+import { 
+  getCachedUnreadNotificationsCount, 
+  setCachedUnreadNotificationsCount, 
+  clearUnreadNotificationsCountCache,
+  getCachedNotificationsList,
+  setCachedNotificationsList,
+  clearNotificationsListCache
+} from '@/services/notificationCacheService';
 
 // 创建通知的辅助函数
 const createNotification = async (
@@ -50,7 +59,8 @@ const createNotification = async (
           sender_id: senderId,
           content,
           type,
-          friend_request_id: friendRequestId
+          friend_request_id: friendRequestId,
+          group_id: groupId
         })
       }
     );
@@ -60,19 +70,25 @@ const createNotification = async (
       throw new Error('Failed to create notification');
     }
 
-    // 返回一个模拟的通知对象，因为我们不需要实际的数据库ID
-    return {
-      id: 'temp-notification-id',
-      recipient_id: recipientId,
-      sender_id: senderId,
-      content,
-      type,
-      read_status: false,
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-      friend_request_id: friendRequestId,
-      group_id: groupId
-    } as Notification;
+    // 获取实际的通知对象
+    const notification = await response.json() as Notification;
+    
+    // 使用Redis消息队列发布通知
+    try {
+      await queueService.publishNotification(
+        recipientId,
+        {
+          notification,
+          type: 'new_notification'
+        },
+        MessagePriority.MEDIUM
+      );
+    } catch (redisError) {
+      // 只记录错误，不影响主要流程
+      console.error('Failed to publish notification to Redis:', redisError);
+    }
+    
+    return notification;
   } catch (error) {
     console.error('Error in createNotification:', error);
     throw error;
@@ -2021,7 +2037,13 @@ export const chatService = {
         return [];
       }
 
-      // 使用直接的 fetch 调用来获取通知列表
+      // 先尝试从缓存获取通知列表
+      const cachedNotifications = await getCachedNotificationsList<Notification>(userId);
+      if (cachedNotifications) {
+        return cachedNotifications;
+      }
+
+      // 缓存未命中，从数据库获取
       const response = await fetch(
         `${process.env.NEXT_PUBLIC_SUPABASE_URL}/rest/v1/notifications?select=*&recipient_id=eq.${userId}&order=created_at.desc`,
         {
@@ -2037,8 +2059,12 @@ export const chatService = {
         return [];
       }
 
-      const data = await response.json();
-      return data as Notification[];
+      const data = await response.json() as Notification[];
+      
+      // 将通知列表缓存
+      await setCachedNotificationsList(userId, data);
+      
+      return data;
     } catch {
       return [];
     }
@@ -2068,7 +2094,13 @@ export const chatService = {
         return 0;
       }
 
-      // 使用直接的 fetch 调用来获取未读通知数量
+      // 先尝试从缓存获取未读通知数量
+      const cachedCount = await getCachedUnreadNotificationsCount(userId);
+      if (cachedCount !== null) {
+        return cachedCount;
+      }
+
+      // 缓存未命中，从数据库获取
       const response = await fetch(
         `${process.env.NEXT_PUBLIC_SUPABASE_URL}/rest/v1/notifications?select=id&recipient_id=eq.${userId}&read_status=eq.false`,
         {
@@ -2085,7 +2117,12 @@ export const chatService = {
       }
 
       const data = await response.json();
-      return data.length || 0;
+      const count = data.length || 0;
+      
+      // 将未读通知数量缓存
+      await setCachedUnreadNotificationsCount(userId, count);
+      
+      return count;
     } catch {
       return 0;
     }
@@ -2144,7 +2181,28 @@ export const chatService = {
       }
 
       const updatedNotificationData = await getResponse.json();
-      return updatedNotificationData[0] as Notification;
+      const updatedNotification = updatedNotificationData[0] as Notification;
+      
+      // 使用Redis消息队列发布通知状态更新
+      try {
+        await queueService.publishNotification(
+          userId,
+          {
+            notification: updatedNotification,
+            type: 'notification_updated',
+            updateType: 'read_status'
+          },
+          MessagePriority.LOW
+        );
+        // 清除相关缓存
+        await clearUnreadNotificationsCountCache(userId);
+        await clearNotificationsListCache(userId);
+      } catch (redisError) {
+        // 只记录错误，不影响主要流程
+        console.error('Failed to publish notification update to Redis:', redisError);
+      }
+      
+      return updatedNotification;
     } catch (error) {
       console.error('Error in markNotificationAsRead:', error);
       throw error;
@@ -2186,6 +2244,24 @@ export const chatService = {
       if (!response.ok) {
         throw new Error(`Failed to mark all notifications as read: ${await response.text()}`);
       }
+      
+      // 使用Redis消息队列发布批量更新通知
+      try {
+        await queueService.publishNotification(
+          userId,
+          {
+            type: 'notifications_updated',
+            updateType: 'mark_all_as_read'
+          },
+          MessagePriority.LOW
+        );
+        // 清除相关缓存
+        await clearUnreadNotificationsCountCache(userId);
+        await clearNotificationsListCache(userId);
+      } catch (redisError) {
+        // 只记录错误，不影响主要流程
+        console.error('Failed to publish mark-all-as-read notification to Redis:', redisError);
+      }
     } catch (error) {
       console.error('Error in markAllNotificationsAsRead:', error);
       throw error;
@@ -2225,6 +2301,24 @@ export const chatService = {
 
       if (!response.ok) {
         throw new Error(`Failed to delete notification: ${await response.text()}`);
+      }
+      
+      // 使用Redis消息队列发布通知删除事件
+      try {
+        await queueService.publishNotification(
+          userId,
+          {
+            notificationId,
+            type: 'notification_deleted'
+          },
+          MessagePriority.LOW
+        );
+        // 清除相关缓存
+        await clearUnreadNotificationsCountCache(userId);
+        await clearNotificationsListCache(userId);
+      } catch (redisError) {
+        // 只记录错误，不影响主要流程
+        console.error('Failed to publish notification deletion to Redis:', redisError);
       }
     } catch (error) {
       console.error('Error in deleteNotification:', error);

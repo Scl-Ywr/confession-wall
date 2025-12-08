@@ -423,7 +423,7 @@ const ChatListPage = () => {
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
           {/* 好友列表和群聊列表 */}
           <div className="md:col-span-1">
-            <div className="glass-card rounded-2xl p-6">
+            <div className="glass-card rounded-2xl p-6 flex flex-col h-[calc(100vh-200px)]">
                   {/* 创建群聊按钮 */}
                   <div className="flex justify-between items-center mb-4 gap-3 flex-wrap">
                     <h2 className="text-lg font-semibold text-gray-800 dark:text-white whitespace-nowrap">
@@ -447,6 +447,8 @@ const ChatListPage = () => {
                     </div>
                   </div>
 
+                  {/* 聊天列表内容（可滚动） */}
+                  <div className="flex-1 overflow-y-auto scrollbar-thin scrollbar-thumb-gray-300 dark:scrollbar-thumb-gray-600 scrollbar-track-transparent">
                   {/* 群聊列表 */}
                   <div className="mb-6">
                     <h3 className="text-sm font-medium text-gray-600 dark:text-gray-400 mb-3 flex items-center gap-1.5">
@@ -689,6 +691,7 @@ const ChatListPage = () => {
                         })}
                       </div>
                     )}
+                  </div>
                   </div>
                 </div>
               </div>

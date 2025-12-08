@@ -2,12 +2,13 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { chatService } from '@/services/chatService';
-import { Friendship, OnlineStatus } from '@/types/chat';
+import { Friendship } from '@/types/chat';
 import { useRouter } from 'next/navigation';
 import { Search, MessageCircle, UserPlus } from 'lucide-react';
 import Image from 'next/image';
 import { supabase } from '@/lib/supabase/client';
 import { useAuth } from '@/context/AuthContext';
+import { getOnlineStatusInfo } from '@/utils/onlineStatus';
 
 export function FriendList() {
   const { user } = useAuth();
@@ -66,13 +67,9 @@ export function FriendList() {
     return () => clearInterval(refreshInterval);
   }, [fetchFriends]);
 
-  // 实时监听好友状态变化
+  // 实时监听好友状态变化和新好友添加
   useEffect(() => {
-    if (friends.length === 0) return;
-    
-    // 获取所有好友ID
-    const friendIds = friends.map(f => f.friend_id).join(',');
-    if (!friendIds) return;
+    if (!user) return;
     
     // 订阅好友profile变化
     const profileChannel = supabase
@@ -83,18 +80,31 @@ export function FriendList() {
           event: 'UPDATE',
           schema: 'public',
           table: 'profiles',
-          filter: `id=in.(${friendIds})`
+          filter: `id=in.(${friends.map(f => f.friend_id).join(',')})`
         },
-        (payload) => {
+        () => {
           // 当好友profile更新时，重新获取好友列表
           fetchFriends(true);
-          // 调试信息：打印更新的好友信息
+        }
+      )
+      .subscribe();
+    
+    // 订阅新好友添加和删除
+    const friendshipChannel = supabase
+      .channel('friendships')
+      .on(
+        'postgres_changes',
+        {
+          event: '*', // 监听所有事件：INSERT, UPDATE, DELETE
+          schema: 'public',
+          table: 'friendships',
+          filter: `user_id=eq.${user.id}`
+        },
+        (payload) => {
+          // 当好友关系变化时，重新获取好友列表
+          fetchFriends(true);
           if (process.env.NODE_ENV === 'development') {
-            console.log('Friend profile updated:', {
-              userId: payload.new.id,
-              onlineStatus: payload.new.online_status,
-              lastSeen: payload.new.last_seen
-            });
+            console.log('Friendship changed:', payload.eventType, payload.new || payload.old);
           }
         }
       )
@@ -102,8 +112,9 @@ export function FriendList() {
     
     return () => {
       supabase.removeChannel(profileChannel);
+      supabase.removeChannel(friendshipChannel);
     };
-  }, [friends, fetchFriends]);
+  }, [user, friends, fetchFriends]);
 
   // 直接获取所有好友的最新状态，而不是等待profile更新
   useEffect(() => {
@@ -208,90 +219,19 @@ export function FriendList() {
             const friend = friendship.friend_profile;
             if (!friend) return null;
 
-            // 判断用户是否真正在线（last_seen在5分钟内）
-            const isOnline = () => {
-              // 1. 首先检查last_seen是否存在，不存在则视为离线
-              if (!friend.last_seen) return false;
-              
-              // 2. 确保last_seen是有效的日期
-              let lastSeenDate;
-              try {
-                lastSeenDate = new Date(friend.last_seen);
-                // 检查日期是否有效
-                if (isNaN(lastSeenDate.getTime())) {
-                  if (process.env.NODE_ENV === 'development') {
-                    console.error('Invalid lastSeen date:', friend.last_seen);
-                  }
-                  return false;
-                }
-              } catch (error) {
-                if (process.env.NODE_ENV === 'development') {
-                  console.error('Error parsing lastSeen date:', error, friend.last_seen);
-                }
-                return false;
-              }
-              
-              const now = new Date();
-              const timeDiff = now.getTime() - lastSeenDate.getTime();
-              
-              // 3. 检查online_status字段，如果是明确的'offline'，直接返回false
-              // 使用类型守卫确保TypeScript不会报错
-              if (friend.online_status === ('offline' as OnlineStatus)) return false;
-              
-              // 调试信息：打印在线状态判断详情
-              if (process.env.NODE_ENV === 'development') {
-                console.log('Online status check:', {
-                  username: friend.username,
-                  displayName: friend.display_name,
-                  onlineStatus: friend.online_status,
-                  lastSeen: friend.last_seen,
-                  lastSeenDate: lastSeenDate.toISOString(),
-                  now: now.toISOString(),
-                  timeDiff: timeDiff,
-                  isOnline: timeDiff >= 0 && timeDiff < 5 * 60 * 1000
-                });
-              }
-              
-              // 处理未来时间问题：如果last_seen是未来时间，计算时间差为负数，视为离线
-              // 5分钟内视为在线
-              return timeDiff >= 0 && timeDiff < 5 * 60 * 1000;
-            };
+            // 获取统一的在线状态信息
+            const onlineStatusInfo = getOnlineStatusInfo(friend.online_status, friend.last_seen);
             
-            // 获取状态显示文本
-            const getStatusText = () => {
-              if (isOnline()) {
-                if (friend.online_status === 'online') return '在线';
-                if (friend.online_status === 'away') return '离开';
-                if (friend.online_status === 'busy') return '忙碌';
-                return '在线';
-              } else {
-                return '离线';
-              }
-            };
-            
-            // 获取状态指示器颜色
-            const getStatusColor = () => {
-              if (isOnline()) {
-                if (friend.online_status === 'online') return 'bg-green-500';
-                if (friend.online_status === 'away') return 'bg-yellow-500';
-                if (friend.online_status === 'busy') return 'bg-red-500';
-                return 'bg-green-500';
-              } else {
-                return 'bg-gray-500';
-              }
-            };
-            
-            // 获取状态文本颜色
-            const getStatusTextColor = () => {
-              if (isOnline()) {
-                if (friend.online_status === 'online') return 'text-green-500';
-                if (friend.online_status === 'away') return 'text-yellow-500';
-                if (friend.online_status === 'busy') return 'text-red-500';
-                return 'text-green-500';
-              } else {
-                return 'text-gray-500';
-              }
-            };
+            // 调试信息：打印在线状态判断详情
+            if (process.env.NODE_ENV === 'development') {
+              console.log('Online status check:', {
+                username: friend.username,
+                displayName: friend.display_name,
+                onlineStatus: friend.online_status,
+                lastSeen: friend.last_seen,
+                ...onlineStatusInfo
+              });
+            }
             
             return (
               <li
@@ -320,13 +260,13 @@ export function FriendList() {
                       )}
                     </div>
                     {/* 在线状态指示器 */}
-                    <div className={`absolute bottom-0 right-0 w-3 h-3 rounded-full ${getStatusColor()} border-2 border-white dark:border-gray-800`}></div>
+                    <div className={`absolute bottom-0 right-0 w-3 h-3 rounded-full ${onlineStatusInfo.color} border-2 border-white dark:border-gray-800`}></div>
                   </div>
                   
                   <div className="flex-grow">
                     <div className="font-medium text-gray-800 dark:text-white flex items-center gap-2">
                       {friend.display_name || friend.username}
-                      <span className={`text-xs ${getStatusTextColor()}`}>{getStatusText()}</span>
+                      <span className={`text-xs ${onlineStatusInfo.textColor}`}>{onlineStatusInfo.text}</span>
                     </div>
                     <div className="text-sm text-gray-500 dark:text-gray-400">
                       @{friend.username}
