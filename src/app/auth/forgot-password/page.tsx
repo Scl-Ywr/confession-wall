@@ -56,7 +56,10 @@ const ForgotPasswordPage: React.FC = () => {
       
       // 步骤2：发送密码重置邮件，配置正确的redirectTo参数
       // 将生成的token添加到URL中，用于跨设备验证
-      const redirectUrl = `${window.location.origin}/auth/reset-password?token=${resetToken}`;
+      // 根据环境设置不同的redirect URL
+      const redirectUrl = process.env.NODE_ENV === 'production' 
+        ? `https://vercel.suchuanli.me/auth/reset-password?token=${resetToken}` 
+        : `${window.location.origin}/auth/reset-password?token=${resetToken}`;
       const { error } = await supabase.auth.resetPasswordForEmail(data.email, {
         redirectTo: redirectUrl
       });

@@ -347,9 +347,10 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       }
       
       // 3. 邮箱不存在，执行正常注册流程
-      const redirectUrl = typeof window !== 'undefined' 
-        ? `${window.location.origin}/auth/verify-email` 
-        : '';
+      // 根据环境设置不同的redirect URL
+      const redirectUrl = process.env.NODE_ENV === 'production' 
+        ? 'https://vercel.suchuanli.me/auth/verify-email' 
+        : (typeof window !== 'undefined' ? `${window.location.origin}/auth/verify-email` : '');
       
       const signupResult = await supabase.auth.signUp({
         email,
@@ -497,9 +498,10 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     setState(prev => ({ ...prev, error: null }));
     try {
       // 只在客户端执行，确保window对象存在
-      const redirectUrl = typeof window !== 'undefined' 
-        ? `${window.location.origin}/auth/verify-email` 
-        : '';
+      // 根据环境设置不同的redirect URL
+      const redirectUrl = process.env.NODE_ENV === 'production' 
+        ? 'https://vercel.suchuanli.me/auth/verify-email' 
+        : (typeof window !== 'undefined' ? `${window.location.origin}/auth/verify-email` : '');
       
       const { error } = await supabase.auth.resend({
         type: 'signup',

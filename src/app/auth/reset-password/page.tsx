@@ -125,6 +125,21 @@ const ResetPasswordPage: React.FC = () => {
     if (typeof window !== 'undefined') {
       const checkSessionAndParams = async () => {
         try {
+          // 1. 先检查并处理无效的刷新令牌
+          // 如果存在无效的刷新令牌，清除会话后重试
+          try {
+            await supabase.auth.getUser();
+          } catch (userError) {
+            // 处理无效的刷新令牌错误 - 确保userError是Error类型
+            if (userError instanceof Error && 
+                (userError.message.includes('Invalid Refresh Token') || userError.message.includes('Refresh Token Not Found'))) {
+              // 清除无效的会话数据
+              localStorage.removeItem('supabase.auth.token');
+              localStorage.removeItem('supabase.auth.refresh_token');
+              localStorage.removeItem('supabase.auth.token_expires_at');
+            }
+          }
+          
           const href = window.location.href;
           setCurrentUrl(href);
           

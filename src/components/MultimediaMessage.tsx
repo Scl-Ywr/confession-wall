@@ -27,7 +27,7 @@ const MultimediaMessage: React.FC<MultimediaMessageProps> = ({ message }) => {
       try {
         videoElement.play();
         setIsPlaying(true);
-      } catch (error) {
+      } catch {
         // 忽略播放被中断的错误
         setIsPlaying(false);
       }
