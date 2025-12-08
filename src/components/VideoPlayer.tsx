@@ -324,9 +324,15 @@ export default function VideoPlayer({ videoUrl, className = '', posterUrl }: Vid
           const newMaxBufferEnd = video.buffered.end(video.buffered.length - 1);
           if (newMaxBufferEnd - video.currentTime >= maxBufferTime) {
             // 当缓冲达到目标时，恢复播放
-            video.play();
-            setIsPaused(false);
-            setIsAutoBuffering(false);
+            try {
+              video.play();
+              setIsPaused(false);
+              setIsAutoBuffering(false);
+            } catch {
+              // 忽略播放被中断的错误
+              setIsPaused(true);
+              setIsAutoBuffering(false);
+            }
           } else {
             // 否则继续检查
             calculateBufferProgress();
@@ -335,11 +341,20 @@ export default function VideoPlayer({ videoUrl, className = '', posterUrl }: Vid
       }, 1000);
     } else if (bufferTime >= maxBufferTime && isAutoBuffering && video.paused === true) {
       // 当缓冲足够时，自动恢复播放
-      video.play();
-      setIsPaused(false);
-      setIsAutoBuffering(false);
-      if (bufferTimeoutRef.current) {
-        clearTimeout(bufferTimeoutRef.current);
+      try {
+        video.play();
+        setIsPaused(false);
+        setIsAutoBuffering(false);
+        if (bufferTimeoutRef.current) {
+          clearTimeout(bufferTimeoutRef.current);
+        }
+      } catch {
+        // 忽略播放被中断的错误
+        setIsPaused(true);
+        setIsAutoBuffering(false);
+        if (bufferTimeoutRef.current) {
+          clearTimeout(bufferTimeoutRef.current);
+        }
       }
     }
   }, [currentTime, duration, isPaused, isAutoBuffering, networkQuality, setBufferProgress, setIsAutoBuffering, setIsPaused]);
@@ -669,17 +684,21 @@ export default function VideoPlayer({ videoUrl, className = '', posterUrl }: Vid
           playsInline
           controlsList="nodownload noremoteplayback"
           onClick={() => {
-            // 点击屏幕时立即显示中央播放按钮和控制组件
-            showControlsWithTimeout();
-            
-            if (playerRef.current) {
-              if (isPaused) {
+          // 点击屏幕时立即显示中央播放按钮和控制组件
+          showControlsWithTimeout();
+          
+          if (playerRef.current) {
+            if (isPaused) {
+              try {
                 playerRef.current.play();
-              } else {
-                playerRef.current.pause();
+              } catch {
+                // 忽略播放被中断的错误
               }
+            } else {
+              playerRef.current.pause();
             }
-          }}
+          }
+        }}
           onPlay={() => {
             setIsPaused(false);
             // 播放时获取时长并显示控制组件
@@ -752,17 +771,21 @@ export default function VideoPlayer({ videoUrl, className = '', posterUrl }: Vid
           <motion.button 
             className="relative w-16 h-16 rounded-full bg-gradient-to-r from-orange-500 to-orange-600 text-white flex items-center justify-center shadow-lg shadow-orange-500/30"
             onClick={(e) => {
-              e.stopPropagation();
-              if (playerRef.current) {
-                if (isPaused) {
+            e.stopPropagation();
+            if (playerRef.current) {
+              if (isPaused) {
+                try {
                   playerRef.current.play();
                   setIsPaused(false); // 立即更新播放状态
-                } else {
-                  playerRef.current.pause();
-                  setIsPaused(true); // 立即更新暂停状态
+                } catch {
+                  // 忽略播放被中断的错误
                 }
+              } else {
+                playerRef.current.pause();
+                setIsPaused(true); // 立即更新暂停状态
               }
-            }}
+            }
+          }}
             whileHover={{ scale: 1.1, boxShadow: '0 0 20px rgba(249, 115, 22, 0.6)' }}
             whileTap={{ scale: 0.95 }}
             transition={{ duration: 300, ease: "easeOut" }}
@@ -861,7 +884,11 @@ export default function VideoPlayer({ videoUrl, className = '', posterUrl }: Vid
                   e.stopPropagation();
                   if (playerRef.current) {
                     if (isPaused) {
-                      playerRef.current.play();
+                      try {
+                        playerRef.current.play();
+                      } catch {
+                        // 忽略播放被中断的错误
+                      }
                     } else {
                       playerRef.current.pause();
                     }

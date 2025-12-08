@@ -15,14 +15,12 @@ import 'react-photo-view/dist/react-photo-view.css';
 interface ConfessionCardProps {
   confession: Confession;
   currentUserId?: string;
-  onLike: (id: string) => void;
   onDelete: (id: string) => void;
 }
 
 export default function ConfessionCard({
   confession,
   currentUserId,
-  onLike,
   onDelete,
 }: ConfessionCardProps) {
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
@@ -142,10 +140,6 @@ export default function ConfessionCard({
             confessionId={confession.id}
             initialLikesCount={Math.max(0, Number(confession.likes_count) || 0)}
             initialLiked={confession.liked_by_user || false}
-            onLikeStatusChange={() => {
-              // 调用父组件的onLike回调
-              onLike(confession.id);
-            }}
           />
         </div>
 

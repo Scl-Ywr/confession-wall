@@ -12,7 +12,7 @@ import { chatService } from '@/services/chatService';
 const ChatPage = () => {
   const { userId } = useParams<{ userId: string }>();
   const router = useRouter();
-  const { user } = useAuth();
+  const { user, loading: authLoading } = useAuth();
   const [otherUserProfile, setOtherUserProfile] = useState<Profile | null>(null);
   const [loading, setLoading] = useState(true);
   const [showUnfriendedModal, setShowUnfriendedModal] = useState(false);
@@ -24,6 +24,11 @@ const ChatPage = () => {
 
   useEffect(() => {
     const fetchUserProfileAndFriendship = async () => {
+      // 等待authLoading完成
+      if (authLoading) {
+        return;
+      }
+      
       if (!user) {
         setLoading(false);
         return;
@@ -32,7 +37,16 @@ const ChatPage = () => {
       try {
         // 获取用户资料
         const profile = await chatService.getUserProfile(userId);
-        setOtherUserProfile(profile);
+        
+        // 如果第一次获取失败，尝试再次获取
+        if (!profile) {
+          // 短暂延迟后重试
+          await new Promise(resolve => setTimeout(resolve, 500));
+          const retryProfile = await chatService.getUserProfile(userId);
+          setOtherUserProfile(retryProfile);
+        } else {
+          setOtherUserProfile(profile);
+        }
         
         // 检查好友关系状态，无论profile是否存在都执行
         const status = await chatService.checkFriendshipStatus(userId);
@@ -49,7 +63,7 @@ const ChatPage = () => {
     };
 
     fetchUserProfileAndFriendship();
-  }, [userId, user]);
+  }, [userId, user, authLoading]);
 
   if (loading) {
     return (

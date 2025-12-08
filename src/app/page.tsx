@@ -18,24 +18,12 @@ import LoadingSpinner from '@/components/LoadingSpinner';
 export default function Home() {
   const router = useRouter();
   const { user } = useAuth();
-  const { toggleLike, showLoginPrompt } = useLike();
+  const { showLoginPrompt } = useLike();
   const [searchKeyword, setSearchKeyword] = useState('');
   const [searchType, setSearchType] = useState<'content' | 'username'>('content');
   const queryClient = useQueryClient();
 
-  // 处理点赞操作
-  const handleLike = async (confessionId: string) => {
-    try {
-      // 执行实际的点赞/取消点赞操作
-      // toggleLike函数内部已经包含了invalidateQueries调用，无需重复调用
-      await toggleLike(confessionId);
-    } catch (error) {
-      console.error('Failed to toggle like:', error);
-      // 出错时刷新所有相关数据以恢复正确状态
-      await queryClient.invalidateQueries({ queryKey: ['confessions'] });
-      await queryClient.invalidateQueries({ queryKey: ['search'] });
-    }
-  };
+
 
   // 使用React Query的无限查询获取表白列表
   const { 
@@ -275,9 +263,8 @@ export default function Home() {
                 key={confession.id}
                 confession={confession}
                 currentUserId={user?.id}
-                onLike={handleLike}
                 onDelete={handleDeleteConfession}
-              />
+                />
               ))}
             </div>
           )}

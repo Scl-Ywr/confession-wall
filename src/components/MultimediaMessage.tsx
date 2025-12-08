@@ -22,10 +22,16 @@ const MultimediaMessage: React.FC<MultimediaMessageProps> = ({ message }) => {
     
     if (isPlaying) {
       videoElement.pause();
+      setIsPlaying(false);
     } else {
-      videoElement.play();
+      try {
+        videoElement.play();
+        setIsPlaying(true);
+      } catch (error) {
+        // 忽略播放被中断的错误
+        setIsPlaying(false);
+      }
     }
-    setIsPlaying(!isPlaying);
   };
 
   const handleVideoEnded = () => {

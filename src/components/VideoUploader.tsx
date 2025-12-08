@@ -219,22 +219,46 @@ export default function VideoUploader({ onUploadSuccess }: VideoUploaderProps) {
               reject(new Error('视频压缩超时，请尝试选择更小的视频文件或调整压缩参数'));
             }, dynamicTimeout);
             
-            // 直接播放视频并捕获帧，提高处理效率
-            videoElement.play().then(() => {
-              // 设置视频播放速率为1倍，确保视频完整处理
-              videoElement.playbackRate = 1;
+            // 计算帧捕获间隔，确保捕获正确的帧数
+            const frameInterval = 1000 / fps;
+            
+            // 更高效的帧捕获方法
+            const captureFrame = () => {
+              if (processedFrames >= totalFrames || videoElement.ended) {
+                clearTimeout(compressionTimeout);
+                recorder.stop();
+                videoElement.pause();
+                return;
+              }
               
-              // 计算帧捕获间隔，确保捕获正确的帧数
-              const frameInterval = 1000 / fps;
+              // 绘制当前帧到canvas
+              ctx.drawImage(videoElement, 0, 0, canvas.width, canvas.height);
               
-              // 更高效的帧捕获方法
-              const captureFrame = () => {
-                if (processedFrames >= totalFrames || videoElement.ended) {
-                  clearTimeout(compressionTimeout);
-                  recorder.stop();
-                  videoElement.pause();
-                  return;
-                }
+              // 更新已处理帧数
+              processedFrames++;
+              
+              // 使用setTimeout控制帧捕获频率，确保视频完整处理
+              setTimeout(captureFrame, frameInterval);
+            };
+            
+            // 回退的逐帧处理方法
+            const fallbackDrawFrame = () => {
+              if (processedFrames >= totalFrames) {
+                clearTimeout(compressionTimeout);
+                recorder.stop();
+                return;
+              }
+              
+              // 计算当前要处理的时间点
+              const currentTime = (processedFrames / totalFrames) * duration;
+              
+              // 设置视频当前时间，然后等待onseeked事件触发后再绘制帧
+              videoElement.currentTime = currentTime;
+              
+              // 等待视频定位到正确的时间点后再绘制帧
+              const handleSeeked = () => {
+                // 移除事件监听器，避免重复调用
+                videoElement.removeEventListener('seeked', handleSeeked);
                 
                 // 绘制当前帧到canvas
                 ctx.drawImage(videoElement, 0, 0, canvas.width, canvas.height);
@@ -242,50 +266,27 @@ export default function VideoUploader({ onUploadSuccess }: VideoUploaderProps) {
                 // 更新已处理帧数
                 processedFrames++;
                 
-                // 使用setTimeout控制帧捕获频率，确保视频完整处理
-                setTimeout(captureFrame, frameInterval);
+                // 继续处理下一帧，确保所有帧都被处理
+                setTimeout(fallbackDrawFrame, 50); // 适当延迟，确保视频完整处理
               };
               
-              // 开始捕获帧
-              captureFrame();
-            }).catch(err => {
-              console.error('Error playing video for compression:', err);
-              // 如果直接播放失败，回退到优化的逐帧处理
-              const fallbackDrawFrame = () => {
-                if (processedFrames >= totalFrames) {
-                  clearTimeout(compressionTimeout);
-                  recorder.stop();
-                  return;
-                }
-                
-                // 计算当前要处理的时间点
-                const currentTime = (processedFrames / totalFrames) * duration;
-                
-                // 设置视频当前时间，然后等待onseeked事件触发后再绘制帧
-                videoElement.currentTime = currentTime;
-                
-                // 等待视频定位到正确的时间点后再绘制帧
-                const handleSeeked = () => {
-                  // 移除事件监听器，避免重复调用
-                  videoElement.removeEventListener('seeked', handleSeeked);
-                  
-                  // 绘制当前帧到canvas
-                  ctx.drawImage(videoElement, 0, 0, canvas.width, canvas.height);
-                  
-                  // 更新已处理帧数
-                  processedFrames++;
-                  
-                  // 继续处理下一帧，确保所有帧都被处理
-                  setTimeout(fallbackDrawFrame, 50); // 适当延迟，确保视频完整处理
-                };
-                
-                // 监听seeked事件，确保视频已经定位到正确的时间点
-                videoElement.addEventListener('seeked', handleSeeked);
-              };
-              
-              // 开始回退绘制帧
-              fallbackDrawFrame();
-            });
+              // 监听seeked事件，确保视频已经定位到正确的时间点
+              videoElement.addEventListener('seeked', handleSeeked);
+            };
+            
+            // 直接播放视频并捕获帧，提高处理效率
+            videoElement.play()
+              .then(() => {
+                // 设置视频播放速率为1倍，确保视频完整处理
+                videoElement.playbackRate = 1;
+                // 开始捕获帧
+                captureFrame();
+              })
+              .catch(error => {
+                console.log('Video playback error during compression:', error);
+                // 如果播放失败，使用回退的逐帧处理方法
+                fallbackDrawFrame();
+              });
             
           } catch (error) {
             URL.revokeObjectURL(videoElement.src);

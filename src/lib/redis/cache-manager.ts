@@ -462,7 +462,22 @@ export class RedisCacheManager {
     module?: keyof typeof MODULE_EXPIRY
   ): Promise<T | null> {
     try {
+      // 检查是否在浏览器环境中
+      if (typeof window !== 'undefined') {
+        // 在浏览器环境中，直接从数据源获取数据，不使用Redis缓存
+        console.log(`[RedisCache] Browser environment detected, fetching directly from data source for key: ${key}`);
+        return await dataSource();
+      }
+      
+      // 确保在服务器端环境中
       await this.ensureInitialized();
+      
+      // 检查Redis客户端是否可用
+      if (!redis || !this.isInitialized) {
+        // Redis不可用，直接从数据源获取数据
+        console.log(`[RedisCache] Redis not available, fetching directly from data source for key: ${key}`);
+        return await dataSource();
+      }
       
       // 1. 尝试从缓存获取
       const cachedData = await this.getCache<T>(key);
@@ -534,7 +549,14 @@ export class RedisCacheManager {
       }
     } catch (error) {
       console.error(`[RedisCache] Error in getOrSetCache for key ${key}:`, error);
-      return null;
+      // 发生错误时，直接从数据源获取数据，确保系统可用性
+      try {
+        console.log(`[RedisCache] Falling back to data source for key: ${key}`);
+        return await dataSource();
+      } catch (fallbackError) {
+        console.error(`[RedisCache] Failed to fetch from data source for key ${key}:`, fallbackError);
+        return null;
+      }
     }
   }
 

@@ -115,7 +115,7 @@ export function ChatInterface({ otherUserId, otherUserProfile: initialOtherUserP
     }
   };
 
-  // 添加实时消息订阅
+  // 添加实时消息订阅和在线状态监听
   useEffect(() => {
     if (!currentUserId || !otherUserId) {
       return;
@@ -204,6 +204,37 @@ export function ChatInterface({ otherUserId, otherUserProfile: initialOtherUserP
               }
             } catch (error) {
               console.error('Error processing new message:', error);
+            }
+          }
+        }
+      )
+      // 添加对对方用户在线状态变化的实时监听
+      .on(
+        'postgres_changes',
+        {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'profiles',
+          filter: `id.eq.${otherUserId}`
+        },
+        async (payload) => {
+          console.log('Profile update received for', otherUserId, ':', payload.new);
+          
+          // 只更新在线状态和最后活跃时间相关字段
+          if (payload.new.online_status !== undefined || payload.new.last_seen !== undefined) {
+            try {
+              const updatedProfile = await chatService.getUserProfile(otherUserId);
+              if (updatedProfile) {
+                setOtherUserProfile(updatedProfile);
+              }
+            } catch (error) {
+              console.error('Error fetching updated profile:', error);
+              // 直接使用payload.new中的字段更新，避免再次请求
+              setOtherUserProfile(prev => ({
+                ...prev,
+                online_status: payload.new.online_status,
+                last_seen: payload.new.last_seen
+              }));
             }
           }
         }
@@ -621,20 +652,55 @@ export function ChatInterface({ otherUserId, otherUserProfile: initialOtherUserP
             {friendshipStatus === 'accepted' ? (
               <div className="flex flex-col">
                 <div className="flex items-center gap-1 text-sm">
-                  <span className={`w-2 h-2 rounded-full ${otherUserProfile.online_status === 'online' ? 'bg-green-500' : otherUserProfile.online_status === 'away' ? 'bg-yellow-500' : 'bg-gray-500'}`}></span>
-                  <span className={otherUserProfile.online_status === 'online' ? 'text-green-500' : otherUserProfile.online_status === 'away' ? 'text-yellow-500' : 'text-gray-500'}>
-                    {otherUserProfile.online_status === 'online' ? '在线' : otherUserProfile.online_status === 'away' ? '离开' : (() => {
-                      const lastActive = otherUserProfile.last_seen || otherUserProfile.updated_at;
-                      if (lastActive) {
-                        try {
-                      return new Date(lastActive).toLocaleString('zh-CN', { hour: '2-digit', minute: '2-digit' });
-                    } catch {
-                      return '离线';
-                    }
+                  {/* 在线状态判断逻辑，与好友列表保持一致 */}
+                  {(() => {
+                    // 解析最后活跃时间
+                    let lastSeenDate: Date | null = null;
+                    if (otherUserProfile.last_seen) {
+                      try {
+                        lastSeenDate = new Date(otherUserProfile.last_seen);
+                        // 检查是否为有效日期
+                        if (isNaN(lastSeenDate.getTime())) {
+                          lastSeenDate = null;
+                        }
+                      } catch {
+                        lastSeenDate = null;
                       }
-                      return '离线';
-                    })()}
-                  </span>
+                    }
+                    
+                    // 计算是否在线
+                    const now = new Date();
+                    const fiveMinutesAgo = new Date(now.getTime() - 5 * 60 * 1000);
+                    const isOnline = lastSeenDate && otherUserProfile.online_status !== 'offline' && lastSeenDate > fiveMinutesAgo;
+                    
+                    // 确定显示状态
+                    let displayStatus: 'online' | 'away' | 'offline';
+                    if (!isOnline) {
+                      displayStatus = 'offline';
+                    } else if (otherUserProfile.online_status === 'away') {
+                      displayStatus = 'away';
+                    } else {
+                      displayStatus = 'online';
+                    }
+                    
+                    return (
+                      <>
+                        <span className={`w-2 h-2 rounded-full ${displayStatus === 'online' ? 'bg-green-500' : displayStatus === 'away' ? 'bg-yellow-500' : 'bg-gray-500'}`}></span>
+                        <span className={displayStatus === 'online' ? 'text-green-500' : displayStatus === 'away' ? 'text-yellow-500' : 'text-gray-500'}>
+                          {displayStatus === 'online' ? '在线' : displayStatus === 'away' ? '离开' : (() => {
+                            if (lastSeenDate) {
+                              try {
+                                return new Date(lastSeenDate).toLocaleString('zh-CN', { hour: '2-digit', minute: '2-digit' });
+                              } catch {
+                                return '离线';
+                              }
+                            }
+                            return '离线';
+                          })()}
+                        </span>
+                      </>
+                    );
+                  })()}
                 </div>
                 <div className="flex items-center gap-1 text-xs mt-1">
                   <span className={`w-1.5 h-1.5 rounded-full ${connectionStatus === 'connected' ? 'bg-green-500' : connectionStatus === 'connecting' ? 'bg-yellow-500' : 'bg-red-500'}`}></span>

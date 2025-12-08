@@ -139,23 +139,37 @@ export const confessionCacheKeys = {
    * 告白列表缓存键
    * @param page 页码
    * @param limit 每页数量
+   * @param userId 用户ID，确保每个用户有独立的列表缓存
    * @returns 缓存键
    */
-  list: (page: number = 1, limit: number = 20): string => generateCacheKey(
+  list: (page: number = 1, limit: number = 20, userId: string = ''): string => generateCacheKey(
     CacheModule.CONFESSION, 
     CacheResource.LIST, 
-    `${page}:${limit}`
+    `${page}:${limit}:${userId}`
   ),
   
   /**
    * 告白详情缓存键
    * @param confessionId 告白ID
+   * @param userId 用户ID，确保每个用户有独立的详情缓存
    * @returns 缓存键
    */
-  detail: (confessionId: string): string => generateCacheKey(
+  detail: (confessionId: string, userId: string = ''): string => generateCacheKey(
     CacheModule.CONFESSION, 
     CacheResource.DETAIL, 
-    confessionId
+    `${confessionId}:${userId}`
+  ),
+  
+  /**
+   * 告白点赞缓存键
+   * @param confessionId 告白ID
+   * @param userId 用户ID，确保每个用户有独立的点赞状态缓存
+   * @returns 缓存键
+   */
+  likes: (confessionId: string, userId: string = ''): string => generateCacheKey(
+    CacheModule.CONFESSION, 
+    CacheResource.LIST, 
+    `likes:${confessionId}:${userId}`
   )
 };
 

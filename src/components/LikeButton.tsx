@@ -27,8 +27,6 @@ interface LikeButtonProps {
   size?: LikeButtonSize;
   // 是否显示点赞数量
   showCount?: boolean;
-  // 点赞成功回调
-  onLikeStatusChange?: (liked: boolean, likesCount: number) => void;
   // 点赞开始回调
   onLikeStart?: () => void;
   // 点赞成功回调
@@ -55,7 +53,6 @@ const LikeButton: React.FC<LikeButtonProps> = ({
   theme = 'default',
   size = 'medium',
   showCount = true,
-  onLikeStatusChange,
   onLikeStart,
   onLikeSuccess,
   onLikeError,
@@ -78,76 +75,12 @@ const LikeButton: React.FC<LikeButtonProps> = ({
   
   const queryClient = useQueryClient();
   
-  // 缓存管理：使用localStorage缓存点赞状态，带过期时间
-  const CACHE_KEY = `like_status_${confessionId}`;
-  const CACHE_EXPIRY = 24 * 60 * 60 * 1000; // 24小时过期
-  
-  // 缓存数据结构：{ liked: boolean, timestamp: number }
-  interface LikeCache {
-    liked: boolean;
-    timestamp: number;
-  }
-  
-  // 从localStorage加载点赞状态 - 仅作为验证，不直接覆盖initialLiked
+  // 监听props变化，更新本地状态
   useEffect(() => {
-    const loadCache = () => {
-      try {
-        const cachedData = localStorage.getItem(CACHE_KEY);
-        if (cachedData) {
-          const { liked: cachedLiked, timestamp } = JSON.parse(cachedData) as LikeCache;
-          // 检查缓存是否过期
-          if (Date.now() - timestamp < CACHE_EXPIRY) {
-            // 仅在与initialLiked一致时才使用缓存，否则更新缓存
-            if (cachedLiked !== initialLiked) {
-              // 缓存与服务器数据不一致，更新缓存
-              const cacheData: LikeCache = {
-                liked: initialLiked,
-                timestamp: Date.now()
-              };
-              localStorage.setItem(CACHE_KEY, JSON.stringify(cacheData));
-            }
-          } else {
-            // 缓存过期，清除缓存
-            localStorage.removeItem(CACHE_KEY);
-            // 使用初始值更新缓存
-            const cacheData: LikeCache = {
-              liked: initialLiked,
-              timestamp: Date.now()
-            };
-            localStorage.setItem(CACHE_KEY, JSON.stringify(cacheData));
-          }
-        } else {
-          // 没有缓存，创建新缓存
-          const cacheData: LikeCache = {
-            liked: initialLiked,
-            timestamp: Date.now()
-          };
-          localStorage.setItem(CACHE_KEY, JSON.stringify(cacheData));
-        }
-      } catch (error) {
-        console.error('Failed to load like status from cache:', error);
-      }
-    };
-    
-    loadCache();
-  }, [CACHE_KEY, CACHE_EXPIRY, initialLiked]);
-  
-  // 保存点赞状态到localStorage
-  useEffect(() => {
-    const saveCache = () => {
-      try {
-        const cacheData: LikeCache = {
-          liked,
-          timestamp: Date.now()
-        };
-        localStorage.setItem(CACHE_KEY, JSON.stringify(cacheData));
-      } catch (error) {
-        console.error('Failed to save like status to cache:', error);
-      }
-    };
-    
-    saveCache();
-  }, [liked, CACHE_KEY]);
+    // 确保liked和likesCount状态与最新的props保持一致
+    setLiked(initialLiked);
+    setLikesCount(initialLikesCount);
+  }, [initialLiked, initialLikesCount]);
   
   // 处理点赞/取消点赞
   const handleLike = useCallback(async () => {
@@ -172,70 +105,63 @@ const LikeButton: React.FC<LikeButtonProps> = ({
     onLikeStart?.();
     
     try {
-      // 调用API
-      const result = await confessionService.toggleLike(confessionId);
-      
-      if (result.success) {
-        // 使用invalidateQueries让React Query自动重新获取最新数据，确保数据一致性
-        // 不等待刷新完成，让刷新在后台进行，减少UI延迟
-        queryClient.invalidateQueries({ queryKey: ['confessions'] }).catch(err => {
-          console.error('Error invalidating confessions query:', err);
-        });
-        queryClient.invalidateQueries({ queryKey: ['search'] }).catch(err => {
-          console.error('Error invalidating search query:', err);
-        });
+        // 调用API
+        const result = await confessionService.toggleLike(confessionId);
         
-        // 回调通知父组件
-        onLikeStatusChange?.(newLiked, newLikesCount);
-        
-        // 调用点赞成功回调
-        onLikeSuccess?.(newLiked, newLikesCount);
-      } else {
-        // 发生错误时回滚UI状态
+        if (result.success) {
+          // 使用invalidateQueries让React Query自动重新获取最新数据，确保数据一致性
+          // 不等待刷新完成，让刷新在后台进行，减少UI延迟
+          queryClient.invalidateQueries({ queryKey: ['confessions'] }).catch(err => {
+            console.error('Error invalidating confessions query:', err);
+          });
+          queryClient.invalidateQueries({ queryKey: ['search'] }).catch(err => {
+            console.error('Error invalidating search query:', err);
+          });
+          
+          // 调用点赞成功回调
+          onLikeSuccess?.(newLiked, newLikesCount);
+        } else {
+          // 发生错误时回滚UI状态
+          setLiked(prevLiked);
+          setLikesCount(prevLikesCount);
+          
+          // 显示友好的错误消息
+          if (result.error?.includes('not authenticated')) {
+            // 未登录情况，只显示友好提示，不视为错误
+            showToast.warning('请先登录后再进行点赞操作');
+          } else {
+            // 其他错误情况
+            showToast.error(result.error || '点赞操作失败，请稍后重试');
+            
+            // 设置错误状态
+            const likeError = new Error(result.error || 'Failed to toggle like');
+            console.error('Failed to toggle like:', result.error);
+            
+            // 调用点赞失败回调
+            onLikeError?.(likeError);
+          }
+        }
+      } catch (error) {
+        // 处理意外的错误情况
         setLiked(prevLiked);
         setLikesCount(prevLikesCount);
         
-        // 显示友好的错误消息
-        if (result.error?.includes('not authenticated')) {
-          showToast.warning('请先登录后再进行点赞操作');
-        } else {
-          showToast.error(result.error || '点赞操作失败，请稍后重试');
-        }
-        
         // 设置错误状态
-        const likeError = new Error(result.error || 'Failed to toggle like');
-        console.error('Failed to toggle like:', result.error);
+        const likeError = error instanceof Error ? error : new Error('Failed to toggle like');
+        console.error('Failed to toggle like:', error);
         
-        // 回调通知父组件
-        onLikeStatusChange?.(prevLiked, prevLikesCount);
+        // 显示友好的错误消息
+        showToast.error('点赞操作失败，请稍后重试');
         
         // 调用点赞失败回调
         onLikeError?.(likeError);
-      }
-    } catch (error) {
-      // 处理意外的错误情况
-      setLiked(prevLiked);
-      setLikesCount(prevLikesCount);
-      
-      // 设置错误状态
-      const likeError = error instanceof Error ? error : new Error('Failed to toggle like');
-      console.error('Failed to toggle like:', error);
-      
-      // 显示友好的错误消息
-      showToast.error('点赞操作失败，请稍后重试');
-      
-      // 回调通知父组件
-      onLikeStatusChange?.(prevLiked, prevLikesCount);
-      
-      // 调用点赞失败回调
-      onLikeError?.(likeError);
-    } finally {
+      } finally {
       // 确保在finally块中设置isLoading为false，无论前面的代码是否出错
       setIsLoading(false);
       // 动画结束后重置动画状态
       setTimeout(() => setIsAnimating(false), 300);
     }
-  }, [liked, likesCount, confessionId, isLoading, onLikeStatusChange, onLikeStart, onLikeSuccess, onLikeError, queryClient]);
+  }, [liked, likesCount, confessionId, isLoading, onLikeStart, onLikeSuccess, onLikeError, queryClient]);
   
   // 根据尺寸计算样式
   const sizeStyles = {

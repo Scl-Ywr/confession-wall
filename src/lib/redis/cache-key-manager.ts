@@ -109,23 +109,28 @@ export class CacheKeyManager {
   public confession = {
     /**
      * 告白列表缓存键
+     * 添加用户ID参数，确保每个用户有独立的缓存
      */
-    list: (page: number = 1, limit: number = 20, version?: string): string => {
-      return this.generateCacheKey(CacheModule.CONFESSION, CacheResource.LIST, `${page}:${limit}`, version);
+    list: (page: number = 1, limit: number = 10, userId?: string, version?: string): string => {
+      const id = userId ? `${page}:${limit}:${userId}` : `${page}:${limit}`;
+      return this.generateCacheKey(CacheModule.CONFESSION, CacheResource.LIST, id, version);
     },
     
     /**
      * 告白详情缓存键
+     * 添加用户ID参数，确保每个用户有独立的缓存
      */
-    detail: (confessionId: string, version?: string): string => {
-      return this.generateCacheKey(CacheModule.CONFESSION, CacheResource.DETAIL, confessionId, version);
+    detail: (confessionId: string, userId?: string, version?: string): string => {
+      const id = userId ? `${confessionId}:${userId}` : confessionId;
+      return this.generateCacheKey(CacheModule.CONFESSION, CacheResource.DETAIL, id, version);
     },
     
     /**
      * 告白点赞缓存键
      */
-    likes: (confessionId: string, version?: string): string => {
-      return this.generateCacheKey(CacheModule.CONFESSION, CacheResource.HIT, confessionId, version);
+    likes: (confessionId: string, userId?: string, version?: string): string => {
+      const id = userId ? `${confessionId}:${userId}` : confessionId;
+      return this.generateCacheKey(CacheModule.CONFESSION, CacheResource.HIT, id, version);
     }
   };
 

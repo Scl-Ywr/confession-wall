@@ -70,8 +70,8 @@ export const LikeProvider: React.FC<LikeProviderProps> = ({ children }) => {
     setLikeLoading(prev => ({ ...prev, [confessionId]: true }));
 
     try {
-      // 直接执行点赞/取消点赞操作，不依赖本地likedConfessions状态
-      const result = await confessionService.toggleLike(confessionId);
+      // 使用已有的用户ID，而不是让confessionService重新获取用户状态
+      const result = await confessionService.toggleLikeWithUserId(confessionId, user.id);
       
       if (result.success) {
         // 使用invalidateQueries让React Query自动重新获取最新数据，确保数据一致性

@@ -14,7 +14,7 @@ import { MessageCircleIcon, UsersIcon, PlusIcon, XIcon, TrashIcon, SendIcon, Ima
 import { supabase } from '@/lib/supabase/client';
 
 const GroupChatPage = ({ params }: { params: Promise<{ groupId: string }> }) => {
-  const { user } = useAuth();
+  const { user, loading: authLoading } = useAuth();
   const resolvedParams = React.use(params);
   const { groupId } = resolvedParams;
   
@@ -844,6 +844,18 @@ const GroupChatPage = ({ params }: { params: Promise<{ groupId: string }> }) => 
             // Use a simple server-safe loading indicator
             <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary-500"></div>
           )}
+        </div>
+      </div>
+    );
+  }
+
+  // 等待authLoading完成
+  if (authLoading) {
+    return (
+      <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
+        <Navbar />
+        <div className="flex justify-center items-center h-[calc(100vh-80px)]">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary-500"></div>
         </div>
       </div>
     );

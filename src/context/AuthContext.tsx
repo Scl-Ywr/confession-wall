@@ -199,28 +199,32 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     const handleBeforeUnload = () => {
       // 使用闭包变量中的userId
       if (currentUserId) {
+        const userId = currentUserId;
+        // 优先使用sendBeacon，它是专门为页面卸载场景设计的
         try {
-          // 使用navigator.sendBeacon发送离线状态更新，确保在页面关闭时能可靠发送
           const formData = new FormData();
-          formData.append('userId', currentUserId);
+          formData.append('userId', userId);
           formData.append('status', 'offline');
-          navigator.sendBeacon('/api/update-status', formData);
-        } catch (error) {
-          console.error('Error sending beacon:', error);
-          // 如果sendBeacon失败，尝试使用传统的fetch请求
-          fetch('/api/update-status', {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({
-              userId: currentUserId,
-              status: 'offline'
-            }),
-            keepalive: true // 确保请求在页面关闭时仍能完成
-          }).catch(err => {
-            console.error('Error updating status on unload:', err);
-          });
+          // sendBeacon会返回一个布尔值，表示请求是否被成功加入队列
+          const isQueued = navigator.sendBeacon('/api/update-status', formData);
+          if (!isQueued) {
+            // 如果sendBeacon失败，尝试使用fetch作为备选
+            fetch('/api/update-status', {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json'
+              },
+              body: JSON.stringify({
+                userId,
+                status: 'offline'
+              }),
+              keepalive: true // 确保请求在页面关闭时仍能完成
+            }).catch(() => {
+              // 忽略fetch失败，因为页面正在卸载
+            });
+          }
+        } catch {
+          // 忽略所有错误，因为页面正在卸载
         }
       }
     };
@@ -273,28 +277,32 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       // 组件卸载时也设置为离线
       // 使用闭包变量中的userId
       if (currentUserId) {
+        const userId = currentUserId;
+        // 优先使用sendBeacon，它是专门为页面卸载场景设计的
         try {
-          // 使用navigator.sendBeacon发送离线状态更新，确保在组件卸载时能可靠发送
           const formData = new FormData();
-          formData.append('userId', currentUserId);
+          formData.append('userId', userId);
           formData.append('status', 'offline');
-          navigator.sendBeacon('/api/update-status', formData);
-        } catch (error) {
-          console.error('Error sending beacon on cleanup:', error);
-          // 如果sendBeacon失败，尝试使用传统的fetch请求
-          fetch('/api/update-status', {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({
-              userId: currentUserId,
-              status: 'offline'
-            }),
-            keepalive: true // 确保请求在页面关闭时仍能完成
-          }).catch(err => {
-            console.error('Error updating status on cleanup:', err);
-          });
+          // sendBeacon会返回一个布尔值，表示请求是否被成功加入队列
+          const isQueued = navigator.sendBeacon('/api/update-status', formData);
+          if (!isQueued) {
+            // 如果sendBeacon失败，尝试使用fetch作为备选
+            fetch('/api/update-status', {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json'
+              },
+              body: JSON.stringify({
+                userId,
+                status: 'offline'
+              }),
+              keepalive: true // 确保请求在页面关闭时仍能完成
+            }).catch(() => {
+              // 忽略fetch失败，因为组件正在卸载
+            });
+          }
+        } catch {
+          // 忽略所有错误，因为组件正在卸载
         }
       }
     };

@@ -2000,20 +2000,24 @@ export const chatService = {
   // 获取用户的通知列表
   getNotifications: async (): Promise<Notification[]> => {
     try {
-      const user = await supabase.auth.getUser();
       const session = await supabase.auth.getSession();
-      const accessToken = session.data.session?.access_token || '';
+      
+      // 如果没有会话，直接返回空数组，不记录错误
+      if (!session.data.session) {
+        return [];
+      }
+      
+      const user = await supabase.auth.getUser();
+      const accessToken = session.data.session.access_token;
       
       // 检查是否有错误获取用户信息
       if (user.error) {
-        console.error('Error getting user for notifications:', user.error.message || 'Unknown error');
         return [];
       }
       
       const userId = user.data?.user?.id;
 
       if (!userId) {
-        console.error('No user ID found for notifications');
         return [];
       }
 
@@ -2030,14 +2034,12 @@ export const chatService = {
       );
 
       if (!response.ok) {
-        console.error('Error fetching notifications:', await response.text());
         return [];
       }
 
       const data = await response.json();
       return data as Notification[];
-    } catch (error) {
-      console.error('Unexpected error in getNotifications:', error instanceof Error ? error.message : 'Unknown error');
+    } catch {
       return [];
     }
   },
@@ -2045,13 +2047,18 @@ export const chatService = {
   // 获取未读通知数量
   getUnreadNotificationsCount: async (): Promise<number> => {
     try {
-      const user = await supabase.auth.getUser();
       const session = await supabase.auth.getSession();
-      const accessToken = session.data.session?.access_token || '';
+      
+      // 如果没有会话，直接返回0，不记录错误
+      if (!session.data.session) {
+        return 0;
+      }
+      
+      const user = await supabase.auth.getUser();
+      const accessToken = session.data.session.access_token;
       
       // 检查是否有错误获取用户信息
       if (user.error) {
-        console.error('Error getting user for unread notifications count:', user.error.message || 'Unknown error');
         return 0;
       }
       
@@ -2074,14 +2081,12 @@ export const chatService = {
       );
 
       if (!response.ok) {
-        console.error('Error getting unread notifications count:', await response.text());
         return 0;
       }
 
       const data = await response.json();
       return data.length || 0;
-    } catch (error) {
-      console.error('Unexpected error in getUnreadNotificationsCount:', error instanceof Error ? error.message : 'Unknown error');
+    } catch {
       return 0;
     }
   },
@@ -2510,21 +2515,35 @@ export const chatService = {
       
       // 更新群聊已读计数器 - 使用try-catch避免整体功能失败
       try {
-        const { error } = await supabase
+        // 先尝试UPDATE，如果没有找到记录再执行INSERT，避免违反RLS策略
+        const { error: updateError } = await supabase
           .from('group_read_counters')
-          .upsert(
+          .update(
             {
-              group_id: groupId,
-              user_id: userId,
               last_read_message_id: latestMessageId,
               last_read_at: new Date().toISOString()
-            },
-            { onConflict: 'group_id,user_id' }
-          );
+            }
+          )
+          .eq('group_id', groupId)
+          .eq('user_id', userId);
         
-        if (error) {
-          // 简化错误日志，避免复杂对象导致的控制台错误
-          console.error(`Error updating group read counter for group ${groupId}:`, error.message || 'Unknown error');
+        if (updateError) {
+          // 如果UPDATE失败，尝试INSERT
+          const { error: insertError } = await supabase
+            .from('group_read_counters')
+            .insert(
+              {
+                group_id: groupId,
+                user_id: userId,
+                last_read_message_id: latestMessageId,
+                last_read_at: new Date().toISOString()
+              }
+            );
+          
+          if (insertError) {
+            // 简化错误日志，避免复杂对象导致的控制台错误
+            console.error(`Error updating group read counter for group ${groupId}:`, insertError.message || 'Unknown error');
+          }
         }
       } catch (e) {
         // 捕获任何可能的异常，避免影响主要功能
