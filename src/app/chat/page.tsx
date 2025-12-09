@@ -122,7 +122,7 @@ const ChatListPage = () => {
                 .from('group_message_read_status')
                 .select('id', { count: 'exact', head: true })
                 .eq('group_id', groupId)
-                .eq('user_id', user.id)
+                .eq('user_id', currentUser.id)
                 .eq('is_read', false);
             
             if (error) {
@@ -304,6 +304,48 @@ const ChatListPage = () => {
       supabase.removeChannel(groupMessagesChannel);
     };
   }, [user, refreshUnreadCounts]);
+
+  // 监听群聊信息变化（包括成员数量）
+  useEffect(() => {
+    if (!user) return;
+    
+    // 首先获取用户当前所在的所有群聊ID
+    const fetchAndListenGroups = async () => {
+      try {
+        const userGroups = await chatService.getGroups();
+        const groupIds = userGroups.map(group => group.id);
+        
+        if (groupIds.length === 0) return;
+        
+        // 创建群聊信息监听通道
+        const groupInfoChannel = supabase
+          .channel('group-info-updates')
+          .on(
+            'postgres_changes',
+            {
+              event: 'UPDATE',
+              schema: 'public',
+              table: 'groups',
+              filter: `id=in.(${groupIds.join(',')})`
+            },
+            async () => {
+              // 当群聊信息变化时，重新获取群列表
+              const updatedGroups = await chatService.getGroups();
+              setGroups(updatedGroups);
+            }
+          )
+          .subscribe();
+        
+        return () => {
+          supabase.removeChannel(groupInfoChannel);
+        };
+      } catch (error) {
+        console.error('Error setting up group info listener:', error);
+      }
+    };
+    
+    fetchAndListenGroups();
+  }, [user]);
 
   // 打开删除确认对话框
   const handleOpenDeleteConfirm = (friendId: string) => {

@@ -21,7 +21,9 @@
     "@supabase/supabase-js": "^2.86.2",
     "@tanstack/react-query": "^5.90.11",
     "@tanstack/react-query-devtools": "^5.91.1",
+    "@types/bcryptjs": "^2.4.6",
     "@types/ioredis": "^4.28.10",
+    "bcryptjs": "^3.0.3",
     "dotenv": "^17.2.3",
     "framer-motion": "^12.23.25",
     "ioredis": "^5.8.2",
@@ -36,6 +38,7 @@
     "react-photo-view": "^1.2.7",
     "react-player": "^3.4.0",
     "react-spinners": "^0.17.0",
+    "react-toastify": "^11.0.5",
     "typecheck": "^0.1.2",
     "zod": "^4.1.13"
   },

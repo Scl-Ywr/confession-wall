@@ -21,6 +21,8 @@ export default function NotificationCenter({ isOpen, onClose, onNotificationClic
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [loading, setLoading] = useState(true);
   const [unreadCount, setUnreadCount] = useState(0);
+  // 跟踪已处理的请求，防止重复处理
+  const [processedRequests, setProcessedRequests] = useState<Set<string>>(new Set());
 
   // 获取通知列表
   const fetchNotifications = useCallback(async () => {
@@ -274,7 +276,7 @@ export default function NotificationCenter({ isOpen, onClose, onNotificationClic
         </div>
         
         {/* 通知列表 */}
-        <div className="flex-grow overflow-y-auto p-4">
+        <div className="flex-grow overflow-y-auto p-4 max-h-[calc(100vh-150px)] scrollbar-thin scrollbar-thumb-gray-300 dark:scrollbar-thumb-gray-600 scrollbar-track-gray-100 dark:scrollbar-track-gray-800">
           {loading ? (
             <div className="flex justify-center items-center py-12">
               <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary-500"></div>
@@ -309,6 +311,149 @@ export default function NotificationCenter({ isOpen, onClose, onNotificationClic
                         <p className="text-sm text-gray-800 dark:text-gray-200 mb-1">
                           {notification.content}
                         </p>
+                        
+                        {/* 好友请求操作按钮 */}
+                        {notification.type === 'friend_request' && notification.friend_request_id && (
+                          <div className="flex gap-2 mt-2">
+                            <button
+                              onClick={async (e) => {
+                                e.stopPropagation();
+                                // 检查是否已经处理过该请求
+                                if (processedRequests.has(notification.friend_request_id!)) {
+                                  return;
+                                }
+                                
+                                // 将请求标记为已处理
+                                setProcessedRequests(prev => new Set(prev).add(notification.friend_request_id!));
+                                
+                                try {
+                                  await chatService.handleFriendRequest(notification.friend_request_id!, 'accepted');
+                                  // 更新通知内容
+                                  setNotifications(prev => prev.map(n => 
+                                    n.id === notification.id ? { ...n, content: `${n.content} - 已接受` } : n
+                                  ));
+                                } catch (error) {
+                                  console.error('Error accepting friend request:', error);
+                                  // 如果处理失败，从已处理集合中移除
+                                  setProcessedRequests(prev => {
+                                    const newSet = new Set(prev);
+                                    newSet.delete(notification.friend_request_id!);
+                                    return newSet;
+                                  });
+                                }
+                              }}
+                              className={`flex-1 px-3 py-1 text-xs rounded-lg transition-colors duration-200 ${processedRequests.has(notification.friend_request_id!) ? 'bg-gray-200 text-gray-500 cursor-not-allowed' : 'bg-green-500 text-white hover:bg-green-600'}`}
+                              disabled={processedRequests.has(notification.friend_request_id!)}
+                            >
+                              接受
+                            </button>
+                            <button
+                              onClick={async (e) => {
+                                e.stopPropagation();
+                                // 检查是否已经处理过该请求
+                                if (processedRequests.has(notification.friend_request_id!)) {
+                                  return;
+                                }
+                                
+                                // 将请求标记为已处理
+                                setProcessedRequests(prev => new Set(prev).add(notification.friend_request_id!));
+                                
+                                try {
+                                  await chatService.handleFriendRequest(notification.friend_request_id!, 'rejected');
+                                  // 更新通知内容
+                                  setNotifications(prev => prev.map(n => 
+                                    n.id === notification.id ? { ...n, content: `${n.content} - 已拒绝` } : n
+                                  ));
+                                } catch (error) {
+                                  console.error('Error rejecting friend request:', error);
+                                  // 如果处理失败，从已处理集合中移除
+                                  setProcessedRequests(prev => {
+                                    const newSet = new Set(prev);
+                                    newSet.delete(notification.friend_request_id!);
+                                    return newSet;
+                                  });
+                                }
+                              }}
+                              className={`flex-1 px-3 py-1 text-xs rounded-lg transition-colors duration-200 ${processedRequests.has(notification.friend_request_id!) ? 'bg-gray-200 text-gray-500 cursor-not-allowed' : 'bg-red-500 text-white hover:bg-red-600'}`}
+                              disabled={processedRequests.has(notification.friend_request_id!)}
+                            >
+                              拒绝
+                            </button>
+                          </div>
+                        )}
+                        
+                        {/* 群聊邀请操作按钮 */}
+                        {notification.type === 'group_invite' && notification.group_id && (
+                          <div className="flex gap-2 mt-2">
+                            <button
+                              onClick={async (e) => {
+                                e.stopPropagation();
+                                // 检查是否已经处理过该请求
+                                if (processedRequests.has(notification.id)) {
+                                  return;
+                                }
+                                
+                                // 将请求标记为已处理
+                                setProcessedRequests(prev => new Set(prev).add(notification.id));
+                                
+                                try {
+                                  // 接受群聊邀请 - 目前已经直接添加到群成员，只需要标记通知
+                                  await markAsRead(notification.id);
+                                  // 更新通知内容
+                                  setNotifications(prev => prev.map(n => 
+                                    n.id === notification.id ? { ...n, content: `${n.content} - 已接受` } : n
+                                  ));
+                                } catch (error) {
+                                  console.error('Error accepting group invite:', error);
+                                  // 如果处理失败，从已处理集合中移除
+                                  setProcessedRequests(prev => {
+                                    const newSet = new Set(prev);
+                                    newSet.delete(notification.id);
+                                    return newSet;
+                                  });
+                                }
+                              }}
+                              className={`flex-1 px-3 py-1 text-xs rounded-lg transition-colors duration-200 ${processedRequests.has(notification.id) ? 'bg-gray-200 text-gray-500 cursor-not-allowed' : 'bg-green-500 text-white hover:bg-green-600'}`}
+                              disabled={processedRequests.has(notification.id)}
+                            >
+                              接受
+                            </button>
+                            <button
+                              onClick={async (e) => {
+                                e.stopPropagation();
+                                // 检查是否已经处理过该请求
+                                if (processedRequests.has(notification.id)) {
+                                  return;
+                                }
+                                
+                                // 将请求标记为已处理
+                                setProcessedRequests(prev => new Set(prev).add(notification.id));
+                                
+                                try {
+                                  // 拒绝群聊邀请 - 从群成员列表中移除
+                                  await chatService.leaveGroup(notification.group_id!);
+                                  // 更新通知内容
+                                  setNotifications(prev => prev.map(n => 
+                                    n.id === notification.id ? { ...n, content: `${n.content} - 已拒绝` } : n
+                                  ));
+                                } catch (error) {
+                                  console.error('Error rejecting group invite:', error);
+                                  // 如果处理失败，从已处理集合中移除
+                                  setProcessedRequests(prev => {
+                                    const newSet = new Set(prev);
+                                    newSet.delete(notification.id);
+                                    return newSet;
+                                  });
+                                }
+                              }}
+                              className={`flex-1 px-3 py-1 text-xs rounded-lg transition-colors duration-200 ${processedRequests.has(notification.id) ? 'bg-gray-200 text-gray-500 cursor-not-allowed' : 'bg-red-500 text-white hover:bg-red-600'}`}
+                              disabled={processedRequests.has(notification.id)}
+                            >
+                              拒绝
+                            </button>
+                          </div>
+                        )}
+                        
                         <div className="flex items-center justify-between mt-2">
                           <span className="text-xs text-gray-500 dark:text-gray-400">
                             {new Date(notification.created_at).toLocaleString('zh-CN', {

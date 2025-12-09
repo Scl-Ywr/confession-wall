@@ -10,6 +10,7 @@ import { supabase } from '@/lib/supabase/client';
 import MultimediaMessage from './MultimediaMessage';
 import LoadingSpinner from './LoadingSpinner';
 import { getOnlineStatusInfo } from '@/utils/onlineStatus';
+import VoiceRecorder from './VoiceRecorder';
 
 type ChatInterfaceProps = {
   otherUserId: string;
@@ -32,6 +33,7 @@ export function ChatInterface({ otherUserId, otherUserProfile: initialOtherUserP
   const [initialCheckDone, setInitialCheckDone] = useState(false);
   const [showFriendDeletedAlert, setShowFriendDeletedAlert] = useState(false);
   const [otherUserProfile, setOtherUserProfile] = useState<Profile>(initialOtherUserProfile);
+  const [showVoiceRecorder, setShowVoiceRecorder] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const messagesStartRef = useRef<HTMLDivElement>(null);
   const channelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
@@ -127,7 +129,7 @@ export function ChatInterface({ otherUserId, otherUserProfile: initialOtherUserP
 
     // 使用唯一的通道名称，包含当前用户和对方用户的ID
     const channelName = `private_chat_${currentUserId}_${otherUserId}`;
-    console.log('Creating private chat channel:', channelName);
+
 
     // 使用最简单的方式创建实时订阅，不使用过滤条件
     const channel = supabase
@@ -146,19 +148,14 @@ export function ChatInterface({ otherUserId, otherUserProfile: initialOtherUserP
           table: 'chat_messages'
         },
         async (payload) => {
-          console.log('New message received in channel', channelName, ':', payload);
-          
           // 手动过滤当前对话的消息
           if (
             (payload.new.sender_id === currentUserId && payload.new.receiver_id === otherUserId) ||
             (payload.new.sender_id === otherUserId && payload.new.receiver_id === currentUserId)
           ) {
-            console.log('Filtered message is for current chat:', payload.new);
-            
             try {
               // 过滤掉自己发送的消息，因为乐观UI已经添加了
               if (payload.new.sender_id === currentUserId) {
-                console.log('Skipping own message from realtime, already added via optimistic UI:', payload.new.id);
                 return;
               }
               
@@ -174,7 +171,6 @@ export function ChatInterface({ otherUserId, otherUserProfile: initialOtherUserP
               setMessages(prev => {
                 // 检查消息是否已存在
                 if (prev.some(msg => msg.id === payload.new.id)) {
-                  console.log('Message already exists, skipping:', payload.new.id);
                   return prev;
                 }
                 
@@ -241,7 +237,6 @@ export function ChatInterface({ otherUserId, otherUserProfile: initialOtherUserP
         }
       )
       .subscribe((status) => {
-        console.log('Channel', channelName, 'status:', status);
         switch (status) {
           case 'SUBSCRIBED':
             setConnectionStatus('connected');
@@ -260,7 +255,6 @@ export function ChatInterface({ otherUserId, otherUserProfile: initialOtherUserP
     
     // 组件卸载时取消订阅
     return () => {
-      console.log('Removing channel:', channelName);
       supabase.removeChannel(channel);
       channelRef.current = null;
     };
@@ -459,6 +453,52 @@ export function ChatInterface({ otherUserId, otherUserProfile: initialOtherUserP
     }
   };
 
+  // 发送语音消息
+  const handleSendVoiceMessage = async (audioBlob: Blob) => {
+    setSending(true);
+    
+    try {
+      // 从Blob中获取实际的MIME类型和文件扩展名
+      const mimeType = audioBlob.type;
+      const fileExtension = mimeType.split('/')[1] || 'webm';
+      
+      // 将Blob转换为File对象，使用实际的MIME类型
+      const audioFile = new File([audioBlob], `voice_${Date.now()}.${fileExtension}`, { type: mimeType });
+      
+      // 上传语音文件
+      const audioUrl = await chatService.uploadFile(audioFile, 'chat_voices');
+      
+      // 发送语音消息
+      const sentMessage = await chatService.sendPrivateMessage(otherUserId, audioUrl, 'voice');
+      
+      // 直接添加到消息列表末尾
+      setMessages(prev => {
+        // 检查消息是否已存在
+        if (prev.some(msg => msg.id === sentMessage.id)) {
+          console.log('Private voice message already exists, skipping:', sentMessage.id);
+          return prev;
+        }
+        // 添加到末尾
+        const updatedMessages = [...prev, sentMessage];
+        // 确保消息按时间排序
+        updatedMessages.sort((a, b) => 
+          new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+        );
+        return updatedMessages;
+      });
+      
+      scrollToBottom();
+    } catch (error) {
+      // 更详细的错误处理和日志记录
+      console.error('Error sending voice message:', error);
+      // 使用showToast替代alert，提供更好的用户体验
+      const errorMessage = error instanceof Error ? error.message : '发送语音消息失败，请重试';
+      alert(errorMessage);
+    } finally {
+      setSending(false);
+    }
+  };
+
   // 打开删除确认对话框
   const handleOpenDeleteConfirm = (messageId: string) => {
     const message = messages.find(msg => msg.id === messageId);
@@ -536,7 +576,7 @@ export function ChatInterface({ otherUserId, otherUserProfile: initialOtherUserP
       >
         <div className="flex items-end gap-2">
           {!isCurrentUser && (
-            <div className="w-8 h-8 rounded-full bg-gray-200 dark:bg-gray-700 flex items-center justify-center overflow-hidden">
+            <div className="w-8 h-8 aspect-square rounded-full bg-gray-200 dark:bg-gray-700 flex items-center justify-center overflow-hidden flex-shrink-0">
               {otherUserProfile.avatar_url ? (
                 <Image
                   src={otherUserProfile.avatar_url}
@@ -544,6 +584,7 @@ export function ChatInterface({ otherUserId, otherUserProfile: initialOtherUserP
                   className="w-full h-full object-cover"
                   width={32}
                   height={32}
+                  objectFit="cover"
                 />
               ) : (
                 <span className="text-sm font-medium">
@@ -600,7 +641,7 @@ export function ChatInterface({ otherUserId, otherUserProfile: initialOtherUserP
             )}
           </div>
           {isCurrentUser && (
-            <div className="w-8 h-8 rounded-full bg-gray-200 dark:bg-gray-700 flex items-center justify-center overflow-hidden">
+            <div className="w-8 h-8 aspect-square rounded-full bg-gray-200 dark:bg-gray-700 flex items-center justify-center overflow-hidden flex-shrink-0">
               {/* 这里应该显示当前用户的头像 */}
               <span className="text-sm font-medium">我</span>
             </div>
@@ -639,6 +680,7 @@ export function ChatInterface({ otherUserId, otherUserProfile: initialOtherUserP
                 className="w-full h-full object-cover"
                 width={40}
                 height={40}
+                style={{ objectFit: 'cover' }}
               />
             ) : (
               <span className="text-lg font-medium">
@@ -781,80 +823,105 @@ export function ChatInterface({ otherUserId, otherUserProfile: initialOtherUserP
       {/* 消息输入框 */}
       <div className="p-4 border-t border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800">
         {friendshipStatus === 'accepted' ? (
-          <form onSubmit={handleSendMessage} className="flex items-center gap-2">
-            <div className="relative">
-              {/* 隐藏的文件输入 */}
-              <input
-                type="file"
-                accept="image/*,video/*"
-                onChange={handleFileChange}
-                disabled={sending}
-                className="hidden"
-                id="file-upload"
-              />
+          <form onSubmit={handleSendMessage} className="flex flex-col gap-3">
+            <div className="flex items-center gap-2">
+              <div className="relative">
+                {/* 隐藏的文件输入 */}
+                <input
+                  type="file"
+                  accept="image/*,video/*"
+                  onChange={handleFileChange}
+                  disabled={sending}
+                  className="hidden"
+                  id="file-upload"
+                />
+                
+                {/* 图片上传按钮 */}
+                <button
+                  type="button"
+                  className="p-3 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors duration-200 min-w-12 min-h-12 flex items-center justify-center"
+                  onClick={() => document.getElementById('file-upload')?.click()}
+                  disabled={sending}
+                >
+                  <ImageIcon className="w-5 h-5 text-gray-600 dark:text-gray-300" />
+                </button>
+              </div>
               
-              {/* 图片上传按钮 */}
+              {/* 语音录制按钮 */}
               <button
                 type="button"
                 className="p-3 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors duration-200 min-w-12 min-h-12 flex items-center justify-center"
-                onClick={() => document.getElementById('file-upload')?.click()}
+                onClick={() => setShowVoiceRecorder(!showVoiceRecorder)}
                 disabled={sending}
               >
-                <ImageIcon className="w-5 h-5 text-gray-600 dark:text-gray-300" />
+                <svg className="w-5 h-5 text-gray-600 dark:text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" />
+                </svg>
+              </button>
+              
+              <div className="relative">
+                <button
+                  type="button"
+                  className="p-3 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors duration-200 min-w-12 min-h-12 flex items-center justify-center"
+                  onClick={() => setShowEmojiPicker(!showEmojiPicker)}
+                >
+                <Smile className="w-5 h-5 text-gray-600 dark:text-gray-300" />
+              </button>
+                {/* 表情选择器组件 */}
+                {showEmojiPicker && (
+                  <div className="absolute bottom-full left-0 mb-2 bg-white dark:bg-gray-800 rounded-lg shadow-lg p-2 w-64 md:w-80 max-h-48 overflow-y-auto">
+                    <div className="grid grid-cols-8 md:grid-cols-10 gap-2">
+                      {/* 简单的表情示例 */}
+                      {['😊', '😂', '❤️', '👍', '👎', '😢', '😮', '😡', '😀', '😃', '😄', '😁', '😆', '😅', '🤣', '🥲', '☺️', '😇', '🙂', '🙃', '😉', '😌', '😍', '🥰', '😘', '😗', '😙', '😚', '😋', '😛', '😝', '😜', '🤪', '🤨', '🧐', '🤓', '😎', '🥸', '🤩', '🥳', '😏', '😒', '😞', '😔', '😟', '😕', '🙁', '☹️', '😣', '😖', '😫', '😩', '🥺', '😭', '😤', '😠', '🤬', '🤯', '😳', '🥵', '🥶', '😱', '😨', '😰', '😥', '😓', '🤗', '🤔', '🤭', '🤫', '🤥', '😶', '😐', '😑', '😬', '🙄', '😯', '😦', '😧', '😲', '🥱', '😴', '🤤', '😪', '😵', '🤐', '🥴', '🤢', '🤮', '🤧', '😷', '🤒', '🤕', '🤑'].map((emoji, index) => (
+                        <button
+                          key={index}
+                          type="button"
+                          className="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors duration-200 text-xl"
+                          onClick={() => {
+                            setNewMessage(prev => prev + emoji);
+                            setShowEmojiPicker(false);
+                          }}
+                        >
+                          {emoji}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+              
+              <div className="flex-grow relative">
+                <input
+                  type="text"
+                  placeholder="输入消息..."
+                  className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-full focus:ring-2 focus:ring-primary-500 focus:outline-none bg-white dark:bg-gray-700 text-gray-800 dark:text-white"
+                  value={newMessage}
+                  onChange={(e) => setNewMessage(e.target.value)}
+                  onKeyDown={(e) => e.key === 'Enter' && !e.shiftKey && handleSendMessage(e as unknown as React.FormEvent)}
+                />
+              </div>
+              <button
+                type="submit"
+                className="p-3 sm:p-3.5 rounded-full bg-gradient-to-r from-pink-400 to-blue-500 text-white hover:from-pink-500 hover:to-blue-600 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed shadow-md hover:shadow-lg dark:from-pink-500 dark:to-blue-600 dark:hover:from-pink-600 dark:hover:to-blue-700 min-w-12 min-h-12 flex items-center justify-center"
+                disabled={!newMessage.trim() || sending}
+              >
+                {sending ? (
+                  <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
+                ) : (
+                  <Send className="w-5 h-5 sm:w-6 sm:h-6" />
+                )}
               </button>
             </div>
             
-            <div className="relative">
-              <button
-              type="button"
-              className="p-3 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors duration-200 min-w-12 min-h-12 flex items-center justify-center"
-              onClick={() => setShowEmojiPicker(!showEmojiPicker)}
-            >
-              <Smile className="w-5 h-5 text-gray-600 dark:text-gray-300" />
-            </button>
-              {/* 表情选择器组件 */}
-              {showEmojiPicker && (
-                <div className="absolute bottom-full left-0 mb-2 bg-white dark:bg-gray-800 rounded-lg shadow-lg p-2 w-64 md:w-80 max-h-48 overflow-y-auto">
-                  <div className="grid grid-cols-8 md:grid-cols-10 gap-2">
-                    {/* 简单的表情示例 */}
-                    {['😊', '😂', '❤️', '👍', '👎', '😢', '😮', '😡', '😀', '😃', '😄', '😁', '😆', '😅', '🤣', '🥲', '☺️', '😇', '🙂', '🙃', '😉', '😌', '😍', '🥰', '😘', '😗', '😙', '😚', '😋', '😛', '😝', '😜', '🤪', '🤨', '🧐', '🤓', '😎', '🥸', '🤩', '🥳', '😏', '😒', '😞', '😔', '😟', '😕', '🙁', '☹️', '😣', '😖', '😫', '😩', '🥺', '😭', '😤', '😠', '🤬', '🤯', '😳', '🥵', '🥶', '😱', '😨', '😰', '😥', '😓', '🤗', '🤔', '🤭', '🤫', '🤥', '😶', '😐', '😑', '😬', '🙄', '😯', '😦', '😧', '😲', '🥱', '😴', '🤤', '😪', '😵', '🤐', '🥴', '🤢', '🤮', '🤧', '😷', '🤒', '🤕', '🤑'].map((emoji, index) => (
-                      <button
-                        key={index}
-                        type="button"
-                        className="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors duration-200 text-xl"
-                        onClick={() => {
-                          setNewMessage(prev => prev + emoji);
-                          setShowEmojiPicker(false);
-                        }}
-                      >
-                        {emoji}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              )}
-            </div>
-            <div className="flex-grow relative">
-              <input
-                type="text"
-                placeholder="输入消息..."
-                className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-full focus:ring-2 focus:ring-primary-500 focus:outline-none bg-white dark:bg-gray-700 text-gray-800 dark:text-white"
-                value={newMessage}
-                onChange={(e) => setNewMessage(e.target.value)}
-                onKeyDown={(e) => e.key === 'Enter' && !e.shiftKey && handleSendMessage(e as unknown as React.FormEvent)}
-              />
-            </div>
-            <button
-              type="submit"
-              className="p-3 sm:p-3.5 rounded-full bg-gradient-to-r from-pink-400 to-blue-500 text-white hover:from-pink-500 hover:to-blue-600 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed shadow-md hover:shadow-lg dark:from-pink-500 dark:to-blue-600 dark:hover:from-pink-600 dark:hover:to-blue-700 min-w-12 min-h-12 flex items-center justify-center"
-              disabled={!newMessage.trim() || sending}
-            >
-              {sending ? (
-                <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
-              ) : (
-                <Send className="w-5 h-5 sm:w-6 sm:h-6" />
-              )}
-            </button>
+            {/* 语音录制组件 */}
+            {showVoiceRecorder && (
+              <div className="p-3 bg-gray-100 dark:bg-gray-800 rounded-lg">
+                <VoiceRecorder 
+                  onSendVoiceMessage={handleSendVoiceMessage}
+                  isSending={sending}
+                />
+              </div>
+            )}
           </form>
         ) : (
           <div className="flex items-center justify-center gap-2 py-2">

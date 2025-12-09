@@ -227,13 +227,30 @@ const Navbar: React.FC = () => {
   };
 
   // 切换通知列表显示状态
-  const toggleNotifications = () => {
+  const toggleNotifications = async () => {
     if (!user) {
       // 用户未登录，显示自定义Alert
       setShowAlert(true);
       return;
     }
     setShowNotifications(!showNotifications);
+    
+    // 当通知列表打开时，重新获取通知列表，确保数据最新
+    if (!showNotifications) {
+      // 关闭通知列表时，标记所有通知为已读
+      if (unreadCount > 0) {
+        try {
+          await chatService.markAllNotificationsAsRead();
+          // 更新本地状态
+          setNotifications(prev => prev.map(notification => ({ ...notification, read_status: true })));
+        } catch (error) {
+          console.error('Error marking all notifications as read:', error);
+        }
+      }
+    } else {
+      // 打开通知列表时，获取最新通知
+      await fetchNotifications();
+    }
   };
 
   // 处理Alert确认

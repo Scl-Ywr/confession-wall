@@ -2,7 +2,7 @@
 
 import React, { useState } from 'react';
 import Image from 'next/image';
-import { Play, X } from 'lucide-react';
+import { Play } from 'lucide-react';
 import { ChatMessage } from '@/types/chat';
 
 interface MultimediaMessageProps {
@@ -13,8 +13,32 @@ const MultimediaMessage: React.FC<MultimediaMessageProps> = ({ message }) => {
   const [isPlaying, setIsPlaying] = useState(false);
   const [showControls, setShowControls] = useState(false);
   const [isEnlarged, setIsEnlarged] = useState(false);
+  const [audioDuration, setAudioDuration] = useState(0);
+  const [audioCurrentTime, setAudioCurrentTime] = useState(0);
   const videoRef = React.useRef<HTMLVideoElement>(null);
   const fullscreenVideoRef = React.useRef<HTMLVideoElement>(null);
+  const audioRef = React.useRef<HTMLAudioElement>(null);
+  const durationRef = React.useRef<number>(0);
+  
+  // 音频时长加载逻辑 - 仅在message.type为'voice'时执行
+  React.useEffect(() => {
+    if (message.type !== 'voice') return;
+    
+    const audioElement = new Audio(message.content);
+    audioElement.preload = 'metadata';
+    
+    const handleLoadedMetadata = () => {
+      durationRef.current = audioElement.duration;
+      setAudioDuration(audioElement.duration);
+      audioElement.removeEventListener('loadedmetadata', handleLoadedMetadata);
+    };
+    
+    audioElement.addEventListener('loadedmetadata', handleLoadedMetadata);
+    
+    return () => {
+      audioElement.removeEventListener('loadedmetadata', handleLoadedMetadata);
+    };
+  }, [message.content, message.type]);
 
   const handleVideoPlayPause = () => {
     const videoElement = videoRef.current;
@@ -72,21 +96,28 @@ const MultimediaMessage: React.FC<MultimediaMessageProps> = ({ message }) => {
             {isEnlarged && (
               <div 
                 className="fixed inset-0 z-50 bg-black/90 flex items-center justify-center p-4"
-                onClick={() => setIsEnlarged(false)}
               >
-                {/* 关闭按钮 */}
+                {/* 关闭按钮 - 添加z-index确保在图片之上 */}
                 <button
-                  className="absolute top-4 right-4 text-white bg-black/50 rounded-full p-2 hover:bg-black/80 transition-colors"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    setIsEnlarged(false);
-                  }}
+                  className="absolute top-4 right-4 text-white w-10 h-10 bg-black/50 rounded-full p-2 hover:bg-black/80 transition-colors flex items-center justify-center cursor-pointer border-none outline-none z-10"
+                  onClick={() => setIsEnlarged(false)}
                 >
-                  <X className="w-6 h-6" />
+                  <svg
+                    className="w-6 h-6"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  >
+                    <path d="M18 6 6 18" />
+                    <path d="m6 6 12 12" />
+                  </svg>
                 </button>
                 
                 {/* 图片容器 */}
-                <div className="relative max-w-full max-h-[90vh] overflow-auto" onClick={(e) => e.stopPropagation()}>
+                <div className="relative max-w-full max-h-[90vh] overflow-auto">
                   <Image
                     src={message.content}
                     alt="放大的聊天图片"
@@ -146,13 +177,11 @@ const MultimediaMessage: React.FC<MultimediaMessageProps> = ({ message }) => {
             {isEnlarged && (
               <div 
                 className="fixed inset-0 z-50 bg-black/90 flex items-center justify-center p-4"
-                onClick={() => setIsEnlarged(false)}
               >
-                {/* 关闭按钮 */}
+                {/* 关闭按钮 - 添加z-index确保在视频之上 */}
                 <button
-                  className="absolute top-4 right-4 text-white bg-black/50 rounded-full p-2 hover:bg-black/80 transition-colors"
-                  onClick={(e) => {
-                    e.stopPropagation();
+                  className="absolute top-4 right-4 text-white w-10 h-10 bg-black/50 rounded-full p-2 hover:bg-black/80 transition-colors flex items-center justify-center cursor-pointer border-none outline-none z-10"
+                  onClick={() => {
                     setIsEnlarged(false);
                     if (fullscreenVideoRef.current) {
                       fullscreenVideoRef.current.pause();
@@ -160,11 +189,22 @@ const MultimediaMessage: React.FC<MultimediaMessageProps> = ({ message }) => {
                     }
                   }}
                 >
-                  <X className="w-6 h-6" />
+                  <svg
+                    className="w-6 h-6"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  >
+                    <path d="M18 6 6 18" />
+                    <path d="m6 6 12 12" />
+                  </svg>
                 </button>
                 
                 {/* 视频容器 */}
-                <div className="relative max-w-full max-h-[90vh]" onClick={(e) => e.stopPropagation()}>
+                <div className="relative max-w-full max-h-[90vh]">
                   <video
                     ref={fullscreenVideoRef}
                     src={message.content}
@@ -203,6 +243,87 @@ const MultimediaMessage: React.FC<MultimediaMessageProps> = ({ message }) => {
                   }).replace(/(\d+)年(\d+)月(\d+)日/, '$1年$2月$3日')}
                 </p>
               </div>
+            </div>
+          </div>
+        );
+      
+      case 'voice':
+        // 更新音频播放进度
+        const handleTimeUpdate = () => {
+          const audioElement = audioRef.current;
+          if (audioElement) {
+            setAudioCurrentTime(audioElement.currentTime);
+          }
+        };
+        
+        return (
+          <div className="bg-gray-100 dark:bg-gray-800 rounded-lg p-4 flex items-center gap-3 cursor-pointer hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors">
+            {/* 播放/暂停按钮 */}
+            <button
+              className={`p-3 rounded-full flex items-center justify-center transition-all duration-200 ${isPlaying ? 'bg-red-500 hover:bg-red-600' : 'bg-primary-500 hover:bg-primary-600'} text-white shadow-md hover:shadow-lg`}
+              onClick={async () => {
+                try {
+                  const audioElement = audioRef.current;
+                  if (!audioElement) {
+                    // 创建新的音频元素
+                    const newAudio = new Audio(message.content);
+                    audioRef.current = newAudio;
+                    
+                    newAudio.onended = () => {
+                      setIsPlaying(false);
+                      setAudioCurrentTime(0);
+                    };
+                    newAudio.ontimeupdate = handleTimeUpdate;
+                    await newAudio.play();
+                    setIsPlaying(true);
+                  } else {
+                    if (isPlaying) {
+                      audioElement.pause();
+                      audioElement.currentTime = 0;
+                      setIsPlaying(false);
+                      setAudioCurrentTime(0);
+                    } else {
+                      // 确保重置音频位置
+                      audioElement.currentTime = 0;
+                      await audioElement.play();
+                      setIsPlaying(true);
+                    }
+                  }
+                } catch (error) {
+                  console.error('Error playing audio:', error);
+                  setIsPlaying(false);
+                  setAudioCurrentTime(0);
+                }
+              }}
+            >
+              {isPlaying ? (
+                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 9v6m4-6v6m7-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+              ) : (
+                <svg className="w-6 h-6 ml-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+              )}
+            </button>
+            
+            {/* 音频进度条 */}
+            <div className="flex-grow flex items-center gap-2">
+              <div className="h-1 bg-gray-300 dark:bg-gray-600 rounded-full flex-grow overflow-hidden">
+                <div 
+                  className="h-full bg-primary-500 dark:bg-primary-400 rounded-full transition-all duration-100 ease-linear" 
+                  style={{ 
+                    width: `${audioDuration > 0 ? (audioCurrentTime / audioDuration) * 100 : 0}%` 
+                  }}
+                ></div>
+              </div>
+              <span className="text-sm text-gray-600 dark:text-gray-400">
+                {/* 格式化时长显示 */}
+                {audioDuration > 0 ? `${Math.floor(audioCurrentTime / 60)}:${Math.floor(audioCurrentTime % 60).toString().padStart(2, '0')}` : '0:00'}
+                /
+                {audioDuration > 0 ? `${Math.floor(audioDuration / 60)}:${Math.floor(audioDuration % 60).toString().padStart(2, '0')}` : '0:00'}
+              </span>
             </div>
           </div>
         );

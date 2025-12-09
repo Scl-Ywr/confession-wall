@@ -26,6 +26,11 @@ const ProfilePage: React.FC = () => {
   const [deleteLoading, setDeleteLoading] = useState(false);
   const [showResetPasswordPrompt, setShowResetPasswordPrompt] = useState(false);
   const [showLogoutAfterDeletePrompt, setShowLogoutAfterDeletePrompt] = useState(false);
+  const [userIp, setUserIp] = useState<string | null>(null);
+  const [userCity, setUserCity] = useState<string | null>(null);
+  const [userProvince, setUserProvince] = useState<string | null>(null);
+  const [userCountry, setUserCountry] = useState<string | null>(null);
+  const [ipLoading, setIpLoading] = useState(true);
 
   // Fetch user profile
   const fetchProfile = useCallback(async () => {
@@ -62,11 +67,194 @@ const ProfilePage: React.FC = () => {
   }, [user, authLoading, fetchProfile]);
 
   // 处理重定向逻辑
+  // Client-side IP detection as fallback with multiple services
+  const clientSideIpDetection = useCallback(async (): Promise<{ ip: string; city: string; province?: string; country: string } | null> => {
+    // 客户端IP检测服务列表，按可靠性排序
+    const clientIpServices = [
+      'https://api.ipify.org?format=json',
+      'https://api64.ipify.org?format=json',
+      'https://jsonip.com/',
+      'https://checkip.amazonaws.com/'
+    ];
+    
+    try {
+      // 尝试多个客户端IP服务
+      for (const serviceUrl of clientIpServices) {
+        try {
+          // 使用AbortController实现超时
+          const controller = new AbortController();
+          const timeoutId = setTimeout(() => controller.abort(), 5000);
+          
+          let ipAddress: string;
+          
+          if (serviceUrl === 'https://checkip.amazonaws.com/') {
+            // AWS服务直接返回IP字符串
+            const response = await fetch(serviceUrl, {
+              signal: controller.signal
+            });
+            clearTimeout(timeoutId);
+            
+            if (response.ok) {
+              ipAddress = (await response.text()).trim();
+              return {
+                ip: ipAddress,
+                city: '未知城市',
+                province: '未知省份',
+                country: '未知国家'
+              };
+            }
+          } else {
+            // 其他服务返回JSON
+            const response = await fetch(serviceUrl, {
+              signal: controller.signal
+            });
+            clearTimeout(timeoutId);
+            
+            if (response.ok) {
+              const data = await response.json();
+              if (data.ip) {
+                return {
+                  ip: data.ip,
+                  city: '未知城市',
+                  province: '未知省份',
+                  country: '未知国家'
+                };
+              }
+            }
+          }
+        } catch {
+          // 继续尝试下一个服务
+          continue;
+        }
+      }
+      
+      // 所有客户端服务都失败
+      return null;
+    } catch {
+      return null;
+    }
+  }, []);
+
+  // Fetch user IP address from server-side API with client-side fallback
+  const fetchUserIp = useCallback(async () => {
+    setIpLoading(true);
+    let ipData: { ip: string; city: string; province?: string; country: string; is_proxy?: boolean; debugging?: Record<string, unknown> } | null = null;
+    
+    try {
+      // 使用AbortController实现超时
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => {
+        controller.abort(new Error('请求超时'));
+      }, 15000); // 增加到15秒超时，给服务器足够时间尝试多个服务
+      
+      // 调用我们自己的API路由，服务器端处理IP获取
+      const response = await fetch('/api/get-ip', {
+        headers: {
+          'Accept': 'application/json'
+        },
+        signal: controller.signal
+      });
+      
+      clearTimeout(timeoutId);
+      
+      const responseText = await response.text();
+      
+      if (response.ok) {
+        try {
+          const data = JSON.parse(responseText);
+          if (data.ip) {
+            ipData = {
+              ip: data.ip,
+              city: data.city || '未知城市',
+              province: data.province || '未知省份',
+              country: data.country || '未知国家',
+              is_proxy: data.is_proxy || false,
+              debugging: data.debugging
+            };
+          } else if (data.error) {
+            throw new Error(`服务器获取IP失败: ${data.error}`);
+          } else {
+            throw new Error('无效的IP地址格式');
+          }
+        } catch {
+          // 尝试客户端回退
+          ipData = await clientSideIpDetection();
+        }
+      } else {
+        // 服务器返回错误，尝试客户端回退
+        ipData = await clientSideIpDetection();
+      }
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : '未知错误';
+      
+      // 处理超时错误，尝试客户端回退
+      if (errorMessage.includes('abort') || errorMessage.includes('timeout') || errorMessage.includes('Failed to fetch')) {
+        ipData = await clientSideIpDetection();
+      }
+    } finally {
+      if (ipData) {
+        // 更新状态
+        setUserIp(ipData.ip + (ipData.is_proxy ? ' (代理IP)' : ''));
+        setUserCity(ipData.city);
+        setUserProvince(ipData.province || '未知省份');
+        setUserCountry(ipData.country);
+        
+        // 存储IP和地理位置信息到数据库
+        try {
+          await profileService.updateIpLocation({
+            user_ip: ipData.ip,
+            user_city: ipData.city,
+            user_province: ipData.province,
+            user_country: ipData.country
+          });
+        } catch {
+          // 保存失败不影响用户体验，继续显示IP信息
+        }
+      } else {
+        // 所有方法都失败，显示友好错误信息
+        setUserIp('获取失败: 无法连接到IP服务');
+        setUserCity('获取失败');
+        setUserProvince('获取失败');
+        setUserCountry('获取失败');
+      }
+      setIpLoading(false);
+    }
+  }, [clientSideIpDetection]);
+
   useEffect(() => {
     if (!authLoading && !user) {
       router.push('/auth/login');
     }
   }, [authLoading, user, router]);
+
+  // Fetch IP address when component mounts and set up real-time updates
+  useEffect(() => {
+    fetchUserIp();
+    
+    // Set up periodic IP check every 5 minutes to detect IP changes
+    const ipCheckInterval = setInterval(() => {
+      fetchUserIp();
+    }, 5 * 60 * 1000); // 5 minutes
+    
+    // Listen for network status changes
+    const handleOnline = () => {
+      fetchUserIp();
+    };
+    
+    const handleOffline = () => {
+      // 网络离线时，不需要立即更新，等待重新连接
+    };
+    
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+    
+    // Cleanup event listeners and interval
+    return () => {
+      clearInterval(ipCheckInterval);
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+    };
+  }, [fetchUserIp]);
 
   // Handle avatar change
   const handleAvatarChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -151,8 +339,8 @@ const ProfilePage: React.FC = () => {
     try {
       await logout({ redirect: false });
       router.push('/auth/login');
-    } catch (error) {
-      console.error('Logout failed', error);
+    } catch {
+      // 登出失败，静默处理
     }
   };
 
@@ -174,7 +362,6 @@ const ProfilePage: React.FC = () => {
         .eq('user_id', userId);
       
       if (getConfessionsError) {
-        console.error('Error getting user confessions:', getConfessionsError);
         errors.push('获取表白记录失败');
       } else if (confessions && confessions.length > 0) {
         // 获取所有表白ID
@@ -187,7 +374,6 @@ const ProfilePage: React.FC = () => {
           .in('confession_id', confessionIds);
         
         if (confessionImagesError) {
-          console.error('Error deleting confession images:', confessionImagesError);
           errors.push('删除表白图片记录失败');
         }
 
@@ -197,7 +383,6 @@ const ProfilePage: React.FC = () => {
           .delete()
           .eq('user_id', userId);
         if (confessionsError) {
-          console.error('Error deleting confessions:', confessionsError);
           errors.push('删除表白记录失败');
         }
       }
@@ -208,7 +393,6 @@ const ProfilePage: React.FC = () => {
         .delete()
         .eq('user_id', userId);
       if (likesError) {
-        console.error('Error deleting likes:', likesError);
         errors.push('删除点赞记录失败');
       }
 
@@ -218,7 +402,6 @@ const ProfilePage: React.FC = () => {
         .delete()
         .eq('user_id', userId);
       if (commentsError) {
-        console.error('Error deleting comments:', commentsError);
         errors.push('删除评论记录失败');
       }
 
@@ -228,7 +411,6 @@ const ProfilePage: React.FC = () => {
         .delete()
         .eq('id', userId);
       if (profileError) {
-        console.error('Error deleting profile:', profileError);
         // 不抛出错误，继续执行后续操作
         errors.push('删除个人资料失败');
       }
@@ -237,24 +419,17 @@ const ProfilePage: React.FC = () => {
       // 5. 确保用户被登出，但不进行重定向
       await logout({ redirect: false });
       
-      // 6. 显示错误信息（如果有）
-      if (errors.length > 0) {
-        console.warn('Some cleanup operations failed:', errors);
-      }
-      
-      // 7. 显示注销成功提示
+      // 6. 显示注销成功提示
       setShowLogoutAfterDeletePrompt(false);
       setShowResetPasswordPrompt(true);
     } catch (error) {
-      console.error('Error deleting account:', error);
-      
       // 即使发生异常，也要确保用户被登出
       try {
         await logout({ redirect: false });
         setShowLogoutAfterDeletePrompt(false);
         setShowResetPasswordPrompt(true);
-      } catch (logoutError) {
-        console.error('Error during logout:', logoutError);
+      } catch {
+        // 登出失败，静默处理
       }
       
       alert('注销过程中遇到问题，但您已被成功登出：' + (error instanceof Error ? error.message : '未知错误'));
@@ -299,15 +474,13 @@ const ProfilePage: React.FC = () => {
             display_name: username
           });
         
-        if (createError) {
-          console.error('Error creating profile:', createError);
-        } else {
+        if (!createError) {
           // 重新获取profile
           fetchProfile();
         }
-      } catch (error) {
-        console.error('Error in createDefaultProfile:', error);
-      }
+      } catch {
+      // 创建失败，静默处理
+    }
     };
     
     createDefaultProfile();
@@ -391,9 +564,27 @@ const ProfilePage: React.FC = () => {
                   <span className="text-gray-600 dark:text-gray-300 font-medium">注册时间</span>
                   <span className="font-bold text-gray-800 dark:text-gray-100">{profile && profile.created_at ? new Date(profile.created_at).toLocaleDateString('zh-CN') : '未知'}</span>
                 </div>
-                <div className="flex justify-between text-sm">
+                <div className="flex justify-between text-sm mb-2">
                   <span className="text-gray-600 dark:text-gray-300 font-medium">邮箱</span>
                   <span className="font-bold text-gray-800 dark:text-gray-100 truncate max-w-[150px]" title={user.email || ''}>{user.email}</span>
+                </div>
+                <div className="flex justify-between text-sm mb-2">
+                  <span className="text-gray-600 dark:text-gray-300 font-medium">当前IP地址</span>
+                  <span className="font-bold text-gray-800 dark:text-gray-100 truncate max-w-[150px]">
+                    {ipLoading ? '获取中...' : userIp}
+                  </span>
+                </div>
+                <div className="flex justify-between text-sm mb-2">
+                  <span className="text-gray-600 dark:text-gray-300 font-medium">所在省份</span>
+                  <span className="font-bold text-gray-800 dark:text-gray-100 truncate max-w-[150px]">
+                    {ipLoading ? '获取中...' : userProvince}
+                  </span>
+                </div>
+                <div className="flex justify-between text-sm">
+                  <span className="text-gray-600 dark:text-gray-300 font-medium">所在城市</span>
+                  <span className="font-bold text-gray-800 dark:text-gray-100 truncate max-w-[150px]">
+                    {ipLoading ? '获取中...' : `${userCity}, ${userCountry}`}
+                  </span>
                 </div>
               </div>
             </div>

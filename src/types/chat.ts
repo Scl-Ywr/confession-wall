@@ -44,7 +44,7 @@ export interface ChatMessage {
   updated_at: string;
   sender_profile?: Profile;
   is_read: boolean;
-  type: 'text' | 'image' | 'video' | 'file';
+  type: 'text' | 'image' | 'video' | 'file' | 'voice';
   deleted?: boolean; // 消息是否已删除
 }
 
@@ -126,6 +126,9 @@ export interface UserSearchResult {
   created_at: string;
   online_status?: OnlineStatus;
   bio?: string;
+  user_city?: string;
+  user_province?: string;
+  user_country?: string;
 }
 
 

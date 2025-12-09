@@ -4,6 +4,7 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useAuth } from '@/context/AuthContext';
 import { chatService } from '@/services/chatService';
 import { ChatMessage, Group, GroupMember, UserSearchResult, Profile } from '@/types/chat';
+import { getOnlineStatusInfo, isUserOnline } from '@/utils/onlineStatus';
 import Link from 'next/link';
 import Image from 'next/image';
 import Navbar from '@/components/Navbar';
@@ -12,6 +13,7 @@ import { showToast } from '@/utils/toast';
 import LoadingSpinner from '@/components/LoadingSpinner';
 import { MessageCircleIcon, UsersIcon, PlusIcon, XIcon, TrashIcon, SendIcon, Image as ImageIcon, Smile } from 'lucide-react';
 import { supabase } from '@/lib/supabase/client';
+import VoiceRecorder from '@/components/VoiceRecorder';
 
 const GroupChatPage = ({ params }: { params: Promise<{ groupId: string }> }) => {
   const { user, loading: authLoading } = useAuth();
@@ -62,6 +64,12 @@ const GroupChatPage = ({ params }: { params: Promise<{ groupId: string }> }) => 
   
   // 多媒体消息相关
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
+  const [showVoiceRecorder, setShowVoiceRecorder] = useState(false);
+  
+  // 用户不是群成员时的状态
+  const [isMember, setIsMember] = useState<boolean>(true);
+  const [showNotMemberPrompt, setShowNotMemberPrompt] = useState<boolean>(false);
+  const [keepChatHistory, setKeepChatHistory] = useState<boolean>(false);
   
   // 用于解决 hydration mismatch 的状态
   const [isHydrated, setIsHydrated] = useState(false);
@@ -133,7 +141,7 @@ const GroupChatPage = ({ params }: { params: Promise<{ groupId: string }> }) => 
       try {
         // 使用新添加的 getGroup 方法获取群信息，而不是从群列表中查找
         const groupData = await chatService.getGroup(groupId);
-        const membersData = await chatService.getGroupMembers(groupId);
+        const membersData = await chatService.getGroupMembers(groupId, true);
         
         setGroup(groupData);
         setGroupMembers(membersData);
@@ -141,12 +149,16 @@ const GroupChatPage = ({ params }: { params: Promise<{ groupId: string }> }) => 
         // 获取当前用户在群聊中的角色和群内个人信息
         const currentMember = membersData.find(member => member.user_id === user.id);
         if (currentMember) {
-          setCurrentUserRole(currentMember.role as 'owner' | 'member');
+          setCurrentUserRole(currentMember.role as 'owner' | 'admin' | 'member');
           // 设置群内昵称和头像
           setGroupNickname(currentMember.group_nickname || '');
           setGroupAvatar(currentMember.group_avatar_url);
+          setIsMember(true);
         } else {
           setCurrentUserRole(null);
+          setIsMember(false);
+          // 显示非成员提示
+          setShowNotMemberPrompt(true);
         }
       } catch {
         // 即使获取失败，也要创建一个模拟的群对象，避免页面崩溃
@@ -162,6 +174,7 @@ const GroupChatPage = ({ params }: { params: Promise<{ groupId: string }> }) => 
         });
         setGroupMembers([]);
         setCurrentUserRole('owner');
+        setIsMember(true);
       } finally {
         setLoading(false);
       }
@@ -183,7 +196,7 @@ const GroupChatPage = ({ params }: { params: Promise<{ groupId: string }> }) => 
       },
       async () => {
         try {
-          const membersData = await chatService.getGroupMembers(groupId);
+          const membersData = await chatService.getGroupMembers(groupId, true);
           setGroupMembers(membersData);
           
           // 更新当前用户在群聊中的角色和群内个人信息
@@ -204,14 +217,14 @@ const GroupChatPage = ({ params }: { params: Promise<{ groupId: string }> }) => 
       }
     );
 
-    // 监听群成员在线状态变化
+    // 监听群成员在线状态变化 - 同时监听online_status和last_seen字段
     groupChannel.on(
       'postgres_changes',
       {
         event: 'UPDATE',
         schema: 'public',
         table: 'profiles',
-        filter: `online_status=in.('online','offline','away')` // 只监听在线状态变化
+        filter: `online_status=in.('online','offline','away')` // 监听在线状态变化
       },
       async (payload) => {
         try {
@@ -223,14 +236,27 @@ const GroupChatPage = ({ params }: { params: Promise<{ groupId: string }> }) => 
             if (isGroupMember) {
               // 只更新变化的成员信息
               return prevMembers.map(member => {
-                if (member.user_id === payload.new.id && member.user_profile) {
+                if (member.user_id === payload.new.id) {
+                  // 确保user_profile存在，不存在则创建一个新对象，严格匹配Profile接口
+                  const updatedProfile: Profile = member.user_profile ? {
+                    ...member.user_profile,
+                    online_status: payload.new.online_status,
+                    last_seen: payload.new.last_seen
+                  } : {
+                    id: payload.new.id,
+                    username: payload.new.username || '',
+                    display_name: payload.new.display_name || '',
+                    avatar_url: payload.new.avatar_url,
+                    online_status: payload.new.online_status,
+                    last_seen: payload.new.last_seen,
+                    bio: payload.new.bio,
+                    created_at: payload.new.created_at,
+                    updated_at: payload.new.updated_at
+                  };
+                  
                   return {
                     ...member,
-                    user_profile: {
-                      ...member.user_profile,
-                      online_status: payload.new.online_status,
-                      last_seen: payload.new.last_seen
-                    }
+                    user_profile: updatedProfile
                   };
                 }
                 return member;
@@ -238,8 +264,113 @@ const GroupChatPage = ({ params }: { params: Promise<{ groupId: string }> }) => 
             }
             return prevMembers;
           });
+          
+          // 同时更新消息列表中的发送者在线状态
+          setMessages(prevMessages => {
+            // 检查是否有消息的发送者是更新的用户
+            const hasMessagesFromUser = prevMessages.some(msg => msg.sender_id === payload.new.id);
+            
+            if (hasMessagesFromUser) {
+              // 更新所有发送者是该用户的消息中的sender_profile
+              return prevMessages.map(msg => {
+                if (msg.sender_id === payload.new.id && msg.sender_profile) {
+                  // 更新发送者的在线状态和最后活跃时间
+                  return {
+                    ...msg,
+                    sender_profile: {
+                      ...msg.sender_profile,
+                      online_status: payload.new.online_status,
+                      last_seen: payload.new.last_seen
+                    }
+                  };
+                }
+                return msg;
+              });
+            }
+            return prevMessages;
+          });
         } catch (error) {
           console.error('Error updating member online status:', error);
+        }
+      }
+    );
+    
+    // 额外监听last_seen字段变化，确保在线状态基于最近活跃时间正确更新
+    groupChannel.on(
+      'postgres_changes',
+      {
+        event: 'UPDATE',
+        schema: 'public',
+        table: 'profiles',
+        filter: `last_seen=not.is.null` // 监听last_seen字段变化
+      },
+      async (payload) => {
+        try {
+          // 直接更新本地状态，避免重新获取整个成员列表
+          setGroupMembers(prevMembers => {
+            // 检查更新的用户是否是群成员
+            const isGroupMember = prevMembers.some(member => member.user_id === payload.new.id);
+            
+            if (isGroupMember) {
+              // 只更新变化的成员信息
+              return prevMembers.map(member => {
+                if (member.user_id === payload.new.id) {
+                  // 确保user_profile存在，不存在则创建一个新对象，严格匹配Profile接口
+                  const updatedProfile: Profile = member.user_profile ? {
+                    ...member.user_profile,
+                    last_seen: payload.new.last_seen,
+                    // 优先使用payload中的online_status，如果不存在则使用原有值，确保状态同步
+                    online_status: payload.new.online_status || member.user_profile.online_status || 'away'
+                  } : {
+                    id: payload.new.id,
+                    username: payload.new.username || '',
+                    display_name: payload.new.display_name || '',
+                    avatar_url: payload.new.avatar_url,
+                    online_status: 'away', // 默认状态
+                    last_seen: payload.new.last_seen,
+                    bio: payload.new.bio,
+                    created_at: payload.new.created_at,
+                    updated_at: payload.new.updated_at
+                  };
+                  
+                  return {
+                    ...member,
+                    user_profile: updatedProfile
+                  };
+                }
+                return member;
+              });
+            }
+            return prevMembers;
+          });
+          
+          // 同时更新消息列表中的发送者在线状态
+          setMessages(prevMessages => {
+            // 检查是否有消息的发送者是更新的用户
+            const hasMessagesFromUser = prevMessages.some(msg => msg.sender_id === payload.new.id);
+            
+            if (hasMessagesFromUser) {
+              // 更新所有发送者是该用户的消息中的sender_profile
+              return prevMessages.map(msg => {
+                if (msg.sender_id === payload.new.id && msg.sender_profile) {
+                  // 更新发送者的最后活跃时间和在线状态（如果online_status字段也更新了）
+                  return {
+                    ...msg,
+                    sender_profile: {
+                      ...msg.sender_profile,
+                      last_seen: payload.new.last_seen,
+                      // 只有当payload.new.online_status存在时才更新，否则保持原有状态
+                      online_status: payload.new.online_status || msg.sender_profile.online_status
+                    }
+                  };
+                }
+                return msg;
+              });
+            }
+            return prevMessages;
+          });
+        } catch (error) {
+          console.error('Error updating member last seen:', error);
         }
       }
     );
@@ -255,7 +386,7 @@ const GroupChatPage = ({ params }: { params: Promise<{ groupId: string }> }) => 
 
   // 自动标记消息为已读
   const markMessagesAsRead = useCallback(async () => {
-    if (!user?.id || !groupId) return;
+    if (!user?.id || !groupId || !isMember) return;
 
     try {
       await chatService.markGroupMessagesAsRead(groupId);
@@ -266,7 +397,7 @@ const GroupChatPage = ({ params }: { params: Promise<{ groupId: string }> }) => 
     } catch {
       // ignore error
     }
-  }, [user?.id, groupId]);
+  }, [user?.id, groupId, isMember]);
 
   // 获取群消息
   useEffect(() => {
@@ -317,7 +448,7 @@ const GroupChatPage = ({ params }: { params: Promise<{ groupId: string }> }) => 
 
     // 使用唯一的通道名称
     const channelName = `group_chat_${groupId}_${user.id}`;
-    console.log('Creating group chat channel:', channelName);
+
 
     // 完全复制私聊的通道创建方式
     const channel = supabase
@@ -330,12 +461,8 @@ const GroupChatPage = ({ params }: { params: Promise<{ groupId: string }> }) => 
           table: 'chat_messages'
         },
         async (payload) => {
-          console.log('New group message received in channel', channelName, ':', payload);
-          
           // 只处理当前群组的消息
           if (payload.new.group_id === groupId) {
-            console.log('Filtered message is for current group:', payload.new);
-            
             try {
               // 从数据库获取发送者完整资料
               const { data: senderProfile } = await supabase
@@ -357,7 +484,6 @@ const GroupChatPage = ({ params }: { params: Promise<{ groupId: string }> }) => 
               
               // 过滤掉自己发送的消息，因为乐观UI已经添加了
               if (payload.new.sender_id === user.id) {
-                console.log('Skipping own message from realtime, already added via optimistic UI:', payload.new.id);
                 return;
               }
               
@@ -365,7 +491,6 @@ const GroupChatPage = ({ params }: { params: Promise<{ groupId: string }> }) => 
               setMessages(prev => {
                 // 检查消息是否已存在
                 if (prev.some(msg => msg.id === completeMessage.id)) {
-                  console.log('Group message already exists, skipping:', completeMessage.id);
                   return prev;
                 }
                 // 直接添加到末尾，不重新排序
@@ -395,7 +520,6 @@ const GroupChatPage = ({ params }: { params: Promise<{ groupId: string }> }) => 
     
     // 组件卸载时取消订阅
     return () => {
-      console.log('Removing group channel:', channelName);
       supabase.removeChannel(channel);
       channelRef.current = null;
     };
@@ -416,14 +540,12 @@ const GroupChatPage = ({ params }: { params: Promise<{ groupId: string }> }) => 
 
   // 自动滚动到底部
   useEffect(() => {
-    console.log('Messages updated, scrolling to bottom');
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages.length]);
 
   // 监听新消息通知，确保滚动到底部
   useEffect(() => {
     const handleGroupMessagesReceived = () => {
-      console.log('Group messages received event, scrolling to bottom');
       messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
     };
 
@@ -478,7 +600,6 @@ const GroupChatPage = ({ params }: { params: Promise<{ groupId: string }> }) => 
       setMessages(prev => {
         // 检查消息是否已存在
         if (prev.some(msg => msg.id === sentMessage.id)) {
-          console.log('Group message already exists, skipping:', sentMessage.id);
           return prev;
         }
         return [...prev, sentMessage];
@@ -513,7 +634,6 @@ const GroupChatPage = ({ params }: { params: Promise<{ groupId: string }> }) => 
       setMessages(prev => {
         // 检查消息是否已存在
         if (prev.some(msg => msg.id === sentMessage.id)) {
-          console.log('Group message already exists, skipping:', sentMessage.id);
           return prev;
         }
         return [...prev, sentMessage];
@@ -524,6 +644,48 @@ const GroupChatPage = ({ params }: { params: Promise<{ groupId: string }> }) => 
     } catch {
       setNewMessage(messageContent);
       showToast.error('发送消息失败，请重试');
+    } finally {
+      setSending(false);
+    }
+  };
+
+  // 发送语音消息
+  const handleSendVoiceMessage = async (audioBlob: Blob) => {
+    if (!user || !group || sending) return;
+
+    setSending(true);
+    
+    try {
+      // 从Blob中获取实际的MIME类型和文件扩展名
+      const mimeType = audioBlob.type;
+      const fileExtension = mimeType.split('/')[1] || 'webm';
+      
+      // 将Blob转换为File对象，使用实际的MIME类型
+      const audioFile = new File([audioBlob], `voice_${Date.now()}.${fileExtension}`, { type: mimeType });
+      
+      // 上传语音文件
+      const audioUrl = await chatService.uploadFile(audioFile, 'chat_voices');
+      
+      // 发送语音消息
+      const sentMessage = await chatService.sendGroupMessage(groupId, audioUrl, 'voice');
+      
+      // 直接添加到消息列表末尾
+      setMessages(prev => {
+        // 检查消息是否已存在
+        if (prev.some(msg => msg.id === sentMessage.id)) {
+          return prev;
+        }
+        return [...prev, sentMessage];
+      });
+      
+      // 滚动到最新消息
+      messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    } catch (error) {
+      // 更详细的错误处理和日志记录
+      console.error('Error sending voice message:', error);
+      // 显示具体的错误信息
+      const errorMessage = error instanceof Error ? error.message : '发送语音消息失败，请重试';
+      showToast.error(errorMessage);
     } finally {
       setSending(false);
     }
@@ -571,7 +733,7 @@ const GroupChatPage = ({ params }: { params: Promise<{ groupId: string }> }) => 
       setSearchResults([]);
       
       // 刷新群成员列表
-      const updatedMembers = await chatService.getGroupMembers(groupId);
+      const updatedMembers = await chatService.getGroupMembers(groupId, true);
       setGroupMembers(updatedMembers);
       
       showToast.success('邀请发送成功！');
@@ -597,6 +759,25 @@ const GroupChatPage = ({ params }: { params: Promise<{ groupId: string }> }) => 
       const errorMessage = err instanceof Error ? err.message : '退出群聊失败，请重试';
       showToast.error(errorMessage);
     }
+  };
+
+  // 处理用户不是群成员时的操作
+  const handleNotMemberAction = async (action: 'keep' | 'delete') => {
+    if (action === 'keep') {
+      // 用户选择保留聊天记录
+      setKeepChatHistory(true);
+      setShowNotMemberPrompt(false);
+    } else {
+      // 用户选择删除聊天记录
+      // 跳转到聊天列表页，群聊将从列表中移除
+      window.location.href = '/chat';
+    }
+  };
+
+  // 从聊天页面删除群聊
+  const handleDeleteChat = () => {
+    // 跳转到聊天列表页，群聊将从列表中移除
+    window.location.href = '/chat';
   };
 
   // 删除群聊
@@ -720,7 +901,7 @@ const GroupChatPage = ({ params }: { params: Promise<{ groupId: string }> }) => 
       handleCloseRemoveMemberConfirm();
       
       // 刷新群成员列表
-      const updatedMembers = await chatService.getGroupMembers(groupId);
+      const updatedMembers = await chatService.getGroupMembers(groupId, true);
       setGroupMembers(updatedMembers);
       
       // 更新群信息
@@ -959,9 +1140,13 @@ const GroupChatPage = ({ params }: { params: Promise<{ groupId: string }> }) => 
                       {/* 在线成员数量 */}
                       <p className="flex items-center gap-1 text-green-500 dark:text-green-400">
                         <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse"></span>
-                        {groupMembers.filter(member => 
-                          member.user_profile?.online_status === 'online'
-                        ).length} 人在线
+                        {groupMembers.filter(member => {
+                          if (!member.user_profile) return false;
+                          
+                          const { online_status, last_seen } = member.user_profile;
+                          // 直接使用isUserOnline函数判断是否在线，简化逻辑
+                          return isUserOnline(online_status, last_seen);
+                        }).length} 人在线
                       </p>
                     </div>
                   </div>
@@ -993,29 +1178,48 @@ const GroupChatPage = ({ params }: { params: Promise<{ groupId: string }> }) => 
                     </svg>
                   </button>
                 )}
-                <button
-                  onClick={() => setShowAddMembersModal(true)}
-                  className="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
-                  aria-label="邀请成员"
-                >
-                  <PlusIcon className="h-5 w-5 text-gray-600 dark:text-gray-300" />
-                </button>
-                {currentUserRole === 'owner' ? (
+                {/* 非成员状态下的删除按钮 */}
+                {!isMember && keepChatHistory && (
                   <button
-                    onClick={() => setShowDeleteGroupConfirm(true)}
+                    onClick={handleDeleteChat}
                     className="p-2 rounded-lg hover:bg-red-100 dark:hover:bg-red-900/20 transition-colors"
-                    aria-label="删除群聊"
+                    aria-label="删除聊天记录"
                   >
                     <TrashIcon className="h-5 w-5 text-red-500" />
                   </button>
-                ) : (
-                  <button
-                    onClick={() => setShowLeaveConfirm(true)}
-                    className="p-2 rounded-lg hover:bg-red-100 dark:hover:bg-red-900/20 transition-colors"
-                    aria-label="退出群聊"
-                  >
-                    <TrashIcon className="h-5 w-5 text-red-500" />
-                  </button>
+                )}
+                
+                {/* 普通成员状态下的按钮 */}
+                {isMember && (
+                  <>
+                    {(currentUserRole === 'owner' || currentUserRole === 'admin') && (
+                      <button
+                        onClick={() => setShowAddMembersModal(true)}
+                        className="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+                        aria-label="邀请成员"
+                      >
+                        <PlusIcon className="h-5 w-5 text-gray-600 dark:text-gray-300" />
+                      </button>
+                    )}
+                    
+                    {currentUserRole === 'owner' ? (
+                      <button
+                        onClick={() => setShowDeleteGroupConfirm(true)}
+                        className="p-2 rounded-lg hover:bg-red-100 dark:hover:bg-red-900/20 transition-colors"
+                        aria-label="删除群聊"
+                      >
+                        <TrashIcon className="h-5 w-5 text-red-500" />
+                      </button>
+                    ) : (
+                      <button
+                        onClick={() => setShowLeaveConfirm(true)}
+                        className="p-2 rounded-lg hover:bg-red-100 dark:hover:bg-red-900/20 transition-colors"
+                        aria-label="退出群聊"
+                      >
+                        <TrashIcon className="h-5 w-5 text-red-500" />
+                      </button>
+                    )}
+                  </>
                 )}
               </div>
             </div>
@@ -1091,7 +1295,7 @@ const GroupChatPage = ({ params }: { params: Promise<{ groupId: string }> }) => 
                         <div className="flex items-start gap-2 max-w-[90%] sm:max-w-[80%]">
                           {/* 头像 */}
                           <div 
-                            className="w-8 h-8 rounded-full bg-gray-200 dark:bg-gray-700 flex items-center justify-center overflow-hidden cursor-pointer mt-1"
+                            className="w-8 h-8 aspect-square rounded-full bg-gray-200 dark:bg-gray-700 flex items-center justify-center overflow-hidden cursor-pointer mt-1 flex-shrink-0"
                             onClick={() => handleAvatarClick(senderInfo!)}
                           >
                             {senderAvatar ? (
@@ -1101,6 +1305,7 @@ const GroupChatPage = ({ params }: { params: Promise<{ groupId: string }> }) => 
                                 width={32}
                                 height={32}
                                 className="w-full h-full object-cover"
+                                objectFit="cover"
                               />
                             ) : (
                               <span className="text-sm font-medium text-gray-600 dark:text-gray-300">
@@ -1111,11 +1316,32 @@ const GroupChatPage = ({ params }: { params: Promise<{ groupId: string }> }) => 
                           
                           {/* 消息内容 */}
                           <div className="flex flex-col">
-                            {/* 用户名 */}
+                            {/* 用户名和在线状态 */}
                             {!isDeleted && (
-                              <span className="text-xs text-gray-500 dark:text-gray-400 mb-1">
-                                {senderName}
-                              </span>
+                              <div className="flex items-center gap-2 mb-1">
+                                <span className="text-xs text-gray-500 dark:text-gray-400">
+                                  {senderName}
+                                </span>
+                                {/* 在线状态显示 - 从群成员列表获取实时状态 */}
+                                {senderMember?.user_profile && (
+                                  <span className="flex items-center gap-1 text-xs">
+                                    {(() => {
+                                      // 直接从senderMember.user_profile获取实时在线状态
+                                      // 而不是使用message.sender_profile中的旧快照
+                                      const { online_status, last_seen } = senderMember.user_profile;
+                                      const onlineStatusInfo = getOnlineStatusInfo(online_status, last_seen);
+                                      return (
+                                        <>
+                                          <span className={`w-1.5 h-1.5 rounded-full ${onlineStatusInfo.color} ${onlineStatusInfo.isOnline ? 'animate-pulse' : ''}`}></span>
+                                          <span className={onlineStatusInfo.textColor}>
+                                            {onlineStatusInfo.text}
+                                          </span>
+                                        </>
+                                      );
+                                    })()}
+                                  </span>
+                                )}
+                              </div>
                             )}
                             
                             {/* 消息气泡 */}
@@ -1228,7 +1454,7 @@ const GroupChatPage = ({ params }: { params: Promise<{ groupId: string }> }) => 
                           
                           {/* 当前用户头像 */}
                           <div 
-                            className="w-8 h-8 rounded-full bg-gray-200 dark:bg-gray-700 flex items-center justify-center overflow-hidden mt-1 cursor-pointer"
+                            className="w-8 h-8 aspect-square rounded-full bg-gray-200 dark:bg-gray-700 flex items-center justify-center overflow-hidden mt-1 cursor-pointer flex-shrink-0"
                             onClick={handleCurrentUserAvatarClick}
                           >
                             {/* 从message.sender_profile中获取当前用户的头像和用户名，优先使用群内头像 */}
@@ -1239,6 +1465,7 @@ const GroupChatPage = ({ params }: { params: Promise<{ groupId: string }> }) => 
                                 width={32}
                                 height={32}
                                 className="w-full h-full object-cover"
+                                objectFit="cover"
                               />
                             ) : (
                               <span className="text-sm font-medium text-gray-600 dark:text-gray-300">
@@ -1260,84 +1487,108 @@ const GroupChatPage = ({ params }: { params: Promise<{ groupId: string }> }) => 
 
           {/* 消息输入框 */}
           <form onSubmit={handleSendMessage} className="p-4 border-t border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800">
-            <div className="flex gap-2">
-              <div className="relative">
-                {/* 隐藏的文件输入 */}
-                <input
-                  type="file"
-                  accept="image/*,video/*"
-                  onChange={handleFileChange}
-                  disabled={sending}
-                  className="hidden"
-                  id="group-file-upload"
-                />
+            <div className="flex flex-col gap-3">
+              <div className="flex gap-2">
+                <div className="relative">
+                  {/* 隐藏的文件输入 */}
+                  <input
+                    type="file"
+                    accept="image/*,video/*"
+                    onChange={handleFileChange}
+                    disabled={sending}
+                    className="hidden"
+                    id="group-file-upload"
+                  />
+                  
+                  {/* 图片上传按钮 */}
+                  <button
+                    type="button"
+                    className="p-3 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors duration-200 min-w-12 min-h-12 flex items-center justify-center"
+                    onClick={() => document.getElementById('group-file-upload')?.click()}
+                    disabled={sending}
+                  >
+                    <ImageIcon className="w-5 h-5 text-gray-600 dark:text-gray-300" />
+                  </button>
+                </div>
                 
-                {/* 图片上传按钮 */}
+                {/* 语音录制按钮 */}
                 <button
                   type="button"
                   className="p-3 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors duration-200 min-w-12 min-h-12 flex items-center justify-center"
-                  onClick={() => document.getElementById('group-file-upload')?.click()}
+                  onClick={() => setShowVoiceRecorder(!showVoiceRecorder)}
                   disabled={sending}
                 >
-                  <ImageIcon className="w-5 h-5 text-gray-600 dark:text-gray-300" />
-                </button>
-              </div>
-              
-              <div className="relative">
-                {/* 表情选择器按钮 */}
-                <button
-                  type="button"
-                  className="p-3 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors duration-200 min-w-12 min-h-12 flex items-center justify-center"
-                  onClick={() => setShowEmojiPicker(!showEmojiPicker)}
-                  disabled={sending}
-                >
-                  <Smile className="w-5 h-5 text-gray-600 dark:text-gray-300" />
+                  <svg className="w-5 h-5 text-gray-600 dark:text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" />
+                  </svg>
                 </button>
                 
-                {/* 表情选择器 */}
-                {showEmojiPicker && (
-                  <div className="absolute bottom-full left-0 mb-2 bg-white dark:bg-gray-800 rounded-lg shadow-lg p-2 w-64 md:w-80 max-h-48 overflow-y-auto z-50">
-                    <div className="grid grid-cols-8 md:grid-cols-10 gap-2">
-                      {/* 简单的表情示例 */}
-                      {['😊', '😂', '❤️', '👍', '👎', '😢', '😮', '😡', '😀', '😃', '😄', '😁', '😆', '😅', '🤣', '🥲', '☺️', '😇', '🙂', '🙃', '😉', '😌', '😍', '🥰', '😘', '😗', '😙', '😚', '😋', '😛', '😝', '😜', '🤪', '🤨', '🧐', '🤓', '😎', '🥸', '🤩', '🥳', '😏', '😒', '😞', '😔', '😟', '😕', '🙁', '☹️', '😣', '😖', '😫', '😩', '🥺', '😭', '😤', '😠', '🤬', '🤯', '😳', '🥵', '🥶', '😱', '😨', '😰', '😥', '😓', '🤗', '🤔', '🤭', '🤫', '🤥', '😶', '😐', '😑', '😬', '🙄', '😯', '😦', '😧', '😲', '🥱', '😴', '🤤', '😪', '😵', '🤐', '🥴', '🤢', '🤮', '🤧', '😷', '🤒', '🤕', '🤑'].map((emoji, index) => (
-                        <button
-                          key={index}
-                          type="button"
-                          className="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors duration-200 text-xl"
-                          onClick={() => {
-                            setNewMessage(prev => prev + emoji);
-                            setShowEmojiPicker(false);
-                          }}
-                        >
-                          {emoji}
-                        </button>
-                      ))}
+                <div className="relative">
+                  {/* 表情选择器按钮 */}
+                  <button
+                    type="button"
+                    className="p-3 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors duration-200 min-w-12 min-h-12 flex items-center justify-center"
+                    onClick={() => setShowEmojiPicker(!showEmojiPicker)}
+                    disabled={sending}
+                  >
+                    <Smile className="w-5 h-5 text-gray-600 dark:text-gray-300" />
+                  </button>
+                  
+                  {/* 表情选择器 */}
+                  {showEmojiPicker && (
+                    <div className="absolute bottom-full left-0 mb-2 bg-white dark:bg-gray-800 rounded-lg shadow-lg p-2 w-64 md:w-80 max-h-48 overflow-y-auto z-50">
+                      <div className="grid grid-cols-8 md:grid-cols-10 gap-2">
+                        {/* 简单的表情示例 */}
+                        {['😊', '😂', '❤️', '👍', '👎', '😢', '😮', '😡', '😀', '😃', '😄', '😁', '😆', '😅', '🤣', '🥲', '☺️', '😇', '🙂', '🙃', '😉', '😌', '😍', '🥰', '😘', '😗', '😙', '😚', '😋', '😛', '😝', '😜', '🤪', '🤨', '🧐', '🤓', '😎', '🥸', '🤩', '🥳', '😏', '😒', '😞', '😔', '😟', '😕', '🙁', '☹️', '😣', '😖', '😫', '😩', '🥺', '😭', '😤', '😠', '🤬', '🤯', '😳', '🥵', '🥶', '😱', '😨', '😰', '😥', '😓', '🤗', '🤔', '🤭', '🤫', '🤥', '😶', '😐', '😑', '😬', '🙄', '😯', '😦', '😧', '😲', '🥱', '😴', '🤤', '😪', '😵', '🤐', '🥴', '🤢', '🤮', '🤧', '😷', '🤒', '🤕', '🤑'].map((emoji, index) => (
+                          <button
+                            key={index}
+                            type="button"
+                            className="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors duration-200 text-xl"
+                            onClick={() => {
+                              setNewMessage(prev => prev + emoji);
+                              setShowEmojiPicker(false);
+                            }}
+                          >
+                            {emoji}
+                          </button>
+                        ))}
+                      </div>
                     </div>
-                  </div>
-                )}
+                  )}
+                </div>
+                
+                <div className="flex-grow relative">
+                  <input
+                    type="text"
+                    placeholder="输入消息..."
+                    className="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-full focus:ring-2 focus:ring-purple-500 focus:outline-none bg-white dark:bg-gray-700 text-gray-800 dark:text-white text-sm sm:text-base"
+                    value={newMessage}
+                    onChange={(e) => setNewMessage(e.target.value)}
+                    disabled={sending}
+                  />
+                </div>
+                <button
+                  type="submit"
+                  className="p-3 rounded-full bg-gradient-to-r from-pink-400 to-purple-500 text-white hover:from-pink-500 hover:to-purple-600 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed shadow-md hover:shadow-lg min-w-12 min-h-12 flex items-center justify-center"
+                  disabled={!newMessage.trim() || sending}
+                >
+                  {sending ? (
+                    <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white"></div>
+                  ) : (
+                    <SendIcon className="h-5 w-5 sm:h-6 sm:w-6" />
+                  )}
+                </button>
               </div>
               
-              <div className="flex-grow relative">
-                <input
-                  type="text"
-                  placeholder="输入消息..."
-                  className="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-full focus:ring-2 focus:ring-purple-500 focus:outline-none bg-white dark:bg-gray-700 text-gray-800 dark:text-white text-sm sm:text-base"
-                  value={newMessage}
-                  onChange={(e) => setNewMessage(e.target.value)}
-                  disabled={sending}
-                />
-              </div>
-              <button
-                type="submit"
-                className="p-3 rounded-full bg-gradient-to-r from-pink-400 to-purple-500 text-white hover:from-pink-500 hover:to-purple-600 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed shadow-md hover:shadow-lg min-w-12 min-h-12 flex items-center justify-center"
-                disabled={!newMessage.trim() || sending}
-              >
-                {sending ? (
-                  <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white"></div>
-                ) : (
-                  <SendIcon className="h-5 w-5 sm:h-6 sm:w-6" />
-                )}
-              </button>
+              {/* 语音录制组件 */}
+              {showVoiceRecorder && (
+                <div className="p-3 bg-gray-100 dark:bg-gray-800 rounded-lg">
+                  <VoiceRecorder 
+                    onSendVoiceMessage={handleSendVoiceMessage}
+                    isSending={sending}
+                  />
+                </div>
+              )}
             </div>
           </form>
         </div>
@@ -1654,10 +1905,37 @@ const GroupChatPage = ({ params }: { params: Promise<{ groupId: string }> }) => 
                 </h4>
                 
                 {selectedUser?.username && (
-                  <p className="text-sm text-gray-500 dark:text-gray-400 mb-2">
+                  <p className="text-sm text-gray-500 dark:text-gray-400 mb-1">
                     @{selectedUser.username}
                   </p>
                 )}
+                
+                {/* 在线状态显示 */}
+                <div className="flex items-center gap-2 mb-2">
+                  {(() => {
+                    // 在用户信息弹窗中，我们需要获取用户的在线状态和最后活跃时间
+                    // 由于selectedUser可能没有这些信息，我们需要从groupMembers中查找
+                    const groupMember = groupMembers.find(member => member.user_id === selectedUser?.id);
+                    if (groupMember?.user_profile) {
+                      const { online_status, last_seen } = groupMember.user_profile;
+                      const onlineStatusInfo = getOnlineStatusInfo(online_status, last_seen);
+                      return (
+                        <span className="flex items-center gap-1 text-sm">
+                          <span className={`w-2 h-2 rounded-full ${onlineStatusInfo.color} ${onlineStatusInfo.isOnline ? 'animate-pulse' : ''}`}></span>
+                          <span className={onlineStatusInfo.textColor}>
+                            {onlineStatusInfo.text}
+                          </span>
+                        </span>
+                      );
+                    }
+                    return (
+                      <span className="flex items-center gap-1 text-sm text-gray-500 dark:text-gray-400">
+                        <span className="w-2 h-2 rounded-full bg-gray-500"></span>
+                        离线
+                      </span>
+                    );
+                  })()}
+                </div>
                 
                 <p className="text-xs text-gray-500 dark:text-gray-400">
                   加入于 {new Date(selectedUser?.created_at || '').toLocaleDateString('zh-CN')}
@@ -2034,25 +2312,10 @@ const GroupChatPage = ({ params }: { params: Promise<{ groupId: string }> }) => 
                                   管理员
                                 </span>
                               )}
-                              {/* 在线状态 */}
+                              {/* 在线状态 - 使用统一的在线状态信息函数，与好友列表保持一致 */}
                               {(() => {
                                 const profile = member.user_profile;
-                                const status = profile?.online_status;
-                                if (status === 'online') {
-                                  return (
-                                    <span className="flex items-center gap-1 text-green-500 dark:text-green-400 text-xs">
-                                      <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse"></span>
-                                      在线
-                                    </span>
-                                  );
-                                } else if (status === 'away') {
-                                  return (
-                                    <span className="flex items-center gap-1 text-yellow-500 dark:text-yellow-400 text-xs">
-                                      <span className="w-2 h-2 rounded-full bg-yellow-500 animate-pulse"></span>
-                                      离开
-                                    </span>
-                                  );
-                                } else {
+                                if (!profile) {
                                   return (
                                     <span className="flex items-center gap-1 text-gray-500 dark:text-gray-400 text-xs">
                                       <span className="w-2 h-2 rounded-full bg-gray-500"></span>
@@ -2060,6 +2323,17 @@ const GroupChatPage = ({ params }: { params: Promise<{ groupId: string }> }) => 
                                     </span>
                                   );
                                 }
+                                
+                                const { online_status, last_seen } = profile;
+                                // 使用与好友列表相同的getOnlineStatusInfo函数，确保一致性
+                                const onlineStatusInfo = getOnlineStatusInfo(online_status, last_seen);
+                                
+                                return (
+                                  <span className={`flex items-center gap-1 ${onlineStatusInfo.textColor} text-xs`}>
+                                    <span className={`w-2 h-2 rounded-full ${onlineStatusInfo.color} ${onlineStatusInfo.isOnline ? 'animate-pulse' : ''}`}></span>
+                                    {onlineStatusInfo.text}
+                                  </span>
+                                );
                               })()}
                             </div>
                             <p className="text-sm text-gray-500 dark:text-gray-400">
@@ -2090,6 +2364,39 @@ const GroupChatPage = ({ params }: { params: Promise<{ groupId: string }> }) => 
                   className="px-6 py-2 bg-gray-100 dark:bg-gray-700 rounded-lg text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors"
                 >
                   关闭
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 非成员提示弹窗 */}
+      {showNotMemberPrompt && (
+        <div className="fixed inset-0 bg-gradient-to-br from-blue-500 to-purple-500 opacity-100 flex items-center justify-center z-50 p-4">
+          <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-sm w-full">
+            <div className="p-6">
+              <div className="text-center mb-4">
+                <div className="text-4xl mb-2">📢</div>
+                <h3 className="text-xl font-bold text-gray-900 dark:text-white mb-2">
+                  你已不是群成员
+                </h3>
+                <p className="text-gray-600 dark:text-gray-400">
+                  你已被移出群聊或群聊已被删除，是否保留聊天记录？
+                </p>
+              </div>
+              <div className="flex gap-3">
+                <button
+                  onClick={() => handleNotMemberAction('keep')}
+                  className="flex-1 px-6 py-3 bg-green-500 text-white rounded-lg hover:bg-green-600 transition-colors"
+                >
+                  保留
+                </button>
+                <button
+                  onClick={() => handleNotMemberAction('delete')}
+                  className="flex-1 px-6 py-3 bg-red-500 text-white rounded-lg hover:bg-red-600 transition-colors"
+                >
+                  删除
                 </button>
               </div>
             </div>

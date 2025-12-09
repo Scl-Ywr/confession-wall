@@ -1,8 +1,10 @@
 import { createServerClient } from '@supabase/ssr';
-import { cookies as nextCookies } from 'next/headers';
+import { cookies } from 'next/headers';
 
+// Create a simple cookie store adapter that matches Supabase SSR requirements
 export async function createSupabaseServerClient() {
-  const cookiesStore = await nextCookies();
+  // Get the cookie store once at the beginning
+  const cookieStore = await cookies();
   
   return createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -10,14 +12,14 @@ export async function createSupabaseServerClient() {
     {
       cookies: {
         get: (name: string) => {
-          return cookiesStore.get(name)?.value;
+          return cookieStore.get(name)?.value;
         },
-        set: (name: string, value: string) => {
-          // Only set the name and value, ignore other options for now
-          cookiesStore.set(name, value);
+        set: (name: string, value: string, options?: Record<string, unknown>) => {
+          // Only pass used options to avoid TypeScript errors
+          cookieStore.set(name, value, options as Record<string, unknown>);
         },
         remove: (name: string) => {
-          cookiesStore.delete(name);
+          cookieStore.delete(name);
         },
       },
     }
@@ -26,7 +28,8 @@ export async function createSupabaseServerClient() {
 
 // 创建用于服务器端管理操作的Supabase客户端，使用服务角色密钥
 export async function createSupabaseAdminClient() {
-  const cookiesStore = await nextCookies();
+  // Get the cookie store once at the beginning
+  const cookieStore = await cookies();
   
   return createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -34,13 +37,14 @@ export async function createSupabaseAdminClient() {
     {
       cookies: {
         get: (name: string) => {
-          return cookiesStore.get(name)?.value;
+          return cookieStore.get(name)?.value;
         },
-        set: (name: string, value: string) => {
-          cookiesStore.set(name, value);
+        set: (name: string, value: string, options?: Record<string, unknown>) => {
+          // Only pass used options to avoid TypeScript errors
+          cookieStore.set(name, value, options as Record<string, unknown>);
         },
         remove: (name: string) => {
-          cookiesStore.delete(name);
+          cookieStore.delete(name);
         },
       },
     }

@@ -60,7 +60,7 @@ export const confessionService = {
         // 获取所有表白的图片
         supabase
           .from('confession_images')
-          .select('id, confession_id, image_url, file_type')
+          .select('id, confession_id, image_url, file_type, is_locked, lock_type')
           .in('confession_id', confessionIds),
         
         // 获取所有相关用户的资料
@@ -117,11 +117,17 @@ export const confessionService = {
       }
 
       // 8. 将图片分组到对应的表白
-      const imagesByConfessionId = (images.data || []).reduce((acc: Record<string, Array<{id: string; image_url: string; file_type: string}>>, image: {id: string; confession_id: string; image_url: string; file_type: string}) => {
+      const imagesByConfessionId = (images.data || []).reduce((acc: Record<string, Array<{id: string; image_url: string; file_type: string; is_locked: boolean; lock_type: 'password' | 'user' | 'public'}>>, image: any) => {
         if (!acc[image.confession_id]) {
           acc[image.confession_id] = [];
         }
-        acc[image.confession_id].push({ id: image.id, image_url: image.image_url, file_type: image.file_type });
+        acc[image.confession_id].push({ 
+          id: image.id, 
+          image_url: image.image_url, 
+          file_type: image.file_type,
+          is_locked: image.is_locked,
+          lock_type: image.lock_type
+        });
         return acc;
       }, {});
 
@@ -209,7 +215,7 @@ export const confessionService = {
       // 9. 获取表白的图片
       const { data: images, error: imagesError } = await supabase
         .from('confession_images')
-        .select('id, image_url, file_type')
+        .select('id, image_url, file_type, is_locked, lock_type')
         .eq('confession_id', id);
 
       if (imagesError) {
@@ -917,7 +923,7 @@ export const confessionService = {
     const confessionIds = confessions.map(confession => confession.id);
     const { data: images, error: imagesError } = await supabase
       .from('confession_images')
-      .select('id, confession_id, image_url, file_type')
+      .select('id, confession_id, image_url, file_type, is_locked, lock_type')
       .in('confession_id', confessionIds);
 
     if (imagesError) {
@@ -951,11 +957,17 @@ export const confessionService = {
     }
 
     // 5. 将图片分组到对应的表白
-    const imagesByConfessionId = (images || []).reduce((acc: Record<string, Array<{id: string; image_url: string; file_type: string}>>, image: {id: string; confession_id: string; image_url: string; file_type: string}) => {
+    const imagesByConfessionId = (images || []).reduce((acc: Record<string, Array<{id: string; image_url: string; file_type: string; is_locked: boolean; lock_type: 'password' | 'user' | 'public'}>>, image: any) => {
       if (!acc[image.confession_id]) {
         acc[image.confession_id] = [];
       }
-      acc[image.confession_id].push({ id: image.id, image_url: image.image_url, file_type: image.file_type });
+      acc[image.confession_id].push({ 
+        id: image.id, 
+        image_url: image.image_url, 
+        file_type: image.file_type,
+        is_locked: image.is_locked,
+        lock_type: image.lock_type
+      });
       return acc;
     }, {});
 

@@ -4,6 +4,10 @@ export interface ConfessionImage {
   image_url: string;
   file_type: 'image' | 'video';
   created_at: string;
+  is_locked: boolean;
+  lock_type: 'password' | 'user' | 'public';
+  lock_password?: string;
+  locked_at?: string;
 }
 
 export type OnlineStatus = 'online' | 'offline' | 'away' | 'busy';
@@ -18,6 +22,11 @@ export interface Profile {
   bio?: string;
   created_at?: string;
   updated_at?: string;
+  user_ip?: string;
+  user_city?: string;
+  user_province?: string;
+  user_country?: string;
+  ip_updated_at?: string;
 }
 
 export interface Confession {

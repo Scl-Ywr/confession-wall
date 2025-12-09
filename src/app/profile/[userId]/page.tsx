@@ -5,6 +5,7 @@ import { useParams } from 'next/navigation';
 import { useAuth } from '@/context/AuthContext';
 import { UserSearchResult } from '@/types/chat';
 import { chatService } from '@/services/chatService';
+import { profileService } from '@/services/profileService';
 import Navbar from '@/components/Navbar';
 import Image from 'next/image';
 import { UserCircleIcon, MessageCircleIcon, UserPlusIcon, CheckIcon } from 'lucide-react';
@@ -17,6 +18,11 @@ const OtherUserProfilePage = () => {
   const [error, setError] = useState<string | null>(null);
   const [friendshipStatus, setFriendshipStatus] = useState<'none' | 'pending' | 'accepted'>('none');
   const [requestLoading, setRequestLoading] = useState(false);
+  const [userIp, setUserIp] = useState<string | null>(null);
+  const [userCity, setUserCity] = useState<string | null>(null);
+  const [userProvince, setUserProvince] = useState<string | null>(null);
+  const [userCountry, setUserCountry] = useState<string | null>(null);
+  const [ipLoading, setIpLoading] = useState(true);
 
   useEffect(() => {
     const fetchProfileAndFriendship = async () => {
@@ -57,6 +63,167 @@ const OtherUserProfilePage = () => {
     fetchProfileAndFriendship();
   }, [user, userId]);
 
+  // Client-side IP detection as fallback
+  const clientSideIpDetection = async (): Promise<{ ip: string; city: string; province?: string; country: string } | null> => {
+    try {
+      // 使用ipify.org作为客户端回退方案
+      // 使用AbortController实现超时
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 5000);
+      
+      const response = await fetch('https://api.ipify.org?format=json', {
+        signal: controller.signal
+      });
+      
+      clearTimeout(timeoutId);
+      
+      if (response.ok) {
+        const data = await response.json();
+        if (data.ip) {
+          // 客户端只能获取IP，无法获取地理位置，使用默认值
+          return {
+            ip: data.ip,
+            city: '未知城市',
+            province: '未知省份',
+            country: '未知国家'
+          };
+        }
+      }
+      return null;
+    } catch {
+      return null;
+    }
+  };
+
+  // Fetch user IP address from server-side API with client-side fallback
+  useEffect(() => {
+    const fetchUserIp = async () => {
+      // 确保profile已加载
+      if (!profile) {
+        setIpLoading(false);
+        return;
+      }
+      
+      // 只有查看自己的页面时才获取IP地址
+      if (user && user.id === profile.id) {
+        setIpLoading(true);
+        let ipData: { ip: string; city: string; province?: string; country: string; is_proxy?: boolean; debugging?: Record<string, unknown> } | null = null;
+        
+        try {
+          // 使用AbortController实现超时
+          const controller = new AbortController();
+          const timeoutId = setTimeout(() => {
+            controller.abort(new Error('请求超时'));
+          }, 15000); // 增加到15秒超时，给服务器足够时间尝试多个服务
+          
+          // 调用我们自己的API路由，服务器端处理IP获取
+          const response = await fetch('/api/get-ip', {
+            headers: {
+              'Accept': 'application/json'
+            },
+            signal: controller.signal
+          });
+          
+          clearTimeout(timeoutId);
+          
+          const responseText = await response.text();
+          
+          if (response.ok) {
+            try {
+              const data = JSON.parse(responseText);
+              if (data.ip) {
+                ipData = {
+                  ip: data.ip,
+                  city: data.city || '未知城市',
+                  province: data.province || '未知省份',
+                  country: data.country || '未知国家',
+                  is_proxy: data.is_proxy || false,
+                  debugging: data.debugging
+                };
+              } else if (data.error) {
+                throw new Error(`服务器获取IP失败: ${data.error}`);
+              } else {
+                throw new Error('无效的IP地址格式');
+              }
+            } catch {
+              // 尝试客户端回退
+              ipData = await clientSideIpDetection();
+            }
+          } else {
+            // 服务器返回错误，尝试客户端回退
+            ipData = await clientSideIpDetection();
+          }
+        } catch (error) {
+          const errorMessage = error instanceof Error ? error.message : '未知错误';
+          
+          // 处理超时错误，尝试客户端回退
+          if (errorMessage.includes('abort') || errorMessage.includes('timeout') || errorMessage.includes('Failed to fetch')) {
+            ipData = await clientSideIpDetection();
+          }
+        } finally {
+          if (ipData) {
+            // 更新状态
+            setUserIp(ipData.ip + (ipData.is_proxy ? ' (代理IP)' : ''));
+            setUserCity(ipData.city);
+            setUserProvince(ipData.province || '未知省份');
+            setUserCountry(ipData.country);
+            
+            // 存储IP和地理位置信息到数据库
+            try {
+              await profileService.updateIpLocation({
+                user_ip: ipData.ip,
+                user_city: ipData.city,
+                user_province: ipData.province,
+                user_country: ipData.country
+              });
+            } catch {
+              // 保存失败不影响用户体验，继续显示IP信息
+            }
+          } else {
+            // 所有方法都失败，显示友好错误信息
+            setUserIp('获取失败: 无法连接到IP服务');
+            setUserCity('获取失败');
+            setUserProvince('获取失败');
+            setUserCountry('获取失败');
+          }
+          setIpLoading(false);
+        }
+      } else {
+        // 查看他人页面时，直接从profile获取城市信息，不获取IP
+        setUserCity(profile.user_city || '未知城市');
+        setUserProvince(profile.user_province || '未知省份');
+        setUserCountry(profile.user_country || '未知国家');
+        setIpLoading(false);
+      }
+    };
+
+    fetchUserIp();
+    
+    // Set up periodic IP check every 5 minutes to detect IP changes
+    const ipCheckInterval = setInterval(() => {
+      fetchUserIp();
+    }, 5 * 60 * 1000); // 5 minutes
+    
+    // Listen for network status changes
+    const handleOnline = () => {
+      fetchUserIp();
+    };
+    
+    const handleOffline = () => {
+      // 网络离线时，不需要立即更新，等待重新连接
+    };
+    
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+    
+    // Cleanup event listeners and interval
+    return () => {
+      clearInterval(ipCheckInterval);
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+    };
+  }, [profile, user]);
+
   const handleSendFriendRequest = async () => {
     if (!user || !profile) return;
 
@@ -66,7 +233,6 @@ const OtherUserProfilePage = () => {
       await chatService.sendFriendRequest(profile.id);
       setFriendshipStatus('pending');
     } catch (err) {
-      console.error('Failed to send friend request:', err);
       // 检查是否是唯一约束错误
       const errorMessage = err instanceof Error ? err.message : JSON.stringify(err);
       if (errorMessage.includes('duplicate key') || errorMessage.includes('unique constraint')) {
@@ -160,6 +326,32 @@ const OtherUserProfilePage = () => {
                   <span className="text-gray-600 dark:text-gray-300 font-medium">注册时间</span>
                   <span className="font-bold text-gray-800 dark:text-gray-100">
                     {new Date(profile.created_at).toLocaleDateString('zh-CN')}
+                  </span>
+                </div>
+                
+                {/* 只有查看自己的页面时才显示IP地址 */}
+                {user && user.id === profile.id && (
+                  <div className="flex justify-between text-sm mb-2">
+                    <span className="text-gray-600 dark:text-gray-300 font-medium">当前IP地址</span>
+                    <span className="font-bold text-gray-800 dark:text-gray-100 truncate max-w-[150px]">
+                      {ipLoading ? '获取中...' : userIp}
+                    </span>
+                  </div>
+                )}
+                
+                {/* 省份信息始终公开显示 */}
+                <div className="flex justify-between text-sm mb-2">
+                  <span className="text-gray-600 dark:text-gray-300 font-medium">所在省份</span>
+                  <span className="font-bold text-gray-800 dark:text-gray-100 truncate max-w-[150px]">
+                    {ipLoading ? '获取中...' : userProvince}
+                  </span>
+                </div>
+                
+                {/* 城市信息始终公开显示 */}
+                <div className="flex justify-between text-sm mb-2">
+                  <span className="text-gray-600 dark:text-gray-300 font-medium">所在城市</span>
+                  <span className="font-bold text-gray-800 dark:text-gray-100 truncate max-w-[150px]">
+                    {ipLoading ? '获取中...' : `${userCity}, ${userCountry}`}
                   </span>
                 </div>
                 {profile.bio && (

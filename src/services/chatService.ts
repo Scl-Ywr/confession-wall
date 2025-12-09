@@ -44,9 +44,9 @@ const createNotification = async (
   const senderId = user.data.user.id;
 
   try {
-    // 使用直接的 fetch 调用来插入通知
+    // 使用直接的 fetch 调用来插入通知，添加.select()以获取返回的通知数据
     const response = await fetch(
-      `${process.env.NEXT_PUBLIC_SUPABASE_URL}/rest/v1/notifications`,
+      `${process.env.NEXT_PUBLIC_SUPABASE_URL}/rest/v1/notifications?select=*`,
       {
         method: 'POST',
         headers: {
@@ -66,12 +66,54 @@ const createNotification = async (
     );
 
     if (!response.ok) {
-      console.error('Error inserting notification:', await response.text());
-      throw new Error('Failed to create notification');
+      const errorText = await response.text();
+      console.error('Error inserting notification:', errorText);
+      throw new Error(`Failed to create notification: ${errorText}`);
     }
 
-    // 获取实际的通知对象
-    const notification = await response.json() as Notification;
+    // 获取实际的通知对象，添加健壮的JSON解析处理
+    let notification: Notification;
+    try {
+      // 先检查响应体是否为空
+      const responseText = await response.text();
+      if (!responseText.trim()) {
+        // 如果响应体为空，构造一个基本的通知对象
+        notification = {
+          id: crypto.randomUUID(), // 生成临时ID
+          recipient_id: recipientId,
+          sender_id: senderId,
+          content,
+          type,
+          friend_request_id: friendRequestId,
+          group_id: groupId,
+          read_status: false,
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString()
+        } as Notification;
+        console.warn('Notification created but API returned empty response, using constructed notification object');
+      } else {
+        // 正常解析JSON
+        const responseData = JSON.parse(responseText);
+        // 处理可能的数组响应（Supabase API可能返回数组）
+        notification = Array.isArray(responseData) ? responseData[0] : responseData;
+      }
+    } catch (jsonError) {
+      console.error('Error parsing notification JSON:', jsonError);
+      console.error('Response text:', await response.clone().text());
+      // 解析失败时构造一个基本的通知对象
+      notification = {
+        id: crypto.randomUUID(),
+        recipient_id: recipientId,
+        sender_id: senderId,
+        content,
+        type,
+        friend_request_id: friendRequestId,
+        group_id: groupId,
+        read_status: false,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
+      } as Notification;
+    }
     
     // 使用Redis消息队列发布通知
     try {
@@ -106,15 +148,24 @@ export const chatService = {
 
       const userId = user.data.user.id;
       const timestamp = Date.now();
-      const fileExtension = file.name.split('.').pop();
+      
+      // 更可靠的文件扩展名获取方式
+      let fileExtension = file.name.split('.').pop();
+      // 如果没有扩展名，从MIME类型获取
+      if (!fileExtension) {
+        fileExtension = file.type.split('/')[1] || 'bin';
+      }
       const fileName = `${userId}_${timestamp}_${Math.random().toString(36).substring(2, 9)}.${fileExtension}`;
       const filePath = `${folder}/${fileName}`;
+
+      // 根据文件夹类型选择不同的存储桶
+      const bucketName = folder === 'chat_voices' ? 'chat_voices' : 'confession_images';
 
       // 上传文件
       const { error: uploadError } = await supabase
         .storage
-        .from('confession_images')
-        .upload(filePath, file, {
+        .from(bucketName)
+        .upload(filePath, file, { 
           cacheControl: '3600',
           upsert: false
         });
@@ -126,8 +177,12 @@ export const chatService = {
       // 获取公共URL
       const { data: urlData } = supabase
         .storage
-        .from('confession_images')
+        .from(bucketName)
         .getPublicUrl(filePath);
+
+      if (!urlData || !urlData.publicUrl) {
+        throw new Error('Failed to get public URL for uploaded file');
+      }
 
       return urlData.publicUrl;
     } catch (error) {
@@ -534,14 +589,46 @@ export const chatService = {
 
       // 创建通知给发送者
       if (updatedRequest) {
-        const notificationContent = status === 'accepted' 
+        // 获取发送者的资料，用于通知内容
+        const senderProfileResponse = await fetch(
+          `${process.env.NEXT_PUBLIC_SUPABASE_URL}/rest/v1/profiles?select=display_name&id=eq.${updatedRequest.sender_id}`,
+          {
+            headers: {
+              'Content-Type': 'application/json',
+              'apikey': process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+              'Authorization': `Bearer ${accessToken}`
+            }
+          }
+        );
+        
+        const senderProfileData = await senderProfileResponse.json();
+        const senderProfile = senderProfileData[0];
+        
+        // 给发送者的通知
+        const senderNotificationContent = status === 'accepted' 
           ? `${receiverProfile?.display_name || '用户'} 接受了你的好友请求`
           : `${receiverProfile?.display_name || '用户'} 拒绝了你的好友请求`;
         
         try {
           await createNotification(
             updatedRequest.sender_id,
-            notificationContent,
+            senderNotificationContent,
+            status === 'accepted' ? 'friend_accepted' : 'friend_rejected',
+            updatedRequest.id
+          );
+        } catch {
+          // 继续执行，不中断好友请求处理流程
+        }
+        
+        // 给接收者（当前用户）的通知
+        const receiverNotificationContent = status === 'accepted' 
+          ? `你已接受了 ${senderProfile?.display_name || '用户'} 的好友请求`
+          : `你已拒绝了 ${senderProfile?.display_name || '用户'} 的好友请求`;
+        
+        try {
+          await createNotification(
+            updatedRequest.receiver_id,
+            receiverNotificationContent,
             status === 'accepted' ? 'friend_accepted' : 'friend_rejected',
             updatedRequest.id
           );
@@ -688,7 +775,7 @@ export const chatService = {
   },
 
   // 发送一对一消息
-  sendPrivateMessage: async (receiverId: string, content: string, type: 'text' | 'image' | 'video' | 'file' = 'text'): Promise<ChatMessage> => {
+  sendPrivateMessage: async (receiverId: string, content: string, type: 'text' | 'image' | 'video' | 'file' | 'voice' = 'text'): Promise<ChatMessage> => {
     try {
       // 获取当前认证用户，检查是否有错误
       const user = await supabase.auth.getUser();
@@ -1191,16 +1278,37 @@ export const chatService = {
         }
       }
       
-      // 将未读消息数量映射到群聊对象中
-      const groupsWithUnreadCounts = groups?.map(group => ({
-        ...group,
-        unread_count: unreadCountsMap[group.id] || 0
-      })) || [];
+      // 将未读消息数量映射到群聊对象中，并确保member_count准确
+      const groupsWithUnreadCounts = groups?.map(async (group) => {
+        // 为每个群聊获取准确的成员数量
+        try {
+          const { count } = await supabase
+            .from('group_members')
+            .select('id', { count: 'exact', head: true })
+            .eq('group_id', group.id);
+          
+          return {
+            ...group,
+            // 使用计算出的准确成员数量，确保与群聊页面显示一致
+            member_count: count || group.member_count,
+            unread_count: unreadCountsMap[group.id] || 0
+          };
+        } catch (error) {
+          console.error(`Error getting member count for group ${group.id}:`, error);
+          return {
+            ...group,
+            unread_count: unreadCountsMap[group.id] || 0
+          };
+        }
+      }) || [];
+      
+      // 等待所有成员数量查询完成
+      const resolvedGroups = await Promise.all(groupsWithUnreadCounts);
       
       // 缓存群列表，设置较短的过期时间（5分钟）
-      await setCache(cacheKey, groupsWithUnreadCounts, EXPIRY.SHORT);
+      await setCache(cacheKey, resolvedGroups, EXPIRY.SHORT);
 
-      return groupsWithUnreadCounts as Group[];
+      return resolvedGroups as Group[];
     } catch (error) {
       console.error('Error in getGroups:', error);
       return [];
@@ -1273,15 +1381,17 @@ export const chatService = {
   },
 
   // 获取群成员列表
-  getGroupMembers: async (groupId: string): Promise<GroupMember[]> => {
+  getGroupMembers: async (groupId: string, ignoreCache?: boolean): Promise<GroupMember[]> => {
     try {
       // 生成缓存键
       const cacheKey = `chat:group:${groupId}:members`;
       
-      // 尝试从缓存获取群成员列表
-      const cachedMembers = await getCache<GroupMember[]>(cacheKey);
-      if (cachedMembers) {
-        return cachedMembers;
+      // 尝试从缓存获取群成员列表，除非明确要求忽略缓存
+      if (!ignoreCache) {
+        const cachedMembers = await getCache<GroupMember[]>(cacheKey);
+        if (cachedMembers) {
+          return cachedMembers;
+        }
       }
       
       // 先获取群成员基本信息
@@ -1304,34 +1414,17 @@ export const chatService = {
       // 获取所有成员的用户ID
       const userIds = members.map(member => member.user_id);
       
-      // 初始化成员资料对象
-      const memberProfiles: Record<string, Profile> = {};
-      
-      // 尝试从缓存获取成员资料
-      for (const userId of userIds) {
-        const profileCacheKey = getUserProfileCacheKey(userId);
-        const cachedProfile = await getCache<Profile>(profileCacheKey);
-        if (cachedProfile) {
-          memberProfiles[userId] = cachedProfile;
-        }
-      }
-      
-      // 获取缓存中没有的成员资料
-      const uncachedUserIds = userIds.filter(userId => !memberProfiles[userId]);
-      if (uncachedUserIds.length > 0) {
-        // 单独获取所有未缓存用户的资料，包含在线状态
-        const { data: profiles, error: profilesError } = await supabase
-          .from('profiles')
-          .select('id, username, display_name, avatar_url, online_status, last_seen')
-          .in('id', uncachedUserIds);
+      // 直接从数据库获取所有成员的最新资料，包含在线状态，不依赖缓存
+      const { data: profiles, error: profilesError } = await supabase
+        .from('profiles')
+        .select('id, username, display_name, avatar_url, online_status, last_seen')
+        .in('id', userIds);
 
-        if (!profilesError && profiles) {
-          // 缓存新获取的用户资料
-          for (const profile of profiles) {
-            const profileCacheKey = getUserProfileCacheKey(profile.id);
-            await setCache(profileCacheKey, profile, EXPIRY.MEDIUM);
-            memberProfiles[profile.id] = profile;
-          }
+      // 创建资料映射
+      const memberProfiles: Record<string, Profile> = {};
+      if (!profilesError && profiles) {
+        for (const profile of profiles) {
+          memberProfiles[profile.id] = profile;
         }
       }
 
@@ -1345,8 +1438,8 @@ export const chatService = {
         };
       });
 
-      // 缓存群成员列表，设置较短的过期时间（5分钟）
-      await setCache(cacheKey, membersWithProfiles, EXPIRY.SHORT);
+      // 缓存群成员列表，设置较短的过期时间（1分钟），确保信息不会过时太久
+      await setCache(cacheKey, membersWithProfiles, EXPIRY.SHORT / 5);
       
       return membersWithProfiles as GroupMember[];
     } catch (error) {
@@ -1387,7 +1480,7 @@ export const chatService = {
   },
 
   // 发送群消息
-  sendGroupMessage: async (groupId: string, content: string, type: 'text' | 'image' | 'video' | 'file' = 'text'): Promise<ChatMessage> => {
+  sendGroupMessage: async (groupId: string, content: string, type: 'text' | 'image' | 'video' | 'file' | 'voice' = 'text'): Promise<ChatMessage> => {
     const user = await supabase.auth.getUser();
     const senderId = user.data.user?.id;
 
@@ -1475,6 +1568,22 @@ export const chatService = {
     // 清除发送者的群列表缓存，确保未读消息数量更新
     const senderGroupListCacheKey = `chat:groups:${senderId}`;
     await removeCache(senderGroupListCacheKey);
+
+    // 使用Redis消息队列发布群消息通知
+    try {
+      await queueService.publishNotification(
+        senderId,
+        {
+          message: completeMessage,
+          type: 'group_message_sent',
+          groupId
+        },
+        MessagePriority.MEDIUM
+      );
+    } catch (redisError) {
+      // 只记录错误，不影响主要流程
+      console.error('Failed to publish group message to Redis:', redisError);
+    }
 
     // 返回包含发送者资料的消息
     return completeMessage;
@@ -2006,6 +2115,27 @@ export const chatService = {
         throw new Error('Failed to remove friend: All operations failed');
       }
 
+      // 4. 清除缓存，确保双方的好友列表及时更新
+      try {
+        // 清除当前用户的好友列表缓存
+        const currentUserCacheKey = `chat:friends:${userId}`;
+        await removeCache(currentUserCacheKey);
+        
+        // 清除好友的好友列表缓存（如果存在）
+        const friendCacheKey = `chat:friends:${friendId}`;
+        await removeCache(friendCacheKey);
+        
+        // 清除相关聊天缓存
+        const chatCacheKey = `chat:messages:${userId}:${friendId}`;
+        await removeCache(chatCacheKey);
+        
+        // 清除反向聊天缓存
+        const reverseChatCacheKey = `chat:messages:${friendId}:${userId}`;
+        await removeCache(reverseChatCacheKey);
+      } catch (cacheError) {
+        // 只记录缓存错误，不影响主要功能
+        console.error('Error clearing cache after removing friend:', cacheError);
+      }
 
     } catch (error) {
       console.error('Error removing friend:', error);
@@ -2361,6 +2491,25 @@ export const chatService = {
         .update({ member_count: newMemberCount })
         .eq('id', groupId);
 
+      // 3. 清理所有群成员的群列表缓存
+      // 获取所有群成员
+      const { data: allMembers } = await supabase
+        .from('group_members')
+        .select('user_id')
+        .eq('group_id', groupId);
+
+      // 清理每个成员的群列表缓存
+      if (allMembers) {
+        for (const member of allMembers) {
+          const cacheKey = `chat:groups:${member.user_id}`;
+          await removeCache(cacheKey);
+        }
+      }
+
+      // 清理退出用户的群列表缓存
+      const exitUserCacheKey = `chat:groups:${userId}`;
+      await removeCache(exitUserCacheKey);
+
     } catch (error) {
       console.error('Error leaving group:', error);
       throw error;
@@ -2433,6 +2582,21 @@ export const chatService = {
         .update({ member_count: newMemberCount })
         .eq('id', groupId);
 
+      // 5. 清理所有群成员的群列表缓存
+      // 获取所有群成员
+      const { data: allMembers } = await supabase
+        .from('group_members')
+        .select('user_id')
+        .eq('group_id', groupId);
+
+      // 清理每个成员的群列表缓存
+      if (allMembers) {
+        for (const member of allMembers) {
+          const cacheKey = `chat:groups:${member.user_id}`;
+          await removeCache(cacheKey);
+        }
+      }
+
     } catch (error) {
       console.error('Error removing group member:', error);
       throw error;
@@ -2451,7 +2615,6 @@ export const chatService = {
       }
 
       // 查询用户在指定群聊中的未读消息数量
-      console.log('Attempting to get group unread message count:', { groupId, userId });
       
       // 先检查用户是否是群成员
       const { data: isMember, error: memberError } = await supabase
@@ -2485,7 +2648,6 @@ export const chatService = {
         return 0;
       }
 
-      console.log('Got group unread message count:', { count: unreadCount?.unread_count, groupId, userId });
       return unreadCount?.unread_count || 0;
     } catch (error) {
       console.error('Unexpected error in getGroupUnreadMessageCount:', { 
@@ -2755,10 +2917,44 @@ export const chatService = {
     }
   },
 
+  // 删除好友
+  deleteFriend: async (friendId: string): Promise<void> => {
+    const user = await supabase.auth.getUser();
+    const userId = user.data.user?.id;
+
+    if (!userId) {
+      throw new Error('User not authenticated');
+    }
+
+    try {
+      // 开始事务，同时删除两条好友关系记录
+      const { error } = await supabase
+        .from('friendships')
+        .delete()
+        .or(`and(user_id.eq.${userId},friend_id.eq.${friendId}),and(user_id.eq.${friendId},friend_id.eq.${userId})`);
+
+      if (error) {
+        throw error;
+      }
+
+      // 清除相关缓存
+      // 清除当前用户的好友列表缓存
+      const currentUserCacheKey = `chat:friends:${userId}`;
+      await removeCache(currentUserCacheKey);
+      
+      // 清除好友的好友列表缓存
+      const friendCacheKey = `chat:friends:${friendId}`;
+      await removeCache(friendCacheKey);
+    } catch (error) {
+      console.error('Error deleting friend:', error);
+      throw error;
+    }
+  },
+
   // 订阅通知实时更新
   subscribeToNotifications: (userId: string, callback: (notification: Notification) => void) => {
     if (!userId) {
-      // 用户未登录，返回一个空的订阅对象，避免抛出错误
+      // 用户未登录，返回一个空的订阅对象 ，避免抛出错误
       return {
         unsubscribe: () => {}
       };

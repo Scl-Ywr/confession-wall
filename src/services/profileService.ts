@@ -10,6 +10,13 @@ export interface ProfileUpdateData {
   bio?: string;
 }
 
+export interface IpLocationUpdateData {
+  user_ip: string;
+  user_city: string;
+  user_country: string;
+  user_province?: string;
+}
+
 export const profileService = {
   // Get current user's profile
   getCurrentProfile: async (): Promise<Profile> => {
@@ -259,5 +266,44 @@ export const profileService = {
     if (error) {
       throw error;
     }
+  },
+
+  // Update user IP and location information
+  updateIpLocation: async (data: IpLocationUpdateData): Promise<void> => {
+    // Get current user first
+    const userResult = await supabase.auth.getUser();
+    const userId = userResult.data.user?.id;
+    
+    if (!userId) {
+      throw new Error('User not authenticated');
+    }
+    
+    // 更新IP地址、城市、省份、国家和更新时间
+    const updateData: Record<string, unknown> = {
+      user_ip: data.user_ip,
+      user_city: data.user_city,
+      user_country: data.user_country,
+      ip_updated_at: new Date().toISOString()
+    };
+    
+    // 只有当province存在且不为空时才更新
+    if (data.user_province) {
+      updateData.user_province = data.user_province;
+    }
+    
+    // 更新数据库
+    const { error: updateError } = await supabase
+      .from('profiles')
+      .update(updateData)
+      .eq('id', userId);
+
+    if (updateError) {
+      console.error('更新IP和地理位置失败:', updateError);
+      throw updateError;
+    }
+    
+    // Invalidate cache
+    const cacheKey = getUserProfileCacheKey(userId);
+    await removeCache(cacheKey);
   },
 };
