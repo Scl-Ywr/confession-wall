@@ -56,9 +56,9 @@ export const confessionService = {
       const confessionIds = confessions.map(confession => confession.id);
       
       // 7. 并行执行多个查询，减少整体加载时间，但每个查询都有独立的错误处理
-      let images = { data: [], error: null };
-      let profiles = { data: [], error: null };
-      let userLikes = { data: [], error: null };
+      let images: { data: any[] | null; error: any | null } = { data: [], error: null };
+      let profiles: { data: any[] | null; error: any | null } = { data: [], error: null };
+      let userLikes: { data: any[] | null; error: any | null } = { data: [], error: null };
 
       // 使用Promise.allSettled替代Promise.all，确保一个查询失败不会影响其他查询
       const [imagesResult, profilesResult, userLikesResult] = await Promise.allSettled([
