@@ -358,23 +358,23 @@ const Navbar: React.FC = () => {
 
   return (
     <>
-      <nav className="sticky top-4 z-50 mx-4 mt-4 rounded-2xl glass shadow-lg transition-all duration-300 dark:bg-gray-900/80 dark:shadow-gray-900/50 backdrop-blur-md border border-white/20">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex justify-between h-16">
+      <nav className="sticky top-2 sm:top-4 z-50 mx-2 sm:mx-4 mt-2 sm:mt-4 rounded-xl sm:rounded-2xl glass shadow-lg transition-all duration-300 dark:bg-gray-900/80 dark:shadow-gray-900/50 backdrop-blur-md border border-white/20">
+        <div className="max-w-7xl mx-auto px-2 sm:px-4 lg:px-6">
+          <div className="flex justify-between h-14 sm:h-16">
             <div className="flex items-center gap-3">
               {/* 消息通知按钮 */}
               <div className="relative">
                 <motion.button
                   onClick={toggleNotifications}
-                  className="flex items-center justify-center w-12 h-12 rounded-full bg-gray-100/50 hover:bg-white transition-all duration-200 transform hover:scale-110 dark:bg-gray-700/50 dark:hover:bg-gray-600 backdrop-blur-sm relative"
+                  className="flex items-center justify-center w-10 h-10 sm:w-12 sm:h-12 rounded-full bg-gray-100/50 hover:bg-white transition-all duration-200 transform hover:scale-110 dark:bg-gray-700/50 dark:hover:bg-gray-600 backdrop-blur-sm relative"
                   aria-label="查看通知"
                   whileHover={{ scale: 1.1 }}
                   whileTap={{ scale: 0.95 }}
                 >
-                  <BellIcon className="w-6 h-6 text-primary-600 dark:text-primary-400" />
+                  <BellIcon className="w-5 h-5 sm:w-6 sm:h-6 text-primary-600 dark:text-primary-400" />
                   {/* 动态通知数量指示器 */}
                   {unreadCount > 0 && (
-                    <span className="absolute top-1 right-1 w-5 h-5 bg-red-500 text-white text-xs font-bold rounded-full flex items-center justify-center">
+                    <span className="absolute top-0.5 right-0.5 w-4 h-4 sm:w-5 sm:h-5 bg-red-500 text-white text-xs font-bold rounded-full flex items-center justify-center">
                       {unreadCount}
                     </span>
                   )}
@@ -590,10 +590,10 @@ const Navbar: React.FC = () => {
               <div className="flex-shrink-0 flex items-center">
                 <Link 
                     href="/" 
-                    className="flex items-center gap-2 text-xl font-bold bg-gradient-to-r from-primary-600 to-secondary-500 bg-clip-text text-transparent hover:opacity-80 transition-opacity"
+                    className="flex items-center gap-1.5 text-lg sm:text-xl font-bold bg-gradient-to-r from-primary-600 to-secondary-500 bg-clip-text text-transparent hover:opacity-80 transition-opacity"
                   >
-                  <HomeIcon className="w-6 h-6 text-primary-500" />
-                  表白墙
+                  <HomeIcon className="w-5 h-5 sm:w-6 sm:h-6 text-primary-500" />
+                  <span className="hidden sm:inline">表白墙</span>
                 </Link>
               </div>
             </div>
@@ -601,7 +601,7 @@ const Navbar: React.FC = () => {
               {/* 主题切换按钮 */}
               <motion.button
                 onClick={toggleTheme}
-                className="flex items-center justify-center w-12 h-12 rounded-full bg-gray-100/50 hover:bg-white transition-all duration-200 transform hover:scale-110 dark:bg-gray-700/50 dark:hover:bg-gray-600 backdrop-blur-sm"
+                className="flex items-center justify-center w-10 h-10 sm:w-12 sm:h-12 rounded-full bg-gray-100/50 hover:bg-white transition-all duration-200 transform hover:scale-110 dark:bg-gray-700/50 dark:hover:bg-gray-600 backdrop-blur-sm"
                 aria-label={isHydrated ? (isDarkMode ? '切换到浅色模式' : '切换到深色模式') : '切换到深色模式'}
                 whileHover={{ scale: 1.1 }}
                 whileTap={{ scale: 0.95 }}
@@ -609,58 +609,50 @@ const Navbar: React.FC = () => {
                 {/* 使用 isHydrated 确保客户端和服务器渲染一致 */}
                 {isHydrated ? (
                   isDarkMode ? (
-                    <SunIcon className="w-6 h-6 text-yellow-500" />
+                    <SunIcon className="w-5 h-5 sm:w-6 sm:h-6 text-yellow-500" />
                   ) : (
-                    <MoonIcon className="w-6 h-6 text-primary-600" />
+                    <MoonIcon className="w-5 h-5 sm:w-6 sm:h-6 text-primary-600" />
                   )
                 ) : (
                   /* 服务器渲染时默认显示 MoonIcon，与初始 isDarkMode=false 匹配 */
-                  <MoonIcon className="w-6 h-6 text-primary-600" />
+                  <MoonIcon className="w-5 h-5 sm:w-6 sm:h-6 text-primary-600" />
                 )}
               </motion.button>
               
               {/* 视频图标按钮 */}
               <button
-                className="flex items-center justify-center w-12 h-12 rounded-full bg-gray-100/50 hover:bg-white transition-all duration-200 transform hover:scale-110 dark:bg-gray-700/50 dark:hover:bg-gray-600 backdrop-blur-sm"
+                className="flex items-center justify-center w-10 h-10 sm:w-12 sm:h-12 rounded-full bg-gray-100/50 hover:bg-white transition-all duration-200 transform hover:scale-110 dark:bg-gray-700/50 dark:hover:bg-gray-600 backdrop-blur-sm"
                 aria-label="视频"
                 onClick={() => handleMediaButtonClick('https://alist.suchuanli.me:1234')}
               >
-                <VideoCameraIcon className="w-6 h-6 text-primary-600 dark:text-primary-400" />
+                <VideoCameraIcon className="w-5 h-5 sm:w-6 sm:h-6 text-primary-600 dark:text-primary-400" />
               </button>
               
               {/* 音乐图标按钮 */}
               <button
-                className="flex items-center justify-center w-12 h-12 rounded-full bg-gray-100/50 hover:bg-white transition-all duration-200 transform hover:scale-110 dark:bg-gray-700/50 dark:hover:bg-gray-600 backdrop-blur-sm"
+                className="flex items-center justify-center w-10 h-10 sm:w-12 sm:h-12 rounded-full bg-gray-100/50 hover:bg-white transition-all duration-200 transform hover:scale-110 dark:bg-gray-700/50 dark:hover:bg-gray-600 backdrop-blur-sm"
                 aria-label="音乐"
                 onClick={() => handleMediaButtonClick('https://solara.suchuanli.me:2340')}
               >
-                <MusicalNoteIcon className="w-6 h-6 text-primary-600 dark:text-primary-400" />
+                <MusicalNoteIcon className="w-5 h-5 sm:w-6 sm:h-6 text-primary-600 dark:text-primary-400" />
               </button>
               
               {/* 在认证状态加载中时，保持布局稳定，不显示具体的登录/未登录内容 */}
               {loading ? (
-                <div className="ml-4 flex items-center md:ml-6 gap-3">
+                <div className="ml-2 flex items-center md:ml-4 gap-2">
                   {/* 显示占位符，保持布局一致 */}
-                  <div className="w-16 h-8 rounded-md bg-gray-200 dark:bg-gray-700 animate-pulse"></div>
-                  <div className="w-16 h-8 rounded-md bg-gray-200 dark:bg-gray-700 animate-pulse"></div>
-                  <div className="w-16 h-8 rounded-md bg-gray-200 dark:bg-gray-700 animate-pulse"></div>
-                  <div className="w-16 h-8 rounded-md bg-gray-200 dark:bg-gray-700 animate-pulse"></div>
+                  <div className="w-12 h-6 rounded-md bg-gray-200 dark:bg-gray-700 animate-pulse"></div>
+                  <div className="w-12 h-6 rounded-md bg-gray-200 dark:bg-gray-700 animate-pulse"></div>
+                  <div className="w-12 h-6 rounded-md bg-gray-200 dark:bg-gray-700 animate-pulse"></div>
                 </div>
               ) : user ? (
-                <div className="ml-4 flex items-center md:ml-6 gap-3">
-                  <Link
-                    href="/"
-                    className="flex items-center gap-1 text-gray-700 hover:text-primary-600 font-medium transition-colors dark:text-gray-300 dark:hover:text-primary-400"
-                  >
-                    <HomeIcon className="w-5 h-5" />
-                    <span className="hidden md:inline">表白墙</span>
-                  </Link>
+                <div className="ml-2 flex items-center md:ml-4 gap-2">
                   <Link
                     href="/chat"
-                    className="flex items-center gap-1 text-gray-700 hover:text-primary-600 font-medium transition-colors dark:text-gray-300 dark:hover:text-primary-400 relative"
+                    className="flex items-center justify-center w-10 h-10 rounded-full bg-gray-100/50 hover:bg-white transition-all duration-200 transform hover:scale-110 dark:bg-gray-700/50 dark:hover:bg-gray-600 backdrop-blur-sm relative"
+                    aria-label="聊天"
                   >
-                    <MessageCircleIcon className="w-5 h-5" />
-                    <span className="hidden md:inline">聊天</span>
+                    <MessageCircleIcon className="w-5 h-5 text-primary-600 dark:text-primary-400" />
                     {/* 未读消息提示红点 */}
                     {unreadMessageCount > 0 && (
                       <span className="absolute -top-1 -right-1 w-4 h-4 bg-red-500 text-white text-xs font-bold rounded-full flex items-center justify-center border-2 border-white dark:border-gray-700 shadow-md">
@@ -670,36 +662,36 @@ const Navbar: React.FC = () => {
                   </Link>
                   <Link
                     href="/profile"
-                    className="flex items-center gap-1 text-gray-700 hover:text-primary-600 font-medium transition-colors dark:text-gray-300 dark:hover:text-primary-400"
+                    className="flex items-center justify-center w-10 h-10 rounded-full bg-gray-100/50 hover:bg-white transition-all duration-200 transform hover:scale-110 dark:bg-gray-700/50 dark:hover:bg-gray-600 backdrop-blur-sm"
+                    aria-label="个人资料"
                   >
-                    <UserIcon className="w-5 h-5" />
-                    <span className="hidden md:inline">个人资料</span>
+                    <UserIcon className="w-5 h-5 text-primary-600 dark:text-primary-400" />
                   </Link>
                   <button
                     onClick={handleLogout}
                     disabled={loading}
-                    className="hidden sm:flex items-center justify-center gap-1 bg-white/50 hover:bg-white text-gray-800 font-medium py-2 px-4 sm:px-4 rounded-xl shadow-sm transition-all duration-200 transform hover:scale-105 dark:bg-gray-700/50 dark:hover:bg-gray-600 dark:text-gray-200 border border-gray-100 dark:border-gray-600 min-w-12 min-h-12"
+                    className="flex items-center justify-center w-10 h-10 rounded-full bg-gray-100/50 hover:bg-white transition-all duration-200 transform hover:scale-110 dark:bg-gray-700/50 dark:hover:bg-gray-600 backdrop-blur-sm"
                     aria-label="退出登录"
                   >
                     {loading ? '...' : (
-                      <ArrowLeftOnRectangleIcon className="w-5 h-5" />
+                      <ArrowLeftOnRectangleIcon className="w-5 h-5 text-primary-600 dark:text-primary-400" />
                     )}
                   </button>
                 </div>
               ) : (
-                <div className="ml-4 flex items-center space-x-3">
+                <div className="ml-2 flex items-center gap-2">
                   <Link
                     href="/auth/login"
-                    className="hidden sm:flex items-center gap-1 text-gray-700 hover:text-primary-600 font-medium transition-colors dark:text-gray-300 dark:hover:text-primary-400"
+                    className="hidden sm:flex items-center gap-1 text-gray-700 hover:text-primary-600 font-medium transition-colors dark:text-gray-300 dark:hover:text-primary-400 px-3 py-1.5 rounded-lg"
                   >
                     登录
                   </Link>
                   <Link
                     href="/auth/register"
-                    className="flex items-center gap-1 bg-primary-600 hover:bg-primary-700 text-white font-medium py-2 px-4 rounded-xl shadow-lg shadow-primary-500/30 transition-all duration-200 transform hover:scale-105 hover:-translate-y-0.5"
+                    className="flex items-center justify-center w-10 h-10 rounded-full bg-primary-600 hover:bg-primary-700 text-white transition-all duration-200 transform hover:scale-110 shadow-lg shadow-primary-500/30"
+                    aria-label="注册"
                   >
                     <UserPlusIcon className="w-5 h-5" />
-                    注册
                   </Link>
                 </div>
               )}

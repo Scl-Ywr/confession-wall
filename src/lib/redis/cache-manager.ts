@@ -116,7 +116,9 @@ export class RedisCacheManager {
         // 检查Redis连接
         await redis.ping();
         this.isInitialized = true;
-        console.log('RedisCacheManager initialized successfully');
+        if (process.env.NODE_ENV === 'development') {
+          console.log('RedisCacheManager initialized successfully');
+        }
         
         // 初始化缓存版本
         await this.setCache(
@@ -126,7 +128,9 @@ export class RedisCacheManager {
         );
       }
     } catch (error) {
-      console.error('Failed to initialize RedisCacheManager:', error);
+      if (process.env.NODE_ENV === 'development') {
+        console.error('Failed to initialize RedisCacheManager:', error);
+      }
       this.isInitialized = false;
     }
   }
@@ -177,7 +181,10 @@ export class RedisCacheManager {
    * 更新缓存统计
    */
   private async updateStatistics(isHit: boolean, startTime: number = Date.now(), key: string = ''): Promise<void> {
-    if (!CACHE_STATISTICS.ENABLED || !redis) return;
+    // 在浏览器环境中，直接返回，不更新统计
+    if (typeof window !== 'undefined') return;
+    
+    if (!CACHE_STATISTICS.ENABLED || !redis || !this.isInitialized) return;
 
     // 采样率控制
     if (Math.random() > CACHE_STATISTICS.SAMPLE_RATE) return;
@@ -280,8 +287,10 @@ export class RedisCacheManager {
     try {
       await this.ensureInitialized();
       if (typeof window === 'undefined' && redis && this.isInitialized) {
-        // 记录缓存设置操作
-        console.log(`[RedisCache] Setting cache for key: ${key} with expiry: ${expiry}ms at ${new Date().toISOString()}`);
+        // 记录缓存设置操作，只在开发环境输出
+        if (process.env.NODE_ENV === 'development') {
+          console.log(`[RedisCache] Setting cache for key: ${key} with expiry: ${expiry}ms at ${new Date().toISOString()}`);
+        }
         
         const cacheKey = this.getFullCacheKey(key);
         const adjustedExpiry = this.applyAvalancheProtection(expiry);
@@ -299,12 +308,16 @@ export class RedisCacheManager {
           await redis.set(cacheKey, JSON.stringify(cacheItem));
         }
         
-        console.log(`[RedisCache] Cache set successfully for key: ${key} at ${new Date().toISOString()}`);
+        if (process.env.NODE_ENV === 'development') {
+          console.log(`[RedisCache] Cache set successfully for key: ${key} at ${new Date().toISOString()}`);
+        }
         return true;
       }
       return false;
     } catch (error) {
-      console.error(`[RedisCache] Error setting cache for key: ${key}`, error);
+      if (process.env.NODE_ENV === 'development') {
+        console.error(`[RedisCache] Error setting cache for key: ${key}`, error);
+      }
       return false;
     }
   }
@@ -320,12 +333,16 @@ export class RedisCacheManager {
       if (typeof window === 'undefined' && redis && this.isInitialized) {
         const cacheKey = this.getFullCacheKey(key);
         
-        console.log(`[RedisCache] Getting cache for key: ${key} at ${new Date().toISOString()}`);
+        if (process.env.NODE_ENV === 'development') {
+          console.log(`[RedisCache] Getting cache for key: ${key} at ${new Date().toISOString()}`);
+        }
         
         const cacheItemStr = await redis.get(cacheKey);
         
         if (!cacheItemStr) {
-          console.log(`[RedisCache] Cache miss for key: ${key} at ${new Date().toISOString()}`);
+          if (process.env.NODE_ENV === 'development') {
+            console.log(`[RedisCache] Cache miss for key: ${key} at ${new Date().toISOString()}`);
+          }
           await this.updateStatistics(false);
           return null;
         }
@@ -337,11 +354,15 @@ export class RedisCacheManager {
           cacheItem.hits++;
           await redis.set(cacheKey, JSON.stringify(cacheItem), 'PX', await redis.pttl(cacheKey));
           
-          console.log(`[RedisCache] Cache hit for key: ${key}, hits: ${cacheItem.hits} at ${new Date().toISOString()}`);
+          if (process.env.NODE_ENV === 'development') {
+            console.log(`[RedisCache] Cache hit for key: ${key}, hits: ${cacheItem.hits} at ${new Date().toISOString()}`);
+          }
           await this.updateStatistics(true);
           return cacheItem.data;
         } catch (parseError) {
-          console.error(`[RedisCache] Error parsing cache item for key: ${key}`, parseError);
+          if (process.env.NODE_ENV === 'development') {
+            console.error(`[RedisCache] Error parsing cache item for key: ${key}`, parseError);
+          }
           await this.updateStatistics(false);
           return null;
         }
@@ -349,7 +370,9 @@ export class RedisCacheManager {
       await this.updateStatistics(false);
       return null;
     } catch (error) {
-      console.error(`[RedisCache] Error getting cache for key: ${key}`, error);
+      if (process.env.NODE_ENV === 'development') {
+        console.error(`[RedisCache] Error getting cache for key: ${key}`, error);
+      }
       await this.updateStatistics(false);
       return null;
     }
@@ -465,7 +488,9 @@ export class RedisCacheManager {
       // 检查是否在浏览器环境中
       if (typeof window !== 'undefined') {
         // 在浏览器环境中，直接从数据源获取数据，不使用Redis缓存
-        console.log(`[RedisCache] Browser environment detected, fetching directly from data source for key: ${key}`);
+        if (process.env.NODE_ENV === 'development') {
+          console.log(`[RedisCache] Browser environment detected, fetching directly from data source for key: ${key}`);
+        }
         return await dataSource();
       }
       
@@ -475,7 +500,9 @@ export class RedisCacheManager {
       // 检查Redis客户端是否可用
       if (!redis || !this.isInitialized) {
         // Redis不可用，直接从数据源获取数据
-        console.log(`[RedisCache] Redis not available, fetching directly from data source for key: ${key}`);
+        if (process.env.NODE_ENV === 'development') {
+          console.log(`[RedisCache] Redis not available, fetching directly from data source for key: ${key}`);
+        }
         return await dataSource();
       }
       
@@ -519,7 +546,9 @@ export class RedisCacheManager {
         }
 
         // 5. 从数据源获取数据
-        console.log(`[RedisCache] Cache miss for key: ${key}, fetching from data source`);
+        if (process.env.NODE_ENV === 'development') {
+          console.log(`[RedisCache] Cache miss for key: ${key}, fetching from data source`);
+        }
         const data = await dataSource();
         
         if (data === null || data === undefined) {
@@ -548,13 +577,19 @@ export class RedisCacheManager {
         }
       }
     } catch (error) {
-      console.error(`[RedisCache] Error in getOrSetCache for key ${key}:`, error);
+      if (process.env.NODE_ENV === 'development') {
+        console.error(`[RedisCache] Error in getOrSetCache for key ${key}:`, error);
+      }
       // 发生错误时，直接从数据源获取数据，确保系统可用性
       try {
-        console.log(`[RedisCache] Falling back to data source for key: ${key}`);
+        if (process.env.NODE_ENV === 'development') {
+          console.log(`[RedisCache] Falling back to data source for key: ${key}`);
+        }
         return await dataSource();
       } catch (fallbackError) {
-        console.error(`[RedisCache] Failed to fetch from data source for key ${key}:`, fallbackError);
+        if (process.env.NODE_ENV === 'development') {
+          console.error(`[RedisCache] Failed to fetch from data source for key ${key}:`, fallbackError);
+        }
         return null;
       }
     }
@@ -614,7 +649,9 @@ export class RedisCacheManager {
         });
         
         // 记录要删除的键数量和受保护的键数量
-        console.log(`[RedisCache] Clearing cache: ${keysToDelete.length} keys to delete, ${keys.length - keysToDelete.length} keys protected`);
+        if (process.env.NODE_ENV === 'development') {
+          console.log(`[RedisCache] Clearing cache: ${keysToDelete.length} keys to delete, ${keys.length - keysToDelete.length} keys protected`);
+        }
         
         if (keysToDelete.length > 0) {
         // ioredis的del方法不支持直接传递数组，需要使用展开运算符
@@ -625,7 +662,9 @@ export class RedisCacheManager {
       }
       return false;
     } catch (error) {
-      console.error('Error clearing cache:', error);
+      if (process.env.NODE_ENV === 'development') {
+        console.error('Error clearing cache:', error);
+      }
       return false;
     }
   }
@@ -682,7 +721,9 @@ export class RedisCacheManager {
         for (const key of keys) {
           // 检查是否为受保护的键
           if (PROTECTED_KEYS.includes(key)) {
-            console.log(`[RedisCache] Skipping deletion of protected key: ${key}`);
+            if (process.env.NODE_ENV === 'development') {
+              console.log(`[RedisCache] Skipping deletion of protected key: ${key}`);
+            }
             continue;
           }
           
@@ -691,12 +732,16 @@ export class RedisCacheManager {
           deletedCount++;
         }
         
-        console.log(`[RedisCache] Deleted ${deletedCount} out of ${keys.length} requested keys`);
+        if (process.env.NODE_ENV === 'development') {
+          console.log(`[RedisCache] Deleted ${deletedCount} out of ${keys.length} requested keys`);
+        }
         return deletedCount;
       }
       return 0;
     } catch (error) {
-      console.error('Error deleting cache keys:', error);
+      if (process.env.NODE_ENV === 'development') {
+        console.error('Error deleting cache keys:', error);
+      }
       return 0;
     }
   }
@@ -722,12 +767,16 @@ export class RedisCacheManager {
           await redis.del(...keysToDelete);
         }
         
-        console.log(`[RedisCache] Deleted ${keysToDelete.length} keys matching pattern: ${pattern}`);
+        if (process.env.NODE_ENV === 'development') {
+          console.log(`[RedisCache] Deleted ${keysToDelete.length} keys matching pattern: ${pattern}`);
+        }
         return keysToDelete.length;
       }
       return 0;
     } catch (error) {
-      console.error('Error deleting cache by pattern:', error);
+      if (process.env.NODE_ENV === 'development') {
+        console.error('Error deleting cache by pattern:', error);
+      }
       return 0;
     }
   }

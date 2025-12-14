@@ -16,6 +16,7 @@ export interface Profile {
   id: string;
   display_name: string;
   username: string;
+  email: string;
   avatar_url?: string;
   online_status?: OnlineStatus;
   last_seen?: string;
@@ -27,6 +28,7 @@ export interface Profile {
   user_province?: string;
   user_country?: string;
   ip_updated_at?: string;
+  is_admin?: boolean;
 }
 
 export interface Confession {

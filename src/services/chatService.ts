@@ -269,8 +269,8 @@ export const chatService = {
   searchUsers: async (keyword: string): Promise<UserSearchResult[]> => {
     const { data, error } = await supabase
       .from('profiles')
-      .select('id, username, display_name, avatar_url, created_at')
-      .or(`username.ilike.%${keyword}%,display_name.ilike.%${keyword}%`)
+      .select('id, username, display_name, email, avatar_url, created_at')
+      .or(`ilike(username, '%${keyword}%'),ilike(display_name, '%${keyword}%')`)
       .limit(20);
 
     if (error) {
@@ -726,7 +726,7 @@ export const chatService = {
           // 在线状态需要实时更新，所以不使用缓存，直接从数据库获取
           const { data: profile, error: profileError } = await supabase
             .from('profiles')
-            .select('id, username, display_name, avatar_url, online_status, last_seen')
+            .select('id, username, display_name, email, avatar_url, online_status, last_seen')
             .eq('id', friendId)
             .single();
           
@@ -918,7 +918,7 @@ export const chatService = {
       // 查询所有发送者的资料，包含在线状态
       const { data: sendersProfiles, error: profilesError } = await supabase
         .from('profiles')
-        .select('id, username, display_name, avatar_url, online_status, last_seen')
+        .select('id, username, display_name, email, avatar_url, online_status, last_seen')
         .in('id', senderIds);
 
       if (profilesError) {
@@ -1417,7 +1417,7 @@ export const chatService = {
       // 直接从数据库获取所有成员的最新资料，包含在线状态，不依赖缓存
       const { data: profiles, error: profilesError } = await supabase
         .from('profiles')
-        .select('id, username, display_name, avatar_url, online_status, last_seen')
+        .select('id, username, display_name, email, avatar_url, online_status, last_seen')
         .in('id', userIds);
 
       // 创建资料映射
@@ -1656,7 +1656,7 @@ export const chatService = {
         // 单独获取发送者的资料，包含在线状态
         const { data: profiles, error: profilesError } = await supabase
           .from('profiles')
-          .select('id, username, display_name, avatar_url, online_status, last_seen')
+          .select('id, username, display_name, email, avatar_url, online_status, last_seen')
           .in('id', uncachedSenderIds);
 
         if (!profilesError && profiles) {
@@ -1963,7 +1963,7 @@ export const chatService = {
 
     let query = supabase
       .from('profiles')
-      .select('id, username, display_name, avatar_url, created_at, bio, online_status, last_seen');
+      .select('id, username, display_name, email, avatar_url, created_at, bio, online_status, last_seen');
 
     // 根据格式判断是 UUID 还是用户名
     if (identifier.length === 36 && identifier.includes('-')) {

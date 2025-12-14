@@ -1,25 +1,94 @@
 import { createServerClient } from '@supabase/ssr';
+import { createClient } from '@supabase/supabase-js';
 import { cookies } from 'next/headers';
 
 // Create a simple cookie store adapter that matches Supabase SSR requirements
-export async function createSupabaseServerClient() {
-  // Get the cookie store once at the beginning
-  const cookieStore = await cookies();
+// This version works in both middleware and server components
+export async function createSupabaseServerClient(request?: Request) {
+  // For middleware and API routes, use the request's cookies
+  if (request) {
+    const cookieHeader = request.headers.get('cookie') || '';
+    
+
+    
+    // 解析cookies
+    const parsedCookies = cookieHeader
+      .split(';')
+      .map(cookie => cookie.trim())
+      .filter(cookie => cookie.length > 0)
+      .map(cookie => {
+        const [name, ...valueParts] = cookie.split('=');
+        return { name: name.trim(), value: valueParts.join('=').trim() };
+      });
+    
+
+    
+    // 检查是否有supabase会话cookie
+    parsedCookies.find(cookie => cookie.name.startsWith('sb-'));
+
+    
+    return createServerClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+      {
+        cookies: {
+          getAll: () => parsedCookies,
+          setAll: () => {
+            // Not needed in middleware/API context
+          },
+        },
+      }
+    );
+  }
+  
+  // For server components, use the cookie store from next/headers
+  // Note: In some environments like server components, cookies() might be a sync function
+  // but in API routes/middleware, it returns a Promise. We need to handle both cases.
+  const cookiesResult = cookies();
+  
+  // 确保我们获得的是实际的cookie store对象，而不是Promise
+  let cookieStore;
+  if (cookiesResult instanceof Promise) {
+    cookieStore = await cookiesResult;
+  } else {
+    cookieStore = cookiesResult;
+  }
+  
+  // 获取初始cookie列表用于日志记录
+  const initialCookies = cookieStore.getAll();
+  
+  
+  // 检查是否有supabase会话cookie
+  initialCookies.some(cookie => cookie.name.startsWith('sb-'));
+  
   
   return createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
     {
       cookies: {
-        get: (name: string) => {
-          return cookieStore.get(name)?.value;
+        getAll: () => {
+          // 实时获取所有cookies，确保返回最新的cookie列表
+          const currentCookies = cookieStore.getAll();
+
+          return currentCookies;
         },
-        set: (name: string, value: string, options?: Record<string, unknown>) => {
-          // Only pass used options to avoid TypeScript errors
-          cookieStore.set(name, value, options as Record<string, unknown>);
-        },
-        remove: (name: string) => {
-          cookieStore.delete(name);
+        setAll: (cookiesToSet: Array<{ name: string; value: string; options?: Record<string, unknown> }>) => {
+          // 在服务器组件中，我们不能设置cookies，只能在Server Actions或Route Handlers中设置
+          // 因此我们需要跳过这里的cookie设置
+          try {
+            // 检查是否在允许设置cookies的环境中
+            // 在Next.js 16中，cookies().set()只能在Server Actions或Route Handlers中调用
+            // 在服务器组件中调用会抛出错误
+            cookiesToSet.forEach(({ name, value, options }) => {
+              // 直接使用原始options，不要添加额外的默认值，避免类型错误
+              // Supabase会提供正确的cookie选项
+              cookieStore.set(name, value, options as Record<string, unknown>);
+            });
+          } catch (error) {
+            // 如果在不允许设置cookies的环境中，忽略错误
+            console.debug('Skipping cookie setting in server component:', error);
+          }
         },
       },
     }
@@ -27,26 +96,17 @@ export async function createSupabaseServerClient() {
 }
 
 // 创建用于服务器端管理操作的Supabase客户端，使用服务角色密钥
-export async function createSupabaseAdminClient() {
-  // Get the cookie store once at the beginning
-  const cookieStore = await cookies();
-  
-  return createServerClient(
+export function createSupabaseAdminClient() {
+  // 使用@supabase/supabase-js包中的createClient函数创建管理员客户端
+  const supabaseAdmin = createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.SUPABASE_SERVICE_ROLE_KEY!,
     {
-      cookies: {
-        get: (name: string) => {
-          return cookieStore.get(name)?.value;
-        },
-        set: (name: string, value: string, options?: Record<string, unknown>) => {
-          // Only pass used options to avoid TypeScript errors
-          cookieStore.set(name, value, options as Record<string, unknown>);
-        },
-        remove: (name: string) => {
-          cookieStore.delete(name);
-        },
-      },
+      auth: {
+        autoRefreshToken: false,
+        persistSession: false
+      }
     }
   );
+  return supabaseAdmin;
 }

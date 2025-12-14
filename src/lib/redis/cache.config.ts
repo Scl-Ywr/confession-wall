@@ -24,12 +24,16 @@ export const CACHE_KEY_PATTERNS = {
   USER_PROFILE: 'user:profile:{userId}',
   USER_STATUS: 'user:status:{userId}',
   USER_SETTINGS: 'user:settings:{userId}',
+  USER_BY_ID: 'admin:user:{id}',
+  USER_POINTS: 'user:points:{userId}',
+  USER_STATS: 'user:stats:{userId}',
   
   // 告白相关
   CONFESSION_DETAIL: 'confession:detail:{confessionId}',
   CONFESSION_LIST: 'confession:list:{page}:{limit}',
   CONFESSION_LIKES: 'confession:likes:{confessionId}',
   CONFESSION_COMMENTS: 'confession:comments:{confessionId}:{page}:{limit}',
+  CONFESSION_BY_ID: 'admin:confession:{id}',
   
   // 聊天相关
   CHAT_PRIVATE: 'chat:private:{userId1}:{userId2}',
@@ -45,6 +49,10 @@ export const CACHE_KEY_PATTERNS = {
   STATISTICS_CONFESSIONS: 'statistics:confessions',
   STATISTICS_USERS: 'statistics:users',
   STATISTICS_ACTIVITY: 'statistics:activity:{period}',
+  ADMIN_STATS: 'admin:stats',
+  TREND_DATA: 'admin:trend:{days}',
+  RECENT_CONFESSIONS: 'admin:recent_confessions:{limit}',
+  RECENT_USERS: 'admin:recent_users:{limit}',
   
   // 锁相关
   LOCK: 'lock:{key}',
@@ -120,7 +128,7 @@ export const generateCacheKey = <T extends keyof typeof CACHE_KEY_PATTERNS>(
   pattern: T,
   params: Record<string, string | number>
 ): string => {
-  let key: string = CACHE_KEY_PATTERNS[pattern];
+  let key: string = CACHE_KEY_PATTERNS[pattern] || `${pattern}`;
   
   // 替换参数
   for (const [param, value] of Object.entries(params)) {

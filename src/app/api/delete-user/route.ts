@@ -25,7 +25,7 @@ export async function POST(req: NextRequest) {
     }
     
     // 3. 使用服务角色密钥执行删除操作
-    const adminSupabase = await createSupabaseAdminClient();
+    const adminSupabase = createSupabaseAdminClient();
     
     // 4. 删除用户的存储文件
     const { error: storageError } = await adminSupabase.storage

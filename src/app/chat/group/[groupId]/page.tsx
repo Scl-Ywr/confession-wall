@@ -103,6 +103,7 @@ const GroupChatPage = ({ params }: { params: Promise<{ groupId: string }> }) => 
         id: senderProfile.id,
         username: senderProfile.username || '',
         display_name: senderProfile.display_name || '',
+        email: senderProfile.email || '',
         avatar_url: senderProfile.avatar_url,
         created_at: senderProfile.created_at || new Date().toISOString()
       });
@@ -240,18 +241,21 @@ const GroupChatPage = ({ params }: { params: Promise<{ groupId: string }> }) => 
                   // 确保user_profile存在，不存在则创建一个新对象，严格匹配Profile接口
                   const updatedProfile: Profile = member.user_profile ? {
                     ...member.user_profile,
+                    email: member.user_profile.email || '',
                     online_status: payload.new.online_status,
                     last_seen: payload.new.last_seen
                   } : {
                     id: payload.new.id,
                     username: payload.new.username || '',
                     display_name: payload.new.display_name || '',
+                    email: payload.new.email || '',
                     avatar_url: payload.new.avatar_url,
                     online_status: payload.new.online_status,
                     last_seen: payload.new.last_seen,
                     bio: payload.new.bio,
                     created_at: payload.new.created_at,
-                    updated_at: payload.new.updated_at
+                    updated_at: payload.new.updated_at,
+                    is_admin: payload.new.is_admin || false
                   };
                   
                   return {
@@ -318,6 +322,7 @@ const GroupChatPage = ({ params }: { params: Promise<{ groupId: string }> }) => 
                   // 确保user_profile存在，不存在则创建一个新对象，严格匹配Profile接口
                   const updatedProfile: Profile = member.user_profile ? {
                     ...member.user_profile,
+                    email: member.user_profile.email || '',
                     last_seen: payload.new.last_seen,
                     // 优先使用payload中的online_status，如果不存在则使用原有值，确保状态同步
                     online_status: payload.new.online_status || member.user_profile.online_status || 'away'
@@ -325,12 +330,14 @@ const GroupChatPage = ({ params }: { params: Promise<{ groupId: string }> }) => 
                     id: payload.new.id,
                     username: payload.new.username || '',
                     display_name: payload.new.display_name || '',
+                    email: payload.new.email || '',
                     avatar_url: payload.new.avatar_url,
                     online_status: 'away', // 默认状态
                     last_seen: payload.new.last_seen,
                     bio: payload.new.bio,
                     created_at: payload.new.created_at,
-                    updated_at: payload.new.updated_at
+                    updated_at: payload.new.updated_at,
+                    is_admin: payload.new.is_admin || false
                   };
                   
                   return {
@@ -1557,6 +1564,10 @@ const GroupChatPage = ({ params }: { params: Promise<{ groupId: string }> }) => 
                   )}
                 </div>
                 
+              </div>
+              
+              {/* 聊天输入框和发送按钮 */}
+              <div className="flex gap-2">
                 <div className="flex-grow relative">
                   <input
                     type="text"

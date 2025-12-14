@@ -1,0 +1,39 @@
+-- Add moderation fields to comments table
+ALTER TABLE comments
+ADD COLUMN status VARCHAR(20) DEFAULT 'approved',
+ADD COLUMN moderator_id UUID REFERENCES auth.users(id) ON DELETE SET NULL,
+ADD COLUMN moderated_at TIMESTAMP WITH TIME ZONE,
+ADD COLUMN rejection_reason TEXT;
+
+-- Create index for moderation status
+CREATE INDEX IF NOT EXISTS idx_comments_status ON comments(status);
+
+-- Update RLS policies for comments to include moderation status
+
+-- Allow public read access only to approved comments
+DROP POLICY "Allow public read access" ON comments;
+CREATE POLICY "Allow public read access" ON comments
+  FOR SELECT USING (status = 'approved');
+
+-- Allow authenticated users to insert with pending status
+DROP POLICY "Allow authenticated users to insert" ON comments;
+CREATE POLICY "Allow authenticated users to insert" ON comments
+  FOR INSERT WITH CHECK (auth.role() = 'authenticated');
+
+-- Allow owner to update, but not change moderation status
+DROP POLICY "Allow owner to update" ON comments;
+CREATE POLICY "Allow owner to update" ON comments
+  FOR UPDATE
+  USING (auth.uid() = user_id)
+  WITH CHECK (auth.uid() = user_id AND (status = OLD.status OR status IS NULL));
+
+-- Allow admins to moderate comments
+CREATE POLICY "Allow admins to moderate" ON comments
+  FOR UPDATE
+  USING (EXISTS (
+    SELECT 1 FROM profiles
+    WHERE profiles.id = auth.uid() AND profiles.is_admin = true
+  ));
+
+-- Enable realtime for comments table with moderation status
+ALTER PUBLICATION supabase_realtime ADD TABLE comments;

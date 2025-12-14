@@ -10,8 +10,9 @@ interface ThemeContextType {
 const ThemeContext = createContext<ThemeContextType | undefined>(undefined);
 
 export const ThemeProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
-  // 从 localStorage 中获取主题偏好，如果没有则使用系统主题
+  // 使用懒加载初始化主题，避免 hydration 错误
   const [isDarkMode, setIsDarkMode] = useState(() => {
+    // 仅在客户端执行
     if (typeof window !== 'undefined') {
       const savedTheme = localStorage.getItem('theme');
       if (savedTheme) {
@@ -20,7 +21,7 @@ export const ThemeProvider: React.FC<{ children: ReactNode }> = ({ children }) =
       // 使用系统主题
       return window.matchMedia('(prefers-color-scheme: dark)').matches;
     }
-    // 默认使用浅色模式在服务器端
+    // 服务器端默认使用浅色主题
     return false;
   });
 
@@ -45,11 +46,15 @@ export const ThemeProvider: React.FC<{ children: ReactNode }> = ({ children }) =
 
   // 应用主题到 document
   useEffect(() => {
+    console.log('ThemeContext: Updating theme, isDarkMode:', isDarkMode);
     if (isDarkMode) {
       document.documentElement.classList.add('dark');
+      console.log('ThemeContext: Added dark class to document');
     } else {
       document.documentElement.classList.remove('dark');
+      console.log('ThemeContext: Removed dark class from document');
     }
+    console.log('ThemeContext: document.documentElement.classList:', document.documentElement.classList);
   }, [isDarkMode]);
 
   return (

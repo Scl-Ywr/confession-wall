@@ -889,12 +889,15 @@ export function ChatInterface({ otherUserId, otherUserProfile: initialOtherUserP
                   </div>
                 )}
               </div>
-              
+            </div>
+            
+            {/* 聊天输入框和发送按钮 */}
+            <div className="flex items-center gap-2">
               <div className="flex-grow relative">
                 <input
                   type="text"
                   placeholder="输入消息..."
-                  className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-full focus:ring-2 focus:ring-primary-500 focus:outline-none bg-white dark:bg-gray-700 text-gray-800 dark:text-white"
+                  className="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-full focus:ring-2 focus:ring-primary-500 focus:outline-none bg-white dark:bg-gray-700 text-gray-800 dark:text-white"
                   value={newMessage}
                   onChange={(e) => setNewMessage(e.target.value)}
                   onKeyDown={(e) => e.key === 'Enter' && !e.shiftKey && handleSendMessage(e as unknown as React.FormEvent)}

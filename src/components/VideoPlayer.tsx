@@ -17,7 +17,7 @@ interface VideoPlayerProps {
 
 export default function VideoPlayer({ videoUrl, className = '', posterUrl }: VideoPlayerProps) {
   const [fullscreen, setFullscreen] = useState(false); // 控制浏览器全屏状态
-  const [videoDimensions] = useState({ width: 0, height: 0 });
+  const [videoDimensions, setVideoDimensions] = useState({ width: 0, height: 0 });
   
   // 视频切换过渡状态
   const [currentVideoUrl, setCurrentVideoUrl] = useState(videoUrl);
@@ -676,7 +676,7 @@ export default function VideoPlayer({ videoUrl, className = '', posterUrl }: Vid
         <video
           ref={playerRef}
           src={currentVideoUrl}
-          className="w-full h-full object-cover"
+          className="w-full h-full object-contain"
           poster={posterUrl || ''}
           preload="auto"
           autoPlay={false}
@@ -727,9 +727,15 @@ export default function VideoPlayer({ videoUrl, className = '', posterUrl }: Vid
             }
           }}
           onLoadedMetadata={() => {
-            // 视频元数据加载完成后，获取视频时长
+            // 视频元数据加载完成后，获取视频时长和尺寸
             if (playerRef.current) {
               setDuration(playerRef.current.duration || 0);
+              // 获取视频实际宽高
+              const video = playerRef.current;
+              setVideoDimensions({
+                width: video.videoWidth,
+                height: video.videoHeight
+              });
             }
           }}
           onLoadedData={() => {

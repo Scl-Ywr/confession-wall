@@ -288,7 +288,7 @@ export default function ConfessionCard({
   
   return (
     <motion.div 
-      className="glass-card rounded-2xl p-6 mb-6 transition-all duration-300 hover:-translate-y-2 hover:shadow-xl border border-white/20"
+      className="glass-card rounded-xl sm:rounded-2xl p-4 sm:p-6 mb-5 sm:mb-6 transition-all duration-300 hover:-translate-y-2 hover:shadow-xl border border-white/20"
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.5 }}
@@ -343,11 +343,11 @@ export default function ConfessionCard({
 
       {confession.images && confession.images.length > 0 && (
           <PhotoProvider>
-            <div className="mb-6 grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="mb-4 sm:mb-6 grid grid-cols-1 md:grid-cols-2 gap-3 sm:gap-4">
               {confession.images.map((media) => (
                 <div
                   key={media.id}
-                  className={`relative w-full rounded-xl border border-gray-100 dark:border-gray-700 shadow-sm transition-all duration-500 ease-in-out ${media.file_type === 'video' ? '' : 'aspect-square overflow-hidden'} group`}
+                  className={`relative w-full rounded-lg sm:rounded-xl border border-gray-100 dark:border-gray-700 shadow-sm transition-all duration-500 ease-in-out ${media.file_type === 'video' ? '' : 'aspect-square overflow-hidden'} group`}
                 >
                   {/* Media content - always show the media, no lock overlay */}
                     {media.file_type === 'image' ? (
@@ -378,8 +378,8 @@ export default function ConfessionCard({
           </PhotoProvider>
         )}
 
-      <div className="flex items-center justify-between pt-4 border-t border-gray-100 dark:border-gray-700/50">
-        <div className="flex items-center space-x-6">
+      <div className="flex flex-col sm:flex-row items-center justify-between pt-3 sm:pt-4 border-t border-gray-100 dark:border-gray-700/50 space-y-3 sm:space-y-0">
+        <div className="flex items-center space-x-3 sm:space-x-6">
           {/* 使用现代化点赞按钮组件 */}
           <LikeButton
             confessionId={confession.id}

@@ -1,26 +1,6 @@
-import { createClient } from '@supabase/supabase-js';
+import { createBrowserClient } from '@supabase/ssr';
 
-export const supabase = createClient(
+export const supabase = createBrowserClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-  {
-    auth: {
-      // 确保会话持久化
-      persistSession: true,
-      // 配置邮箱验证相关设置
-      flowType: 'pkce',
-      // 确保会话状态正确管理
-      autoRefreshToken: true,
-      // 确保在服务器端渲染时不会出错
-      detectSessionInUrl: true,
-    },
-    realtime: {
-      // 设置心跳间隔
-      heartbeatIntervalMs: 30000
-    },
-    storage: {
-      // 使用新的主机名配置
-      useNewHostname: true
-    }
-  }
+  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 );

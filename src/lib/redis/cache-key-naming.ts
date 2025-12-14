@@ -15,6 +15,7 @@ export enum CacheModule {
   USER = 'user',
   CHAT = 'chat',
   CONFESSION = 'confession',
+  COMMENT = 'comment',
   NOTIFICATION = 'notification',
   STATISTICS = 'statistics',
   LOCK = 'lock',
@@ -170,6 +171,47 @@ export const confessionCacheKeys = {
     CacheModule.CONFESSION, 
     CacheResource.LIST, 
     `likes:${confessionId}:${userId}`
+  )
+};
+
+/**
+ * 生成评论相关缓存键
+ */
+export const commentCacheKeys = {
+  /**
+   * 评论列表缓存键
+   * @param confessionId 告白ID
+   * @param page 页码
+   * @param limit 每页数量
+   * @param status 评论状态（可选，默认获取所有状态）
+   * @returns 缓存键
+   */
+  list: (confessionId: string, page: number = 1, limit: number = 20, status: string = 'all'): string => generateCacheKey(
+    CacheModule.COMMENT, 
+    CacheResource.LIST, 
+    `${confessionId}:${page}:${limit}:${status}`
+  ),
+  
+  /**
+   * 评论详情缓存键
+   * @param commentId 评论ID
+   * @returns 缓存键
+   */
+  detail: (commentId: string): string => generateCacheKey(
+    CacheModule.COMMENT, 
+    CacheResource.DETAIL, 
+    commentId
+  ),
+  
+  /**
+   * 告白的评论统计缓存键
+   * @param confessionId 告白ID
+   * @returns 缓存键
+   */
+  count: (confessionId: string): string => generateCacheKey(
+    CacheModule.COMMENT, 
+    CacheResource.MAIN, 
+    `count:${confessionId}`
   )
 };
 

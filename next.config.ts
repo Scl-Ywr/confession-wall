@@ -1,7 +1,5 @@
-import type { NextConfig } from "next";
-
-const nextConfig: NextConfig = {
-  /* config options here */
+/** @type {import('next').NextConfig} */
+const nextConfig = {
   reactCompiler: true,
   images: {
     remotePatterns: [
@@ -15,10 +13,15 @@ const nextConfig: NextConfig = {
         hostname: 'ltbacrfoksjzfszpsmow.storage.supabase.co',
         pathname: '/**',
       },
+      {
+        protocol: 'https',
+        hostname: 'ui-avatars.com',
+        pathname: '/**',
+      },
     ],
   },
   serverExternalPackages: ['ioredis'],
-  turbopack: {},
+  productionBrowserSourceMaps: false,
 };
 
-export default nextConfig;
+module.exports = nextConfig;

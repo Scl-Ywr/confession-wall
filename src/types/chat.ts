@@ -122,6 +122,7 @@ export interface UserSearchResult {
   id: string;
   username: string;
   display_name: string;
+  email: string;
   avatar_url?: string;
   created_at: string;
   online_status?: OnlineStatus;

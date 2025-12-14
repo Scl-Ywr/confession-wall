@@ -16,7 +16,8 @@ const registerSchema = z.object({
     .email('请输入有效的邮箱地址'),
   password: z.string()
     .nonempty('请输入密码')
-    .min(6, '密码长度不能少于6个字符'),
+    .min(8, '密码长度不能少于8个字符')
+    .regex(/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])/, '密码必须包含大小写字母、数字和特殊字符'),
   confirmPassword: z.string()
     .nonempty('请确认密码'),
 }).refine((data) => data.password === data.confirmPassword, {

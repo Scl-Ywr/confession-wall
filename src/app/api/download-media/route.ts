@@ -16,7 +16,7 @@ export async function GET(req: NextRequest) {
     }
     
     // Get admin client for server-side operations
-    const supabaseAdmin = await createSupabaseAdminClient();
+    const supabaseAdmin = createSupabaseAdminClient();
     
     // Get the image and its associated confession
     const { data: images, error: getImageError } = await supabaseAdmin

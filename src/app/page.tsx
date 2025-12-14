@@ -134,16 +134,16 @@ export default function Home() {
       {/* 登录提示组件 */}
       {showLoginPrompt && <LoginPrompt />}
       
-      <main className="w-full max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+      <main className="w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 sm:py-8">
         {/* Hero Section */}
         <motion.div 
-          className="text-center mb-16 pt-10"
+          className="text-center mb-10 sm:mb-16 pt-8 sm:pt-10"
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.8 }}
         >
           <motion.h1 
-            className="text-4xl sm:text-5xl md:text-7xl font-bold mb-6 bg-gradient-to-r from-primary-600 via-purple-600 to-secondary-500 bg-clip-text text-transparent drop-shadow-sm"
+            className="text-3xl sm:text-4xl md:text-5xl lg:text-7xl font-bold mb-5 sm:mb-6 bg-gradient-to-r from-primary-600 via-purple-600 to-secondary-500 bg-clip-text text-transparent drop-shadow-sm"
             initial={{ opacity: 0, scale: 0.9 }}
             animate={{ opacity: 1, scale: 1 }}
             transition={{ duration: 0.6, delay: 0.2 }}
@@ -151,14 +151,14 @@ export default function Home() {
             Confession Wall
           </motion.h1>
           <motion.p 
-            className="text-lg sm:text-xl text-gray-600 dark:text-gray-300 max-w-2xl mx-auto leading-relaxed"
+            className="text-lg sm:text-lg md:text-xl text-gray-600 dark:text-gray-300 max-w-2xl mx-auto leading-relaxed"
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             transition={{ duration: 0.6, delay: 0.4 }}
           >
             一个倾诉秘密、表达爱意或发泄情绪的安全空间。
             <motion.span 
-              className="block mt-2 font-medium text-primary-600 dark:text-primary-400"
+              className="block mt-2 sm:mt-2 font-medium text-primary-600 dark:text-primary-400"
               initial={{ opacity: 0, y: 10 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.6, delay: 0.6 }}
@@ -171,7 +171,7 @@ export default function Home() {
         <CreateConfessionForm onSuccess={() => queryClient.invalidateQueries({ queryKey: ['confessions'] })} user={user} />
         
         <div className="space-y-8">
-          <div className="flex flex-col md:flex-row items-center justify-between gap-4 mb-8">
+          <div className="space-y-6 mb-8">
             <h2 className="text-2xl font-bold text-gray-800 dark:text-white flex items-center gap-2">
               <span className="text-3xl">🌟</span> 最新表白
             </h2>
@@ -181,52 +181,54 @@ export default function Home() {
                 e.preventDefault();
                 refetchSearch();
               }}
-              className="w-full md:w-auto flex flex-col sm:flex-row gap-3"
+              className="w-full flex flex-col gap-3"
             >
-              <div className="w-full sm:w-32">
-                <CustomSelect
-                  options={[
-                    { value: 'content', label: '表白内容' },
-                    { value: 'username', label: '用户名' }
-                  ]}
-                  value={searchType}
-                  onChange={(value) => setSearchType(value)}
-                  className="w-full"
-                />
+              <div className="w-full flex flex-col sm:flex-row gap-3">
+                <div className="w-full sm:w-32">
+                  <CustomSelect
+                    options={[
+                      { value: 'content', label: '表白内容' },
+                      { value: 'username', label: '用户名' }
+                    ]}
+                    value={searchType}
+                    onChange={(value) => setSearchType(value)}
+                    className="w-full"
+                  />
+                </div>
+                <div className="flex-grow">
+                  <input
+                    type="text"
+                    placeholder="搜索表白..."
+                    className="w-full px-4 py-3 rounded-xl border border-gray-200 dark:border-gray-700 bg-white/80 dark:bg-gray-800/80 backdrop-blur-md focus:ring-2 focus:ring-primary-500 focus:outline-none transition-all duration-300 hover:border-primary-300 dark:hover:border-primary-600 shadow-sm hover:shadow-md text-sm"
+                    value={searchKeyword}
+                    onChange={(e) => setSearchKeyword(e.target.value)}
+                  />
+                </div>
+                <button
+                  type="submit"
+                  className="w-full sm:w-auto px-6 py-3 bg-gradient-to-r from-primary-500 to-primary-600 text-white font-semibold rounded-xl shadow-sm hover:shadow-md transition-all duration-300 hover:from-primary-600 hover:to-primary-700 disabled:opacity-50 disabled:cursor-not-allowed disabled:from-primary-400 disabled:to-primary-500 flex items-center justify-center gap-2 min-w-12"
+                  disabled={isLoading}
+                >
+                  {isLoading ? (
+                    <motion.div 
+                      initial={{ opacity: 0 }}
+                      animate={{ opacity: 1 }}
+                      className="flex items-center gap-2"
+                    >
+                      <div className="animate-spin rounded-full h-4 w-4 border-2 border-white border-t-transparent"></div>
+                      搜索中...
+                    </motion.div>
+                  ) : (
+                    <motion.span 
+                      initial={{ opacity: 0, scale: 0.9 }}
+                      animate={{ opacity: 1, scale: 1 }}
+                      transition={{ duration: 0.2 }}
+                    >
+                      搜索
+                    </motion.span>
+                  )}
+                </button>
               </div>
-              <div className="flex-grow">
-                <input
-                  type="text"
-                  placeholder="搜索表白..."
-                  className="w-full px-4 py-3 rounded-xl border border-gray-200 dark:border-gray-700 bg-white/80 dark:bg-gray-800/80 backdrop-blur-md focus:ring-2 focus:ring-primary-500 focus:outline-none transition-all duration-300 hover:border-primary-300 dark:hover:border-primary-600 shadow-sm hover:shadow-md text-sm"
-                  value={searchKeyword}
-                  onChange={(e) => setSearchKeyword(e.target.value)}
-                />
-              </div>
-              <button
-                type="submit"
-                className="w-full sm:w-auto px-6 py-3 bg-gradient-to-r from-primary-500 to-primary-600 text-white font-semibold rounded-xl shadow-sm hover:shadow-md transition-all duration-300 hover:from-primary-600 hover:to-primary-700 disabled:opacity-50 disabled:cursor-not-allowed disabled:from-primary-400 disabled:to-primary-500 flex items-center justify-center gap-2 min-w-12"
-                disabled={isLoading}
-              >
-                {isLoading ? (
-                  <motion.div 
-                    initial={{ opacity: 0 }}
-                    animate={{ opacity: 1 }}
-                    className="flex items-center gap-2"
-                  >
-                    <div className="animate-spin rounded-full h-4 w-4 border-2 border-white border-t-transparent"></div>
-                    搜索中...
-                  </motion.div>
-                ) : (
-                  <motion.span 
-                    initial={{ opacity: 0, scale: 0.9 }}
-                    animate={{ opacity: 1, scale: 1 }}
-                    transition={{ duration: 0.2 }}
-                  >
-                    搜索
-                  </motion.span>
-                )}
-              </button>
             </form>
           </div>
           

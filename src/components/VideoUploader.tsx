@@ -3,6 +3,7 @@
 import React, { useState, useRef } from 'react';
 import { supabase } from '@/lib/supabase/client';
 import LoadingSpinner from './LoadingSpinner';
+import { CustomSelect } from './CustomSelect';
 
 interface VideoUploaderProps {
   onUploadSuccess?: (videoUrl: string, posterUrl?: string) => void;
@@ -30,6 +31,19 @@ export default function VideoUploader({ onUploadSuccess }: VideoUploaderProps) {
     resolution: '720p',
     bitrate: '2M'
   });
+
+  // 压缩选项
+  const resolutionOptions = [
+    { value: '480p', label: '480p (低)' },
+    { value: '720p', label: '720p (中)' },
+    { value: '1080p', label: '1080p (高)' }
+  ];
+
+  const bitrateOptions = [
+    { value: '1M', label: '1 Mbps (低)' },
+    { value: '2M', label: '2 Mbps (中)' },
+    { value: '5M', label: '5 Mbps (高)' }
+  ];
   
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -625,31 +639,25 @@ export default function VideoUploader({ onUploadSuccess }: VideoUploaderProps) {
                     <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                       分辨率
                     </label>
-                    <select
-                      name="resolution"
-                      value={compressionOptions.resolution}
-                      onChange={handleCompressionOptionChange}
-                      className="w-full px-4 py-2 border border-gray-300 rounded-xl focus:ring-2 focus:ring-primary-500 focus:border-transparent dark:bg-gray-800 dark:border-gray-700 dark:text-white"
-                    >
-                      <option value="480p">480p (低)</option>
-                      <option value="720p">720p (中)</option>
-                      <option value="1080p">1080p (高)</option>
-                    </select>
+                    <CustomSelect
+                    options={resolutionOptions}
+                    value={compressionOptions.resolution}
+                    onChange={(value) => handleCompressionOptionChange({ 
+                      target: { name: 'resolution', value, type: 'select' } 
+                    } as unknown as React.ChangeEvent<HTMLSelectElement>)} 
+                  />
                   </div>
                   <div>
                     <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                       比特率
                     </label>
-                    <select
-                      name="bitrate"
-                      value={compressionOptions.bitrate}
-                      onChange={handleCompressionOptionChange}
-                      className="w-full px-4 py-2 border border-gray-300 rounded-xl focus:ring-2 focus:ring-primary-500 focus:border-transparent dark:bg-gray-800 dark:border-gray-700 dark:text-white"
-                    >
-                      <option value="1M">1 Mbps (低)</option>
-                      <option value="2M">2 Mbps (中)</option>
-                      <option value="5M">5 Mbps (高)</option>
-                    </select>
+                    <CustomSelect
+                    options={bitrateOptions}
+                    value={compressionOptions.bitrate}
+                    onChange={(value) => handleCompressionOptionChange({ 
+                      target: { name: 'bitrate', value, type: 'select' } 
+                    } as unknown as React.ChangeEvent<HTMLSelectElement>)} 
+                  />
                   </div>
                 </div>
               </div>

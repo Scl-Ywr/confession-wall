@@ -164,7 +164,7 @@ export default function CreateConfessionForm({ onSuccess, user }: CreateConfessi
 
   return (
     <motion.div 
-      className="glass rounded-2xl p-6 md:p-8 mb-10 shadow-xl border border-white/20 relative overflow-hidden"
+      className="glass rounded-xl sm:rounded-2xl p-4 sm:p-6 md:p-8 mb-8 sm:mb-10 shadow-xl border border-white/20 relative overflow-hidden"
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.5, ease: "easeOut" }}
@@ -173,15 +173,15 @@ export default function CreateConfessionForm({ onSuccess, user }: CreateConfessi
       <div className="absolute top-0 right-0 w-32 h-32 bg-gradient-to-br from-primary-500/10 to-secondary-500/10 rounded-bl-full -z-10"></div>
       
       <motion.h2 
-        className="text-2xl font-bold text-gray-800 dark:text-white mb-6 flex items-center gap-2"
+        className="text-xl sm:text-2xl font-bold text-gray-800 dark:text-white mb-4 sm:mb-6 flex items-center gap-2"
         initial={{ opacity: 0, x: -20 }}
         animate={{ opacity: 1, x: 0 }}
         transition={{ duration: 0.5, delay: 0.2, ease: "easeOut" }}
       >
-        <span className="text-3xl">✨</span> 写下你的秘密
+        <span className="text-2xl sm:text-3xl">✨</span> 写下你的秘密
       </motion.h2>
       
-      <form onSubmit={handleSubmit} className="space-y-6">
+      <form onSubmit={handleSubmit} className="space-y-4 sm:space-y-6">
         <motion.div 
           className="relative group"
           initial={{ opacity: 0, y: 20 }}
@@ -189,13 +189,13 @@ export default function CreateConfessionForm({ onSuccess, user }: CreateConfessi
           transition={{ duration: 0.5, delay: 0.3, ease: "easeOut" }}
         >
           <textarea
-            className="w-full h-40 px-6 py-4 bg-white/50 dark:bg-gray-800/50 backdrop-blur-sm border border-gray-200 dark:border-gray-700 rounded-2xl focus:ring-2 focus:ring-primary-500 focus:border-transparent transition-all resize-none text-lg placeholder-gray-400 dark:text-white dark:placeholder-gray-500 group-hover:bg-white/80 dark:group-hover:bg-gray-800/80"
+            className="w-full h-32 sm:h-40 px-4 sm:px-6 py-3 sm:py-4 bg-white/50 dark:bg-gray-800/50 backdrop-blur-sm border border-gray-200 dark:border-gray-700 rounded-xl sm:rounded-2xl focus:ring-2 focus:ring-primary-500 focus:border-transparent transition-all resize-none text-base sm:text-lg placeholder-gray-400 dark:text-white dark:placeholder-gray-500 group-hover:bg-white/80 dark:group-hover:bg-gray-800/80"
             placeholder="在这里写下你想说的话..."
             value={formData.content}
             onChange={(e) => setFormData(prev => ({ ...prev, content: e.target.value }))}
             disabled={loading}
           ></textarea>
-          <div className="absolute bottom-4 right-4 text-xs text-gray-400 font-medium bg-white/80 dark:bg-gray-800/80 px-2 py-1 rounded-lg backdrop-blur-sm">
+          <div className="absolute bottom-3 right-3 sm:bottom-4 sm:right-4 text-xs text-gray-400 font-medium bg-white/80 dark:bg-gray-800/80 px-2 py-1 rounded-lg backdrop-blur-sm">
             {formData.content.length} 字
           </div>
         </motion.div>
@@ -279,8 +279,8 @@ export default function CreateConfessionForm({ onSuccess, user }: CreateConfessi
           </div>
         )}
 
-        <div className="flex flex-col sm:flex-row items-center justify-between gap-4 pt-2">
-          <div className="flex items-center gap-4 w-full sm:w-auto">
+        <div className="flex flex-col gap-4 pt-2">
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 w-full">
             <label className="cursor-pointer group relative">
               <input
                 type="file"
@@ -290,9 +290,9 @@ export default function CreateConfessionForm({ onSuccess, user }: CreateConfessi
                 onChange={handleImageChange}
                 disabled={loading || previewUrls.length >= 9}
               />
-              <div className="flex items-center gap-2 px-4 py-2 bg-gray-50 dark:bg-gray-800/50 hover:bg-gray-100 dark:hover:bg-gray-700/50 text-gray-600 dark:text-gray-300 rounded-xl transition-all border border-gray-200 dark:border-gray-700 group-hover:border-primary-300 dark:group-hover:border-primary-700">
-                <PhotoIcon className="w-5 h-5 text-primary-500 group-hover:scale-110 transition-transform" />
-                <span className="font-medium">添加图片</span>
+              <div className="flex items-center justify-center gap-1.5 px-3 py-2 bg-gray-50 dark:bg-gray-800/50 hover:bg-gray-100 dark:hover:bg-gray-700/50 text-gray-600 dark:text-gray-300 rounded-lg sm:rounded-xl transition-all border border-gray-200 dark:border-gray-700 group-hover:border-primary-300 dark:group-hover:border-primary-700 text-sm">
+                <PhotoIcon className="w-4 h-4 text-primary-500 group-hover:scale-110 transition-transform" />
+                <span className="font-medium">图片</span>
               </div>
             </label>
 
@@ -300,13 +300,13 @@ export default function CreateConfessionForm({ onSuccess, user }: CreateConfessi
               type="button"
               onClick={() => setShowVideoUploader(!showVideoUploader)}
               disabled={loading}
-              className="flex items-center gap-2 px-4 py-2 bg-gray-50 dark:bg-gray-800/50 hover:bg-gray-100 dark:hover:bg-gray-700/50 text-gray-600 dark:text-gray-300 rounded-xl transition-all border border-gray-200 dark:border-gray-700 group-hover:border-primary-300 dark:group-hover:border-primary-700"
+              className="flex items-center justify-center gap-1.5 px-3 py-2 bg-gray-50 dark:bg-gray-800/50 hover:bg-gray-100 dark:hover:bg-gray-700/50 text-gray-600 dark:text-gray-300 rounded-lg sm:rounded-xl transition-all border border-gray-200 dark:border-gray-700 group-hover:border-primary-300 dark:group-hover:border-primary-700 text-sm"
             >
-              <FilmIcon className="w-5 h-5 text-primary-500 group-hover:scale-110 transition-transform" />
-              <span className="font-medium">{showVideoUploader ? '关闭视频上传' : '上传视频'}</span>
+              <FilmIcon className="w-4 h-4 text-primary-500 group-hover:scale-110 transition-transform" />
+              <span className="font-medium">视频</span>
             </button>
 
-            <label className="flex items-center gap-3 cursor-pointer group select-none">
+            <label className="flex items-center justify-center gap-2 cursor-pointer group select-none px-3 py-2 bg-gray-50 dark:bg-gray-800/50 hover:bg-gray-100 dark:hover:bg-gray-700/50 rounded-lg sm:rounded-xl transition-all border border-gray-200 dark:border-gray-700 group-hover:border-primary-300 dark:group-hover:border-primary-700">
               <div className="relative">
                 <input
                   type="checkbox"
@@ -314,16 +314,16 @@ export default function CreateConfessionForm({ onSuccess, user }: CreateConfessi
                   checked={formData.is_anonymous}
                   onChange={(e) => setFormData(prev => ({ ...prev, is_anonymous: e.target.checked }))}
                 />
-                <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-primary-300 dark:peer-focus:ring-primary-800 rounded-full peer dark:bg-gray-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-gray-600 peer-checked:bg-primary-600"></div>
+                <div className="w-9 h-5 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-primary-300 dark:peer-focus:ring-primary-800 rounded-full peer dark:bg-gray-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[1px] after:left-[1px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all dark:border-gray-600 peer-checked:bg-primary-600"></div>
               </div>
-              <span className="text-gray-600 dark:text-gray-300 font-medium group-hover:text-primary-600 dark:group-hover:text-primary-400 transition-colors">匿名发布</span>
+              <span className="text-gray-600 dark:text-gray-300 font-medium group-hover:text-primary-600 dark:group-hover:text-primary-400 transition-colors text-sm">匿名</span>
             </label>
           </div>
 
           <button
               type="submit"
               disabled={loading}
-              className={`w-full sm:w-auto px-8 py-3 bg-gradient-to-r from-blue-500 to-pink-500 text-white rounded-xl font-bold shadow-lg shadow-blue-500/30 hover:shadow-pink-500/50 transform hover:-translate-y-0.5 transition-all disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none flex items-center justify-center gap-2`}
+              className={`w-full px-6 py-3 sm:py-3 bg-gradient-to-r from-blue-500 to-pink-500 text-white rounded-xl font-bold shadow-lg shadow-blue-500/30 hover:shadow-pink-500/50 transform hover:-translate-y-0.5 transition-all disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none flex items-center justify-center gap-2`}
             >
             {loading ? (
               <>

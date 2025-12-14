@@ -7,6 +7,7 @@ export interface User {
   display_name?: string;
   username?: string;
   avatar_url?: string;
+  is_admin?: boolean;
 }
 
 export interface AuthState {

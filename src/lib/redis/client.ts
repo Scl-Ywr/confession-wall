@@ -34,22 +34,24 @@ if (typeof window === 'undefined') {
         },
       });
 
-      // 监听连接事件
-      redis.on('connect', () => {
-        console.log('Redis connected');
-      });
+      // 监听连接事件 - 只在开发环境输出
+      if (process.env.NODE_ENV === 'development') {
+        redis.on('connect', () => {
+          console.log('Redis connected');
+        });
 
-      redis.on('error', (err: Error) => {
-        console.error('Redis connection error:', err);
-      });
+        redis.on('error', (err: Error) => {
+          console.error('Redis connection error:', err);
+        });
 
-      redis.on('close', () => {
-        console.log('Redis connection closed');
-      });
+        redis.on('close', () => {
+          console.log('Redis connection closed');
+        });
 
-      redis.on('reconnecting', (info: { attempt: number; delay: number }) => {
-        console.log(`Redis reconnecting: attempt ${info.attempt}, delay ${info.delay}ms`);
-      });
+        redis.on('reconnecting', (info: { attempt: number; delay: number }) => {
+          console.log(`Redis reconnecting: attempt ${info.attempt}, delay ${info.delay}ms`);
+        });
+      }
     });
   } catch (error) {
     console.error('Failed to initialize Redis client:', error);

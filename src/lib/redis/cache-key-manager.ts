@@ -181,6 +181,34 @@ export class CacheKeyManager {
   };
 
   /**
+   * 生成评论相关缓存键
+   */
+  public comment = {
+    /**
+     * 评论列表缓存键
+     */
+    list: (confessionId: string, page: number = 1, limit: number = 10, status: string = 'all', version?: string): string => {
+      const id = `${confessionId}:${page}:${limit}:${status}`;
+      return this.generateCacheKey(CacheModule.COMMENT, CacheResource.LIST, id, version);
+    },
+    
+    /**
+     * 评论详情缓存键
+     */
+    detail: (commentId: string, version?: string): string => {
+      return this.generateCacheKey(CacheModule.COMMENT, CacheResource.DETAIL, commentId, version);
+    },
+    
+    /**
+     * 评论统计缓存键
+     */
+    count: (confessionId: string, version?: string): string => {
+      const id = `count:${confessionId}`;
+      return this.generateCacheKey(CacheModule.COMMENT, CacheResource.MAIN, id, version);
+    }
+  };
+
+  /**
    * 生成锁相关缓存键
    */
   public lock = {
@@ -325,6 +353,7 @@ export const {
   user,
   confession,
   chat,
+  comment,
   statistics,
   lock,
   getNullCacheKey,

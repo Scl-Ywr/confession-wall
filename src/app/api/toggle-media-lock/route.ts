@@ -21,7 +21,7 @@ export async function POST(req: NextRequest) {
     const authHeader = req.headers.get('authorization');
     
     // Initialize admin client once at the beginning
-    const supabaseAdmin = await createSupabaseAdminClient();
+    const supabaseAdmin = createSupabaseAdminClient();
     
     // Try to get session from header or cookie
     if (authHeader?.startsWith('Bearer ')) {
@@ -151,7 +151,7 @@ export async function PATCH(req: NextRequest) {
     }
     
     // Use admin client to get the image
-    const supabaseAdmin = await createSupabaseAdminClient();
+    const supabaseAdmin = createSupabaseAdminClient();
     
     // Get the image
     const { data: images, error: getImageError } = await supabaseAdmin

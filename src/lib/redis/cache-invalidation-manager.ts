@@ -380,6 +380,32 @@ export class CacheInvalidationManager {
   }
 
   /**
+   * 失效评论相关缓存
+   * @param confessionId 告白ID
+   * @param commentId 评论ID（可选）
+   */
+  public async invalidateCommentCache(confessionId: string, commentId?: string): Promise<void> {
+    console.log(`[Cache Invalidation] Invalidating comment cache for confessionId: ${confessionId}, commentId: ${commentId || 'all'}`);
+    
+    // 如果指定了评论ID，失效特定评论详情缓存
+    if (commentId) {
+      const detailKey = cacheKeyManager.comment.detail(commentId);
+      await this.invalidateCache(detailKey);
+    }
+    
+    // 失效该告白的所有评论列表缓存（所有页面和状态）
+    await this.invalidateResourceCaches(CacheModule.COMMENT, CacheResource.LIST);
+    
+    // 失效该告白的评论统计缓存
+    const countKey = cacheKeyManager.comment.count(confessionId);
+    await this.invalidateCache(countKey);
+    
+    // 同时失效告白详情缓存，因为它可能包含评论统计
+    const confessionDetailKey = cacheKeyManager.confession.detail(confessionId);
+    await this.invalidateCache(confessionDetailKey);
+  }
+
+  /**
    * 获取所有依赖关系
    */
   public getAllDependencies(): Map<string, CacheDependency> {
@@ -409,5 +435,6 @@ export const {
   clearAllCache,
   invalidateUserCache,
   invalidateConfessionCache,
-  invalidateChatCache
+  invalidateChatCache,
+  invalidateCommentCache
 } = cacheInvalidationManager;
