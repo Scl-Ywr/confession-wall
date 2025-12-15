@@ -1,27 +1,27 @@
-// 角色列表客户端组件，处理角色显示、搜索和管理
+// 用户角色关系列表客户端组件，显示所有用户对应的角色
 'use client';
 
 import { useState } from 'react';
 import Link from 'next/link';
 import { Search } from 'lucide-react';
-import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
-import { deleteRole } from '@/services/admin/adminService';
-import { showSuccess, showError } from '@/lib/notification';
 
-// 角色接口
-interface Role {
-  id: string;
-  name: string;
-  description: string;
-  created_at: string;
-  updated_at: string;
+// 用户角色关系接口
+interface UserRoleRelation {
+  userId: string;
+  userName: string;
+  userDisplayName: string;
+  userEmail: string;
+  isAdmin: boolean;
+  roleId: string;
+  roleName: string;
+  roleDescription: string;
+  assignedAt: string;
 }
 
-interface RolesListProps {
-  roles: Role[];
+interface UserRolesListProps {
+  userRoles: UserRoleRelation[];
   isLoading: boolean;
   error: string | null;
-  onRoleDeleted: () => void;
   total: number;
   currentPage: number;
   totalPages: number;
@@ -29,24 +29,18 @@ interface RolesListProps {
   onSearch: (search: string) => void;
 }
 
-export function RolesList({ 
-  roles, 
-  isLoading, 
-  error, 
-  onRoleDeleted, 
-  total, 
-  currentPage, 
-  totalPages, 
-  onPageChange, 
-  onSearch 
-}: RolesListProps) {
+export function UserRolesList({
+  userRoles,
+  isLoading,
+  error,
+  total,
+  currentPage,
+  totalPages,
+  onPageChange,
+  onSearch
+}: UserRolesListProps) {
   // 状态管理
   const [searchTerm, setSearchTerm] = useState('');
-  const [confirmDialog, setConfirmDialog] = useState({
-    isOpen: false,
-    roleId: '',
-    roleName: ''
-  });
 
   // 处理搜索
   const handleSearch = () => {
@@ -65,38 +59,6 @@ export function RolesList({
     }
   };
 
-  // 打开删除确认对话框
-  const handleDeleteClick = (roleId: string, roleName: string) => {
-    setConfirmDialog({
-      isOpen: true,
-      roleId,
-      roleName
-    });
-  };
-
-  // 确认删除角色
-  const confirmDelete = async () => {
-    try {
-      const result = await deleteRole(confirmDialog.roleId);
-      if (result.success) {
-        showSuccess('角色删除成功');
-        onRoleDeleted();
-      } else {
-        showError(result.error || '角色删除失败');
-      }
-    } catch (err) {
-      showError('角色删除失败');
-      console.error('删除角色失败:', err);
-    } finally {
-      setConfirmDialog(prev => ({ ...prev, isOpen: false }));
-    }
-  };
-
-  // 取消删除
-  const cancelDelete = () => {
-    setConfirmDialog(prev => ({ ...prev, isOpen: false }));
-  };
-
   return (
     <div className="space-y-6">
       {/* 搜索栏 */}
@@ -105,7 +67,7 @@ export function RolesList({
           <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 dark:text-gray-500" size={18} />
           <input
             type="text"
-            placeholder="搜索角色..."
+            placeholder="搜索用户或角色..."
             className="w-full pl-10 pr-3 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white rounded-md focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
             value={searchTerm}
             onChange={handleInputChange}
@@ -119,12 +81,6 @@ export function RolesList({
           >
             搜索
           </button>
-          {/* 创建角色按钮 */}
-          <Link href="/admin/roles/create">
-            <button className="px-6 py-3 bg-primary-600 hover:bg-primary-700 text-black dark:text-white font-black rounded-xl shadow-lg hover:shadow-xl hover:-translate-y-0.5 transition-all duration-300 transform hover:scale-105 focus:outline-none focus:ring-2 focus:ring-primary-400 focus:ring-offset-2 text-base">
-              创建角色
-            </button>
-          </Link>
         </div>
       </div>
 
@@ -135,37 +91,35 @@ export function RolesList({
         </div>
       )}
 
-      {/* 角色列表 */}
+      {/* 用户角色关系列表 */}
       {isLoading ? (
         <div className="flex justify-center items-center py-12">
           <div className="text-gray-500">加载中...</div>
         </div>
-      ) : roles.length === 0 ? (
+      ) : userRoles.length === 0 ? (
         <div className="flex flex-col items-center justify-center py-12 text-center">
-          <div className="text-gray-500 mb-4">暂无角色数据</div>
-          <div className="text-gray-400 mb-6">创建您的第一个角色来开始权限管理</div>
-          <Link href="/admin/roles/create">
-            <button className="px-6 py-3 bg-primary-600 hover:bg-primary-700 text-black dark:text-white font-black rounded-xl shadow-lg hover:shadow-xl hover:-translate-y-0.5 transition-all duration-300 transform hover:scale-105 focus:outline-none focus:ring-2 focus:ring-primary-400 focus:ring-offset-2 text-base">
-              创建角色
-            </button>
-          </Link>
+          <div className="text-gray-500 mb-4">暂无用户角色关系数据</div>
+          <div className="text-gray-400 mb-6">当用户被分配角色时，相关数据将显示在这里</div>
         </div>
       ) : (
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[600px] border-collapse">
+          <table className="w-full min-w-[800px] border-collapse">
             <thead>
               <tr className="bg-gray-100 dark:bg-gray-800">
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
+                  用户名称
+                </th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
+                  用户邮箱
+                </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
                   角色名称
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
-                  描述
+                  角色描述
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
-                  创建时间
-                </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
-                  更新时间
+                  分配时间
                 </th>
                 <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
                   操作
@@ -173,42 +127,49 @@ export function RolesList({
               </tr>
             </thead>
             <tbody className="bg-white dark:bg-gray-900">
-              {roles.map((role) => (
-                <tr 
-                  key={role.id} 
+              {userRoles.map((relation) => (
+                <tr
+                  key={`${relation.userId}-${relation.roleId}`}
                   className="border-b dark:border-gray-800 hover:bg-gray-50 dark:hover:bg-gray-800/50 transition-colors"
                 >
+                  <td className="px-6 py-4 whitespace-nowrap">
+                    <div className="font-medium text-gray-900 dark:text-white">
+                      {relation.userDisplayName}
+                      {relation.isAdmin && (
+                        <span className="ml-2 px-2 py-0.5 bg-yellow-100 dark:bg-yellow-900/30 text-yellow-800 dark:text-yellow-300 text-xs font-medium rounded-full">
+                          管理员
+                        </span>
+                      )}
+                    </div>
+                    <div className="text-sm text-gray-500 dark:text-gray-400">
+                      {relation.userName}
+                    </div>
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">
+                    {relation.userEmail}
+                  </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900 dark:text-white">
-                    {role.name}
+                    {relation.roleName}
+                  </td>
+                  <td className="px-6 py-4 text-sm text-gray-500 dark:text-gray-400">
+                    {relation.roleDescription || '-'} 
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">
-                    {role.description || '-'}
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">
-                    {new Date(role.created_at).toLocaleString()}
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">
-                    {new Date(role.updated_at).toLocaleString()}
+                    {new Date(relation.assignedAt).toLocaleString()}
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-right space-x-2">
-                    <Link 
-                      href={`/admin/roles/${role.id}/permissions`} 
+                    <Link
+                      href={`/admin/users/${relation.userId}/roles`}
                       className="text-blue-600 hover:text-blue-900 dark:text-blue-400 dark:hover:text-blue-300 mr-3"
                     >
-                      权限
+                      管理角色
                     </Link>
-                    <Link 
-                      href={`/admin/roles/${role.id}/edit`} 
-                      className="text-yellow-600 hover:text-yellow-900 dark:text-yellow-400 dark:hover:text-yellow-300 mr-3"
+                    <Link
+                      href={`/admin/roles/${relation.roleId}/permissions`}
+                      className="text-purple-600 hover:text-purple-900 dark:text-purple-400 dark:hover:text-purple-300"
                     >
-                      编辑
+                      查看权限
                     </Link>
-                    <button
-                      onClick={() => handleDeleteClick(role.id, role.name)}
-                      className="text-red-600 hover:text-red-900 dark:text-red-400 dark:hover:text-red-300"
-                    >
-                      删除
-                    </button>
                   </td>
                 </tr>
               ))}
@@ -244,15 +205,6 @@ export function RolesList({
           </div>
         </div>
       )}
-
-      {/* 删除确认对话框 */}
-      <ConfirmDialog
-        isOpen={confirmDialog.isOpen}
-        title="确认删除角色"
-        message={`您确定要删除角色 "${confirmDialog.roleName}" 吗？此操作不可恢复。`}
-        onConfirm={confirmDelete}
-        onClose={cancelDelete}
-      />
     </div>
   );
 }

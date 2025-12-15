@@ -97,6 +97,27 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: '更新管理员失败' }, { status: 500 });
     }
     
+    // 为管理员分配超级管理员角色
+    // 先检查是否已经有角色
+    const { data: existingRoles } = await supabase
+      .from('user_roles')
+      .select('*')
+      .eq('user_id', userId);
+    
+    if (!existingRoles || existingRoles.length === 0) {
+      // 分配超级管理员角色
+      try {
+        await supabase
+          .from('user_roles')
+          .insert({
+            user_id: userId,
+            role_id: 'role_super_admin'
+          });
+      } catch (err) {
+        console.error('Error assigning super admin role:', (err as Error).message);
+      }
+    }
+    
     return NextResponse.json({ message: '管理员注册成功' });
   } catch (error) {
     console.error('管理员注册错误:', error);

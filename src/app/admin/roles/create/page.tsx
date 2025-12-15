@@ -158,7 +158,7 @@ export default function CreateRolePage() {
               <button
                 type="submit"
                 disabled={isSubmitting}
-                className={`px-4 py-2 font-medium rounded-md transition-colors ${isSubmitting ? 'bg-primary-500 text-white cursor-not-allowed opacity-70' : 'bg-primary-600 text-white hover:bg-primary-700'}`}
+                className={`px-6 py-3 font-black rounded-xl transition-all duration-300 focus:outline-none focus:ring-2 focus:ring-primary-400 focus:ring-offset-2 text-base ${isSubmitting ? 'bg-primary-500 text-black dark:text-white cursor-not-allowed opacity-90 shadow-sm' : 'bg-primary-600 hover:bg-primary-700 text-black dark:text-white shadow-lg hover:shadow-xl hover:-translate-y-0.5 transform hover:scale-105'}`}
               >
                 {isSubmitting ? '创建中...' : '创建角色'}
               </button>
@@ -166,7 +166,7 @@ export default function CreateRolePage() {
                 type="button"
                 onClick={() => router.push('/admin/roles')}
                 disabled={isSubmitting}
-                className={`px-4 py-2 font-medium border rounded-md transition-colors ${isSubmitting ? 'bg-gray-100 text-gray-400 border-gray-200 cursor-not-allowed' : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'}`}
+                className={`px-6 py-3 font-bold rounded-xl transition-all duration-300 ${isSubmitting ? 'bg-gray-100 text-gray-400 border-gray-200 cursor-not-allowed opacity-70' : 'bg-white text-gray-800 border-gray-300 hover:bg-gray-50 shadow-sm hover:shadow-md'}`}
               >
                 取消
               </button>

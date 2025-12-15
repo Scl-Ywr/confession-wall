@@ -142,6 +142,12 @@ export function UsersList({ users, onUserDeleted }: UsersListProps) {
                     >
                       编辑
                     </Link>
+                    <Link
+                      href={`/admin/users/${user.id}/roles`}
+                      className="text-purple-600 hover:text-purple-900 dark:text-purple-400 dark:hover:text-purple-300"
+                    >
+                      角色
+                    </Link>
                     <button
                       onClick={() => handleDeleteClick(user.id)}
                       className="text-red-600 hover:text-red-900 dark:text-red-400 dark:hover:text-red-300"

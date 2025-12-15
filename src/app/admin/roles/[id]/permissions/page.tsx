@@ -1,11 +1,11 @@
 // 角色权限管理页面
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useParams } from 'next/navigation';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/Card';
-import { getRoleById, getPermissions, getRolePermissions, assignPermissionsToRole } from '@/services/admin/adminService';
-import { showSuccess, showError } from '@/lib/notification';
+import { getRoleById, getPermissions, getRolePermissions, assignPermissionsToRole, detectPermissionConflicts } from '@/services/admin/adminService';
+import { showSuccess, showError, showWarning } from '@/lib/notification';
 import { Role, Permission } from '@/services/admin/adminService';
 
 export default function RolePermissionsPage() {
@@ -20,6 +20,8 @@ export default function RolePermissionsPage() {
   const [isSaving, setIsSaving] = useState(false);
   const [isDirty, setIsDirty] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [permissionConflicts, setPermissionConflicts] = useState<Array<{ permission_id: string; conflict_type: string; message: string }>>([]);
+  const [showConflictWarning, setShowConflictWarning] = useState(false);
 
   // 加载数据
   useEffect(() => {
@@ -78,14 +80,56 @@ export default function RolePermissionsPage() {
     setIsDirty(true);
   };
 
+  // 检测权限冲突
+  const checkPermissions = useCallback(async () => {
+    if (selectedPermissions.length === 0) {
+      setPermissionConflicts([]);
+      setShowConflictWarning(false);
+      return;
+    }
+
+    try {
+      const conflicts = await detectPermissionConflicts(roleId, selectedPermissions);
+      setPermissionConflicts(conflicts);
+      setShowConflictWarning(conflicts.length > 0);
+      
+      if (conflicts.length > 0) {
+        showWarning(`检测到 ${conflicts.length} 个权限冲突`);
+      }
+    } catch (err) {
+      console.error('检测权限冲突失败:', err);
+      setPermissionConflicts([]);
+      setShowConflictWarning(false);
+    }
+  }, [roleId, selectedPermissions]);
+
+  // 当选中的权限变化时，检测冲突
+  useEffect(() => {
+    if (isDirty) {
+      checkPermissions();
+    }
+  }, [selectedPermissions, isDirty, checkPermissions]);
+
   // 保存权限分配
   const handleSave = async () => {
     setIsSaving(true);
     try {
+      // 先检测权限冲突
+      const conflicts = await detectPermissionConflicts(roleId, selectedPermissions);
+      
+      if (conflicts.length > 0) {
+        // 显示冲突警告，但仍允许保存
+        setPermissionConflicts(conflicts);
+        setShowConflictWarning(true);
+        showWarning(`检测到 ${conflicts.length} 个权限冲突，但仍将继续保存`);
+      }
+
+      // 保存权限分配
       const result = await assignPermissionsToRole(roleId, selectedPermissions);
       if (result.success) {
         showSuccess('权限分配保存成功');
         setIsDirty(false);
+        setShowConflictWarning(false);
       } else {
         showError(result.error || '保存失败');
       }
@@ -138,6 +182,33 @@ export default function RolePermissionsPage() {
         </CardContent>
       </Card>
 
+      {/* 权限冲突警告 */}
+      {showConflictWarning && permissionConflicts.length > 0 && (
+        <Card className="bg-yellow-50 dark:bg-yellow-900/20 border-yellow-200 dark:border-yellow-800">
+          <CardHeader>
+            <CardTitle className="text-xl text-yellow-800 dark:text-yellow-300">权限冲突警告</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <ul className="space-y-2 text-yellow-700 dark:text-yellow-300">
+              {permissionConflicts.map((conflict, index) => {
+                const conflictPermission = permissions.find(p => p.id === conflict.permission_id);
+                return (
+                  <li key={index} className="flex items-start">
+                    <span className="font-medium mr-2">⚠️</span>
+                    <span>
+                      <strong>{conflictPermission?.name || conflict.permission_id}</strong>: {conflict.message}
+                    </span>
+                  </li>
+                );
+              })}
+            </ul>
+            <div className="mt-4 text-sm text-yellow-600 dark:text-yellow-400">
+              提示：这些冲突不会阻止保存，但建议您检查并调整权限分配。
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
       {/* 权限分配 */}
       <Card>
         <CardHeader className="flex items-center justify-between">
@@ -145,7 +216,11 @@ export default function RolePermissionsPage() {
           <button
             onClick={handleSave}
             disabled={!isDirty || isSaving}
-            className={`px-4 py-2 font-medium rounded-md transition-colors ${(!isDirty || isSaving) ? 'bg-primary-500 text-white cursor-not-allowed opacity-70' : 'bg-primary-600 text-white hover:bg-primary-700'}`}
+            className={`px-6 py-3 font-black rounded-xl transition-all duration-300 focus:outline-none focus:ring-2 focus:ring-primary-400 focus:ring-offset-2 text-base ${(
+              (!isDirty || isSaving)
+                ? 'bg-primary-500 text-black dark:text-white cursor-not-allowed opacity-90 shadow-sm'
+                : 'bg-primary-600 hover:bg-primary-700 text-black dark:text-white shadow-lg hover:shadow-xl hover:-translate-y-0.5 transform hover:scale-105'
+            )}`}
           >
             {isSaving ? '保存中...' : '保存权限'}
           </button>
@@ -175,29 +250,46 @@ export default function RolePermissionsPage() {
 
               {/* 权限列表 */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
-                {permissions.map((permission) => (
-                  <div key={permission.id} className="flex items-center space-x-2">
-                    <input
-                      type="checkbox"
-                      id={`permission-${permission.id}`}
-                      checked={selectedPermissions.includes(permission.id)}
-                      onChange={(e) => handlePermissionChange(permission.id, e.target.checked)}
-                      disabled={isSaving}
-                      className="h-4 w-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500 transition-colors cursor-pointer"
-                    />
-                    <label
-                      htmlFor={`permission-${permission.id}`}
-                      className="text-sm font-medium text-gray-700 dark:text-gray-300 cursor-pointer"
+                {permissions.map((permission) => {
+                  // 检查该权限是否有冲突
+                  const hasConflict = permissionConflicts.some(
+                    conflict => conflict.permission_id === permission.id
+                  );
+                  
+                  return (
+                    <div 
+                      key={permission.id} 
+                      className={`flex items-center space-x-2 ${
+                        hasConflict ? 'bg-yellow-50 dark:bg-yellow-900/20 p-2 rounded-md' : ''
+                      }`}
                     >
-                      {permission.name}
-                    </label>
-                    {permission.description && (
-                      <span className="text-xs text-gray-500 dark:text-gray-400 ml-2">
-                        ({permission.description})
-                      </span>
-                    )}
-                  </div>
-                ))}
+                      <input
+                        type="checkbox"
+                        id={`permission-${permission.id}`}
+                        checked={selectedPermissions.includes(permission.id)}
+                        onChange={(e) => handlePermissionChange(permission.id, e.target.checked)}
+                        disabled={isSaving}
+                        className="h-4 w-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500 transition-colors cursor-pointer"
+                      />
+                      <label
+                        htmlFor={`permission-${permission.id}`}
+                        className="text-sm font-medium text-gray-700 dark:text-gray-300 cursor-pointer"
+                      >
+                        {permission.name}
+                      </label>
+                      {permission.description && (
+                        <span className="text-xs text-gray-500 dark:text-gray-400 ml-2">
+                          ({permission.description})
+                        </span>
+                      )}
+                      {hasConflict && (
+                        <span className="ml-2 text-xs text-yellow-600 dark:text-yellow-400">
+                          ⚠️ 冲突
+                        </span>
+                      )}
+                    </div>
+                  );
+                })}
               </div>
             </div>
           )}

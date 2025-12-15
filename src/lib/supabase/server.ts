@@ -73,22 +73,10 @@ export async function createSupabaseServerClient(request?: Request) {
 
           return currentCookies;
         },
-        setAll: (cookiesToSet: Array<{ name: string; value: string; options?: Record<string, unknown> }>) => {
+        setAll: () => {
           // 在服务器组件中，我们不能设置cookies，只能在Server Actions或Route Handlers中设置
-          // 因此我们需要跳过这里的cookie设置
-          try {
-            // 检查是否在允许设置cookies的环境中
-            // 在Next.js 16中，cookies().set()只能在Server Actions或Route Handlers中调用
-            // 在服务器组件中调用会抛出错误
-            cookiesToSet.forEach(({ name, value, options }) => {
-              // 直接使用原始options，不要添加额外的默认值，避免类型错误
-              // Supabase会提供正确的cookie选项
-              cookieStore.set(name, value, options as Record<string, unknown>);
-            });
-          } catch (error) {
-            // 如果在不允许设置cookies的环境中，忽略错误
-            console.debug('Skipping cookie setting in server component:', error);
-          }
+          // 因此我们需要跳过这里的cookie设置，避免在服务器组件中抛出错误
+          // 不使用console.debug以避免source map解析问题
         },
       },
     }

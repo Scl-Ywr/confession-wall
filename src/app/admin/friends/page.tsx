@@ -7,12 +7,20 @@ import { getFriendships, deleteFriendship } from '@/services/admin/adminService'
 import { toast } from 'react-hot-toast';
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
 
+interface User {
+  id: string;
+  username: string;
+  display_name: string | null;
+}
+
 interface Friendship {
   id: string;
   user_id: string;
   friend_id: string;
   created_at: string;
   updated_at: string;
+  user: User | null;
+  friend: User | null;
 }
 
 interface FriendshipsData {
@@ -51,8 +59,9 @@ export default function FriendsPage() {
         userId: searchParams.userId
       });
       
+      // 使用类型断言确保数据结构正确
       setFriendshipsData({
-        friendships,
+        friendships: friendships as Friendship[],
         total,
         page: currentPage,
         pageSize,
@@ -174,10 +183,10 @@ export default function FriendsPage() {
                         ID
                       </th>
                       <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
-                        用户ID
+                        用户
                       </th>
                       <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
-                        好友ID
+                        好友
                       </th>
                       <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
                         创建时间
@@ -197,10 +206,24 @@ export default function FriendsPage() {
                           {friendship.id.substring(0, 8)}...
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">
-                          {friendship.user_id.substring(0, 8)}...
+                          <div>
+                            <span className="font-medium">{friendship.user?.username || '未知用户'}</span>
+                            {friendship.user?.display_name && (
+                              <span className="ml-2 text-gray-400 dark:text-gray-500">({friendship.user.display_name})</span>
+                            )}
+                            <br />
+                            <span className="text-xs text-gray-400 dark:text-gray-500">{friendship.user_id.substring(0, 8)}...</span>
+                          </div>
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">
-                          {friendship.friend_id.substring(0, 8)}...
+                          <div>
+                            <span className="font-medium">{friendship.friend?.username || '未知用户'}</span>
+                            {friendship.friend?.display_name && (
+                              <span className="ml-2 text-gray-400 dark:text-gray-500">({friendship.friend.display_name})</span>
+                            )}
+                            <br />
+                            <span className="text-xs text-gray-400 dark:text-gray-500">{friendship.friend_id.substring(0, 8)}...</span>
+                          </div>
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">
                           {new Date(friendship.created_at).toLocaleString()}

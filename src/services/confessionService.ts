@@ -56,9 +56,9 @@ export const confessionService = {
       const confessionIds = confessions.map(confession => confession.id);
       
       // 7. 并行执行多个查询，减少整体加载时间，但每个查询都有独立的错误处理
-      let images: { data: any[] | null; error: any | null } = { data: [], error: null };
-      let profiles: { data: any[] | null; error: any | null } = { data: [], error: null };
-      let userLikes: { data: any[] | null; error: any | null } = { data: [], error: null };
+      let imagesData: { id: string; confession_id: string; image_url: string; file_type: string; is_locked: boolean; lock_type: 'password' | 'user' | 'public' }[] = [];
+      let profilesData: { id: string; username: string; display_name: string; avatar_url: string | null }[] = [];
+      let likesData: { id: string; confession_id: string }[] = [];
 
       // 使用Promise.allSettled替代Promise.all，确保一个查询失败不会影响其他查询
       const [imagesResult, profilesResult, userLikesResult] = await Promise.allSettled([
@@ -82,12 +82,10 @@ export const confessionService = {
           // 去重处理
           const uniqueUserIds = [...new Set(userIds)];
           
-          const profilesResult = await supabase
+          return await supabase
             .from('profiles')
             .select('id, username, display_name, avatar_url')
             .in('id', uniqueUserIds);
-          
-          return profilesResult;
         })(),
         
         // 检查当前用户是否点赞了这些表白
@@ -97,52 +95,50 @@ export const confessionService = {
           }
           
           // 只获取当前页表白的点赞记录，减少数据传输
-          const likesResult = await supabase
+          return await supabase
             .from('likes')
             .select('id, confession_id')
             .eq('user_id', userId)
             .in('confession_id', confessionIds);
-          
-          return likesResult;
         })()
       ]);
 
       // 处理每个查询的结果
       if (imagesResult.status === 'fulfilled') {
-        images = imagesResult.value;
-        if (images.error) {
-          console.error('Error fetching images:', images.error);
-          images.data = [];
+        const result = imagesResult.value;
+        if (!result.error) {
+          imagesData = result.data || [];
+        } else {
+          console.error('Error fetching images:', result.error);
         }
       } else {
         console.error('Error fetching images:', imagesResult.reason);
-        images.data = [];
       }
 
       if (profilesResult.status === 'fulfilled') {
-        profiles = profilesResult.value;
-        if (profiles.error) {
-          console.error('Error fetching profiles:', profiles.error);
-          profiles.data = [];
+        const result = profilesResult.value;
+        if (!result.error) {
+          profilesData = result.data || [];
+        } else {
+          console.error('Error fetching profiles:', result.error);
         }
       } else {
         console.error('Error fetching profiles:', profilesResult.reason);
-        profiles.data = [];
       }
 
       if (userLikesResult.status === 'fulfilled') {
-        userLikes = userLikesResult.value;
-        if (userLikes.error) {
-          console.error('Error fetching user likes:', userLikes.error);
-          userLikes.data = [];
+        const result = userLikesResult.value;
+        if (!result.error) {
+          likesData = result.data || [];
+        } else {
+          console.error('Error fetching user likes:', result.error);
         }
       } else {
         console.error('Error fetching user likes:', userLikesResult.reason);
-        userLikes.data = [];
       }
 
       // 8. 将图片分组到对应的表白
-      const imagesByConfessionId = (images.data || []).reduce((acc: Record<string, Array<{id: string; image_url: string; file_type: string; is_locked: boolean; lock_type: 'password' | 'user' | 'public'}>>, image: { id: string; confession_id: string; image_url: string; file_type: string; is_locked: boolean; lock_type: 'password' | 'user' | 'public' }) => {
+      const imagesByConfessionId = imagesData.reduce((acc: Record<string, Array<{id: string; image_url: string; file_type: string; is_locked: boolean; lock_type: 'password' | 'user' | 'public'}>>, image) => {
         if (!acc[image.confession_id]) {
           acc[image.confession_id] = [];
         }
@@ -158,15 +154,18 @@ export const confessionService = {
 
       // 9. 将profile按user_id分组
       const profilesMap: Record<string, {id: string; username: string; display_name: string; avatar_url: string | null}> = {};
-      profiles.data?.forEach(profile => {
-        profilesMap[profile.id] = profile;
+      profilesData.forEach(profile => {
+        profilesMap[profile.id] = {
+          ...profile,
+          avatar_url: profile.avatar_url || null
+        };
       });
 
       // 10. 构建点赞映射
       const likesMap: Record<string, boolean> = {};
       
-      if (userLikes.data && userLikes.data.length > 0) {
-        userLikes.data.forEach(like => {
+      if (likesData.length > 0) {
+        likesData.forEach(like => {
           if (like.confession_id) {
             likesMap[like.confession_id] = true;
           }

@@ -225,7 +225,7 @@ export async function getRoleById(roleId: string) {
 export async function createRole(roleData: {
   name: string;
   description: string;
-}) {
+}, userId?: string, ipAddress?: string, userAgent?: string) {
   try {
     const { data } = await supabase
       .from('roles')
@@ -233,6 +233,19 @@ export async function createRole(roleData: {
       .select('*')
       .single()
       .throwOnError();
+
+    if (data && userId) {
+      // 记录创建角色日志
+      await logAction(
+        userId,
+        'create_role',
+        'role',
+        data.id,
+        { newData: data },
+        ipAddress,
+        userAgent
+      );
+    }
 
     return data || null;
   } catch (error) {
@@ -248,8 +261,11 @@ export async function createRole(roleData: {
 export async function updateRole(roleId: string, roleData: {
   name: string;
   description: string;
-}) {
+}, userId?: string, ipAddress?: string, userAgent?: string) {
   try {
+    // 先获取角色的旧数据
+    const oldData = await getRoleById(roleId);
+    
     const { data } = await supabase
       .from('roles')
       .update(roleData)
@@ -257,6 +273,19 @@ export async function updateRole(roleId: string, roleData: {
       .select('*')
       .single()
       .throwOnError();
+
+    if (data && userId && oldData) {
+      // 记录更新角色日志
+      await logAction(
+        userId,
+        'update_role',
+        'role',
+        roleId,
+        { oldData, newData: data },
+        ipAddress,
+        userAgent
+      );
+    }
 
     return data || null;
   } catch (error) {
@@ -269,13 +298,29 @@ export async function updateRole(roleId: string, roleData: {
 }
 
 // 删除角色
-export async function deleteRole(roleId: string) {
+export async function deleteRole(roleId: string, userId?: string, ipAddress?: string, userAgent?: string) {
   try {
+    // 先获取角色的旧数据
+    const oldData = await getRoleById(roleId);
+    
     await supabase
       .from('roles')
       .delete()
       .eq('id', roleId)
       .throwOnError();
+
+    if (userId && oldData) {
+      // 记录删除角色日志
+      await logAction(
+        userId,
+        'delete_role',
+        'role',
+        roleId,
+        { oldData },
+        ipAddress,
+        userAgent
+      );
+    }
 
     return { success: true };
   } catch (error) {
@@ -327,8 +372,11 @@ export async function getRolePermissions(roleId: string) {
 }
 
 // 为角色分配权限
-export async function assignPermissionsToRole(roleId: string, permissionIds: string[]) {
+export async function assignPermissionsToRole(roleId: string, permissionIds: string[], userId?: string, ipAddress?: string, userAgent?: string) {
   try {
+    // 先获取角色的旧权限
+    const oldPermissions = await getRolePermissions(roleId);
+    
     // 首先删除角色现有的所有权限
     await supabase
       .from('role_permissions')
@@ -347,6 +395,19 @@ export async function assignPermissionsToRole(roleId: string, permissionIds: str
         .from('role_permissions')
         .insert(rolePermissions)
         .throwOnError();
+    }
+
+    if (userId) {
+      // 记录权限分配日志
+      await logAction(
+        userId,
+        'assign_permissions_to_role',
+        'role_permission',
+        roleId,
+        { oldPermissions, newPermissions: permissionIds },
+        ipAddress,
+        userAgent
+      );
     }
 
     return { success: true };
@@ -422,6 +483,107 @@ export async function removeRoleFromUser(userId: string, roleId: string) {
   }
 }
 
+// 为用户批量分配角色
+export async function assignRolesToUser(userId: string, roleIds: string[], operatorId?: string, ipAddress?: string, userAgent?: string) {
+  try {
+    // 先获取用户的旧角色
+    const oldRoles = await getUserRoles(userId);
+    
+    // 使用事务确保原子性操作
+    // 1. 删除用户现有的所有角色
+    await supabase
+      .from('user_roles')
+      .delete()
+      .eq('user_id', userId)
+      .throwOnError();
+
+    // 2. 添加新的角色分配
+    if (roleIds.length > 0) {
+      const userRoles = roleIds.map(roleId => ({
+        user_id: userId,
+        role_id: roleId
+      }));
+
+      await supabase
+        .from('user_roles')
+        .insert(userRoles)
+        .throwOnError();
+    }
+
+    if (operatorId) {
+      // 记录用户角色分配日志
+      await logAction(
+        operatorId,
+        'assign_roles_to_user',
+        'user_role',
+        userId,
+        { oldRoles, newRoles: roleIds },
+        ipAddress,
+        userAgent
+      );
+    }
+
+    return { success: true };
+  } catch (error) {
+    console.error('为用户分配角色失败:', error);
+    if (error instanceof Error) {
+      console.error('错误详情:', error.message, error.stack);
+      return { success: false, error: error.message };
+    }
+    return { success: false, error: '未知错误' };
+  }
+}
+
+// 获取用户的所有权限（通过角色继承）
+export async function getUserPermissions(userId: string) {
+  try {
+    // 1. 获取用户的所有角色
+    const { data: userRoles, error: userRolesError } = await supabase
+      .from('user_roles')
+      .select('role_id')
+      .eq('user_id', userId);
+
+    if (userRolesError) {
+      throw userRolesError;
+    }
+
+    if (!userRoles || userRoles.length === 0) {
+      return [];
+    }
+
+    // 2. 获取这些角色对应的所有权限
+    const roleIds = userRoles.map(ur => ur.role_id);
+    const { data: rolePermissions, error: rolePermissionsError } = await supabase
+      .from('role_permissions')
+      .select('permission_id')
+      .in('role_id', roleIds);
+
+    if (rolePermissionsError) {
+      throw rolePermissionsError;
+    }
+
+    if (!rolePermissions || rolePermissions.length === 0) {
+      return [];
+    }
+
+    // 3. 去重并获取权限详情
+    const permissionIds = [...new Set(rolePermissions.map(rp => rp.permission_id))];
+    const { data: permissions, error: permissionsError } = await supabase
+      .from('permissions')
+      .select('id, name, description')
+      .in('id', permissionIds);
+
+    if (permissionsError) {
+      throw permissionsError;
+    }
+
+    return permissions || [];
+  } catch (error) {
+    console.error('获取用户权限失败:', error);
+    return [];
+  }
+}
+
 // 检查用户是否有特定权限
 export async function checkUserPermission(userId: string, permissionName: string) {
   try {
@@ -437,12 +599,8 @@ export async function checkUserPermission(userId: string, permissionName: string
       return false;
     }
 
-    // 获取拥有该权限的所有角色ID
-    const { data: rolePermissions } = await supabase
-      .from('role_permissions')
-      .select('role_id')
-      .eq('permission_id', permissionData.id)
-      .throwOnError();
+    // 获取拥有该权限的所有角色ID（包括继承权限）
+    const rolePermissions = await getRolesWithPermission(permissionData.id);
 
     if (!rolePermissions || rolePermissions.length === 0) {
       return false;
@@ -466,6 +624,109 @@ export async function checkUserPermission(userId: string, permissionName: string
       console.error('错误详情:', error.message, error.stack);
     }
     return false;
+  }
+}
+
+// 获取拥有特定权限的所有角色ID，包括通过继承获得的权限
+async function getRolesWithPermission(permissionId: string): Promise<Array<{ role_id: string }>> {
+  // 直接拥有该权限的角色
+  const { data: directRolePermissions } = await supabase
+    .from('role_permissions')
+    .select('role_id')
+    .eq('permission_id', permissionId)
+    .throwOnError();
+
+  // 获取所有继承关系
+  const { data: roleInheritances } = await supabase
+    .from('role_inheritances')
+    .select('child_role_id, parent_role_id')
+    .throwOnError();
+
+  if (!roleInheritances || roleInheritances.length === 0) {
+    return directRolePermissions || [];
+  }
+
+  // 构建继承关系图
+  const inheritanceMap = new Map<string, string[]>();
+  roleInheritances.forEach(inheritance => {
+    if (!inheritanceMap.has(inheritance.parent_role_id)) {
+      inheritanceMap.set(inheritance.parent_role_id, []);
+    }
+    inheritanceMap.get(inheritance.parent_role_id)?.push(inheritance.child_role_id);
+  });
+
+  // 获取所有继承了直接拥有权限角色的子角色
+  const directRoleIds = new Set((directRolePermissions || []).map(item => item.role_id));
+  const inheritedRoleIds = new Set<string>();
+
+  // 递归查找所有继承的角色
+  function findInheritedRoles(roleId: string) {
+    const children = inheritanceMap.get(roleId);
+    if (children) {
+      children.forEach(childRoleId => {
+        if (!inheritedRoleIds.has(childRoleId)) {
+          inheritedRoleIds.add(childRoleId);
+          findInheritedRoles(childRoleId);
+        }
+      });
+    }
+  }
+
+  // 对每个直接拥有权限的角色，查找其所有继承角色
+  directRoleIds.forEach(roleId => {
+    findInheritedRoles(roleId);
+  });
+
+  // 合并直接角色和继承角色
+  const allRoleIds = new Set([...directRoleIds, ...inheritedRoleIds]);
+  return Array.from(allRoleIds).map(role_id => ({ role_id }));
+}
+
+// 检测权限冲突
+export async function detectPermissionConflicts(roleId: string, permissionIds: string[]): Promise<Array<{ permission_id: string; conflict_type: string; message: string }>> {
+  const conflicts: Array<{ permission_id: string; conflict_type: string; message: string }> = [];
+
+  try {
+    // 获取当前角色的所有继承关系
+    const { data: roleInheritances } = await supabase
+      .from('role_inheritances')
+      .select('parent_role_id')
+      .eq('child_role_id', roleId)
+      .throwOnError();
+
+    if (roleInheritances && roleInheritances.length > 0) {
+      // 获取所有父角色ID
+      const parentRoleIds = roleInheritances.map(inheritance => inheritance.parent_role_id);
+      
+      // 获取所有父角色拥有的权限
+      const { data: parentPermissions } = await supabase
+        .from('role_permissions')
+        .select('permission_id')
+        .in('role_id', parentRoleIds)
+        .throwOnError();
+
+      // 检查是否有重复分配的权限（已通过继承获得）
+      if (parentPermissions && parentPermissions.length > 0) {
+        const parentPermissionIds = new Set(parentPermissions.map(item => item.permission_id));
+        permissionIds.forEach(permissionId => {
+          if (parentPermissionIds.has(permissionId)) {
+            conflicts.push({
+              permission_id: permissionId,
+              conflict_type: 'duplicate',
+              message: '该权限已通过继承获得，无需重复分配'
+            });
+          }
+        });
+      }
+    }
+
+    return conflicts;
+  } catch (error) {
+    console.error('检测权限冲突失败:', error);
+    if (error instanceof Error) {
+      console.error('错误详情:', error.message, error.stack);
+    }
+    return conflicts;
   }
 }
 
@@ -1703,11 +1964,26 @@ export async function getFriendships(params: {
   page?: number;
   pageSize?: number;
   userId?: string;
-}) {
+}): Promise<{
+  friendships: Array<{
+    id: string;
+    user_id: string;
+    friend_id: string;
+    created_at: string;
+    updated_at: string;
+    user: { id: string; username: string; display_name: string | null } | null;
+    friend: { id: string; username: string; display_name: string | null } | null;
+  }>;
+  total: number;
+  page: number;
+  pageSize: number;
+  totalPages: number;
+}> {
   const { page = 1, pageSize = 10, userId } = params;
   const offset = (page - 1) * pageSize;
 
   try {
+    // 步骤1: 获取好友关系列表
     let query = supabase
       .from('friendships')
       .select('*', { count: 'exact' })
@@ -1719,10 +1995,55 @@ export async function getFriendships(params: {
       query = query.eq('user_id', userId);
     }
 
-    const { data, count } = await query;
+    const { data: friendshipsData, count } = await query;
+    
+    if (!friendshipsData || friendshipsData.length === 0) {
+      return {
+        friendships: [],
+        total: count || 0,
+        page,
+        pageSize,
+        totalPages: Math.ceil((count || 0) / pageSize)
+      };
+    }
+
+    // 步骤2: 收集所有相关的用户ID
+    const userIds = new Set<string>();
+    friendshipsData.forEach(friendship => {
+      userIds.add(friendship.user_id);
+      userIds.add(friendship.friend_id);
+    });
+
+    // 步骤3: 获取所有相关用户的信息
+    const { data: profilesData } = await supabase
+      .from('profiles')
+      .select('id, username, display_name')
+      .in('id', Array.from(userIds))
+      .throwOnError();
+
+    // 步骤4: 将用户信息转换为Map，方便查询
+    const profilesMap = new Map<string, { id: string; username: string; display_name: string | null }>();
+    (profilesData || []).forEach(profile => {
+      profilesMap.set(profile.id, {
+        id: profile.id,
+        username: profile.username,
+        display_name: profile.display_name
+      });
+    });
+
+    // 步骤5: 关联用户信息到好友关系
+    const friendships = friendshipsData.map(friendship => ({
+      id: friendship.id,
+      user_id: friendship.user_id,
+      friend_id: friendship.friend_id,
+      created_at: friendship.created_at,
+      updated_at: friendship.updated_at,
+      user: profilesMap.get(friendship.user_id) || null,
+      friend: profilesMap.get(friendship.friend_id) || null
+    }));
 
     return {
-      friendships: data || [],
+      friendships,
       total: count || 0,
       page,
       pageSize,
