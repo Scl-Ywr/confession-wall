@@ -6,7 +6,7 @@
 
 import { CacheModule, CacheResource } from './cache-key-naming';
 import { cacheKeyManager } from './cache-key-manager';
-import redis from './client';
+import { redis } from './client';
 import { deleteCache, deleteCacheKeys, deleteCacheByPattern } from './cache-manager';
 
 // 缓存依赖关系映射

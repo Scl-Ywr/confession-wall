@@ -1,5 +1,5 @@
 import { supabase } from '@/lib/supabase/client';
-import { Profile } from '@/types/confession';
+import { Profile, Hashtag, ConfessionCategory, ConfessionHashtag } from '@/types/confession';
 import { Confession, ConfessionFormData, Comment, CommentFormData, ConfessionImage } from '@/types/confession';
 import { profileService } from './profileService';
 import { cacheKeyManager } from '@/lib/redis/cache-key-manager';
@@ -8,36 +8,59 @@ export const confessionService = {
   // 获取表白列表
   getConfessions: async (page: number = 1, limit: number = 10): Promise<Confession[]> => {
     // 1. 获取当前用户ID
-    const userResult = await supabase.auth.getUser();
-    const userId = userResult.data.user?.id;
+    let userId = null;
+    try {
+      const userResult = await supabase.auth.getUser();
+      userId = userResult.data.user?.id;
+    } catch (error) {
+      console.error('Error getting user:', error);
+      // 继续执行，不影响表白列表获取
+    }
 
     // 2. 生成缓存键，添加用户ID，确保每个用户有独立的缓存
-    const listCacheKey = cacheKeyManager.confession.list(page, limit, userId);
+    const listCacheKey = cacheKeyManager.confession.list(page, limit, userId || undefined);
 
     try {
-      // 3. 尝试从缓存获取数据
-      const cachedData = await cacheManager.getCache<Confession[]>(listCacheKey);
+      // 3. 尝试从缓存获取数据（只在服务器环境中）
+      let cachedData = null;
+      if (typeof window === 'undefined') {
+        cachedData = await cacheManager.getCache<Confession[]>(listCacheKey);
+      }
       if (cachedData) {
         return cachedData;
       }
 
-      // 4. 缓存穿透防护：检查是否是空值缓存
-      const nullCacheKey = `${listCacheKey}:null`;
-      const isNullCached = await cacheManager.getCache<boolean>(nullCacheKey);
+      // 4. 缓存穿透防护：检查是否是空值缓存（只在服务器环境中）
+      let isNullCached = false;
+      if (typeof window === 'undefined') {
+        const nullCacheKey = `${listCacheKey}:null`;
+        isNullCached = await cacheManager.getCache<boolean>(nullCacheKey) || false;
+      }
       if (isNullCached) {
         return [];
       }
 
-      // 5. 再次检查缓存
-      const doubleCheckCachedData = await cacheManager.getCache<Confession[]>(listCacheKey);
-      if (doubleCheckCachedData) {
-        return doubleCheckCachedData;
+      // 5. 再次检查缓存（只在服务器环境中）
+      if (typeof window === 'undefined') {
+        const doubleCheckCachedData = await cacheManager.getCache<Confession[]>(listCacheKey);
+        if (doubleCheckCachedData) {
+          return doubleCheckCachedData;
+        }
       }
 
       // 6. 优化查询，包含likes_count字段
       const { data: confessions, error: confessionsError } = await supabase
         .from('confessions')
-        .select('id, content, is_anonymous, user_id, created_at, likes_count')
+        .select(`
+          id, 
+          content, 
+          is_anonymous, 
+          user_id, 
+          created_at, 
+          likes_count,
+          category_id,
+          category:confession_categories(id, name, icon, color)
+        `)
         .order('created_at', { ascending: false })
         .range((page - 1) * limit, page * limit - 1);
 
@@ -48,8 +71,11 @@ export const confessionService = {
 
       // 处理confessions为null或undefined的情况
       if (!confessions || confessions.length === 0) {
-        // 设置空值缓存
-        await cacheManager.setCache(nullCacheKey, true, 300);
+        // 设置空值缓存（只在服务器环境中）
+        if (typeof window === 'undefined') {
+          const nullCacheKey = `${listCacheKey}:null`;
+          await cacheManager.setCache(nullCacheKey, true, 300).catch(console.error);
+        }
         return [];
       }
 
@@ -59,9 +85,10 @@ export const confessionService = {
       let imagesData: { id: string; confession_id: string; image_url: string; file_type: string; is_locked: boolean; lock_type: 'password' | 'user' | 'public' }[] = [];
       let profilesData: { id: string; username: string; display_name: string; avatar_url: string | null }[] = [];
       let likesData: { id: string; confession_id: string }[] = [];
+      let hashtagsData: { id: string; confession_id: string; hashtag_id: string; hashtag: { id: string; tag: string } }[] = [];
 
       // 使用Promise.allSettled替代Promise.all，确保一个查询失败不会影响其他查询
-      const [imagesResult, profilesResult, userLikesResult] = await Promise.allSettled([
+      const [imagesResult, profilesResult, userLikesResult, hashtagsResult] = await Promise.allSettled([
         // 获取所有表白的图片
         supabase
           .from('confession_images')
@@ -100,7 +127,13 @@ export const confessionService = {
             .select('id, confession_id')
             .eq('user_id', userId)
             .in('confession_id', confessionIds);
-        })()
+        })(),
+        
+        // 获取表白相关的标签
+        supabase
+          .from('confession_hashtags')
+          .select('id, confession_id, hashtag_id, hashtag:hashtags(id, tag)')
+          .in('confession_id', confessionIds)
       ]);
 
       // 处理每个查询的结果
@@ -135,6 +168,17 @@ export const confessionService = {
         }
       } else {
         console.error('Error fetching user likes:', userLikesResult.reason);
+      }
+
+      if (hashtagsResult.status === 'fulfilled') {
+        const result = hashtagsResult.value;
+        if (!result.error) {
+          hashtagsData = (result.data || []) as unknown as { id: string; confession_id: string; hashtag_id: string; hashtag: { id: string; tag: string; }; }[];
+        } else {
+          console.error('Error fetching hashtags:', result.error);
+        }
+      } else {
+        console.error('Error fetching hashtags:', hashtagsResult.reason);
       }
 
       // 8. 将图片分组到对应的表白
@@ -172,19 +216,38 @@ export const confessionService = {
         });
       }
 
-      // 11. 合并图片、profile和点赞状态到表白对象
+      // 11. 将标签分组到对应的表白
+      const hashtagsByConfessionId = hashtagsData.reduce((acc: Record<string, Array<{id: string; hashtag_id: string; hashtag: { id: string; tag: string }}>>, confessionHashtag) => {
+        if (!acc[confessionHashtag.confession_id]) {
+          acc[confessionHashtag.confession_id] = [];
+        }
+        acc[confessionHashtag.confession_id].push(confessionHashtag);
+        return acc;
+      }, {});
+
+      // 12. 合并图片、profile、点赞状态和标签到表白对象
       const confessionsWithLikes = confessions.map(confession => ({
         ...confession,
         profile: confession.user_id ? profilesMap[confession.user_id] : undefined,
-        images: imagesByConfessionId[confession.id] || [],
+        images: (imagesByConfessionId[confession.id] || []).map(img => ({
+          ...img,
+          confession_id: confession.id,
+          created_at: confession.created_at
+        })) as ConfessionImage[],
         likes_count: Number(confession.likes_count) || 0, // 确保是数字类型，避免出现NaN
-        liked_by_user: likesMap[confession.id] || false
-      })) as Confession[];
+        liked_by_user: likesMap[confession.id] || false,
+        hashtags: (hashtagsByConfessionId[confession.id] || []).map(ht => ({
+          ...ht,
+          hashtag: ht.hashtag || { id: '', tag: '' } // 确保hashtag是单个对象
+        })) as unknown as ConfessionHashtag[]
+      })) as unknown as Confession[];
       
-      // 12. 设置缓存
-      // 缓存雪崩防护：添加随机过期时间（300-600秒）
-      const expiry = 300 + Math.random() * 300;
-      await cacheManager.setCache(listCacheKey, confessionsWithLikes, expiry);
+      // 12. 设置缓存（只在服务器环境中，异步执行，不阻塞主流程）
+      if (typeof window === 'undefined') {
+        // 缓存雪崩防护：添加随机过期时间（300-600秒）
+        const expiry = 300 + Math.random() * 300;
+        cacheManager.setCache(listCacheKey, confessionsWithLikes, expiry).catch(console.error);
+      }
       
       return confessionsWithLikes;
     } catch (error) {
@@ -394,6 +457,7 @@ export const confessionService = {
         content: validationResult.filteredContent || formData.content,
         is_anonymous: formData.is_anonymous,
         user_id: userId,
+        category_id: formData.category_id || null,
       })
       .select('*')
       .single();
@@ -402,10 +466,65 @@ export const confessionService = {
       throw confessionError;
     }
 
-    // 3. 处理媒体文件（图片和视频）
+    // 3. 处理标签（如果有）
+    if (formData.hashtags && formData.hashtags.length > 0) {
+      for (const tagText of formData.hashtags) {
+        try {
+          // 确保标签以#开头，如果没有则添加
+          const normalizedTag = tagText.startsWith('#') ? tagText : `#${tagText}`;
+          
+          // 检查标签是否已存在
+          const { data: existingTag, error: tagError } = await supabase
+            .from('hashtags')
+            .select('id')
+            .eq('tag', normalizedTag)
+            .single();
+          
+          let hashtagId: string;
+          
+          if (tagError && tagError.code === 'PGRST116') {
+            // 标签不存在，创建新标签
+            const { data: newTag, error: createTagError } = await supabase
+              .from('hashtags')
+              .insert({ tag: normalizedTag })
+              .select('id')
+              .single();
+            
+            if (createTagError) {
+              console.error('Error creating hashtag:', createTagError);
+              continue;
+            }
+            
+            hashtagId = newTag.id;
+          } else if (existingTag) {
+            // 标签已存在
+            hashtagId = existingTag.id;
+          } else {
+            console.error('Error checking hashtag:', tagError);
+            continue;
+          }
+          
+          // 创建表白与标签的关联
+          const { error: linkError } = await supabase
+            .from('confession_hashtags')
+            .insert({
+              confession_id: confession.id,
+              hashtag_id: hashtagId,
+            });
+          
+          if (linkError) {
+            console.error('Error linking hashtag to confession:', linkError);
+          }
+        } catch (error) {
+          console.error('Error processing hashtag:', tagText, error);
+        }
+      }
+    }
+
+    // 4. 处理媒体文件（图片和视频）
     const mediaItems: ConfessionImage[] = [];
     
-    // 3.1 上传图片（如果有）
+    // 4.1 上传图片（如果有）
     if (formData.images && formData.images.length > 0) {
       for (const file of formData.images) {
         try {
@@ -433,7 +552,7 @@ export const confessionService = {
       }
     }
     
-    // 3.2 处理视频URL（如果有）
+    // 4.2 处理视频URL（如果有）
     if (formData.videoUrls && formData.videoUrls.length > 0) {
       for (const videoUrl of formData.videoUrls) {
         try {
@@ -462,6 +581,21 @@ export const confessionService = {
       }
     }
     
+    // 5. 如果提供了group_id，将表白发布到指定圈子
+    if (formData.group_id) {
+      try {
+        await supabase
+          .from('group_confessions')
+          .insert({
+            confession_id: confession.id,
+            group_id: formData.group_id
+          });
+      } catch (error) {
+        console.error('Error posting confession to group:', error);
+        // 继续执行，不中断整个过程
+      }
+    }
+    
     // 获取用户资料
     let profile = undefined;
     if (confession.user_id) {
@@ -486,7 +620,7 @@ export const confessionService = {
       liked_by_user: false // 新创建的表白，当前用户默认未点赞
     } as Confession;
 
-    // 4. 缓存更新：清除所有相关缓存，确保新表白能显示
+    // 6. 缓存更新：清除所有相关缓存，确保新表白能显示
     // 清除所有用户的表白列表缓存，使用通配符确保清除所有相关缓存
     await cacheManager.deleteCacheByPattern(`confession:list:*`);
     await cacheManager.deleteCacheByPattern(`confession:list:*:null`);
@@ -783,19 +917,20 @@ export const confessionService = {
   },
 
   // 获取表白的评论
-  getComments: async (confessionId: string): Promise<Comment[]> => {
-    // 1. 获取评论列表
+  getComments: async (confessionId: string, page: number = 1, limit: number = 20): Promise<Comment[]> => {
+    const offset = (page - 1) * limit;
+    
     const { data: comments, error: commentsError } = await supabase
       .from('comments')
       .select('*')
       .eq('confession_id', confessionId)
-      .order('created_at', { ascending: true });
+      .order('created_at', { ascending: true })
+      .range(offset, offset + limit - 1);
 
     if (commentsError) {
       throw commentsError;
     }
 
-    // 2. 获取所有相关用户的资料
     const userIds = comments
       .filter(comment => comment.user_id)
       .map(comment => comment.user_id)
@@ -812,13 +947,11 @@ export const confessionService = {
         throw profilesError;
       }
       
-      // 将profile按user_id分组
       profiles?.forEach(profile => {
         profilesMap[profile.id] = profile;
       });
     }
 
-    // 3. 合并profile到评论对象
     const commentsWithProfiles = comments.map(comment => ({
       ...comment,
       profile: comment.user_id ? profilesMap[comment.user_id] : undefined
@@ -1042,5 +1175,208 @@ export const confessionService = {
     })) as Confession[];
 
     return confessionsWithImages;
+  },
+
+  // 获取热门标签
+  getTrendingHashtags: async (limit: number = 10): Promise<Hashtag[]> => {
+    try {
+      const { data: hashtags, error } = await supabase
+        .rpc('get_trending_hashtags', { limit_count: limit });
+      
+      if (error) {
+        console.error('Error fetching trending hashtags:', error);
+        // 备选方案：直接查询
+        const { data: fallbackHashtags, error: fallbackError } = await supabase
+          .from('hashtags')
+          .select('*')
+          .order('usage_count', { ascending: false })
+          .limit(limit);
+        
+        if (fallbackError) {
+          throw fallbackError;
+        }
+        
+        return fallbackHashtags || [];
+      }
+      
+      return hashtags || [];
+    } catch (error) {
+      console.error('Error in getTrendingHashtags:', error);
+      return [];
+    }
+  },
+
+  // 获取所有分类
+  getCategories: async (): Promise<ConfessionCategory[]> => {
+    try {
+      // 直接使用 API 路由获取分类数据，避免客户端 Supabase 连接问题
+      const response = await fetch('/api/categories', {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      });
+      
+      if (!response.ok) {
+        throw new Error(`Failed to fetch categories: ${response.status} ${response.statusText}`);
+      }
+      
+      const result = await response.json();
+      const categories = result.categories || [];
+      
+      console.log('Categories fetched from API:', categories);
+      
+      return categories;
+    } catch (error) {
+      console.error('Error in getCategories:', error);
+      return [];
+    }
+  },
+
+  // 根据标签获取表白
+  getConfessionsByHashtag: async (tag: string, page: number = 1, limit: number = 10): Promise<Confession[]> => {
+    try {
+      const offset = (page - 1) * limit;
+      
+      // 使用RPC函数获取包含特定标签的表白
+      const { data: confessions, error } = await supabase
+        .rpc('get_confessions_by_hashtag', { 
+          tag_text: tag, 
+          limit_count: limit, 
+          offset_count: offset 
+        });
+      
+      if (error) {
+        console.error('Error fetching confessions by hashtag:', error);
+        return [];
+      }
+      
+      // 获取完整的表白信息，包括用户资料和标签
+      const confessionIds = confessions.map((c: { id: string }) => c.id);
+      if (confessionIds.length === 0) {
+        return [];
+      }
+      
+      // 获取完整的表白信息
+      const { data: fullConfessions, error: fullError } = await supabase
+        .from('confessions')
+        .select(`
+          *,
+          profile:profiles(id, display_name, username, avatar_url),
+          category:confession_categories(id, name, icon, color),
+          hashtags:confession_hashtags(
+            id,
+            hashtag:hashtags(id, tag)
+          )
+        `)
+        .in('id', confessionIds)
+        .order('created_at', { ascending: false });
+      
+      if (fullError) {
+        console.error('Error fetching full confessions:', fullError);
+        return [];
+      }
+      
+      // 获取图片信息
+      const { data: images, error: imagesError } = await supabase
+        .from('confession_images')
+        .select('id, confession_id, image_url, file_type, is_locked, lock_type')
+        .in('confession_id', confessionIds);
+      
+      if (imagesError) {
+        console.error('Error fetching images:', imagesError);
+      }
+      
+      // 将图片分组到对应的表白
+      const imagesByConfessionId = (images || []).reduce((acc: Record<string, Array<{id: string; confession_id: string; image_url: string; file_type: string; is_locked: boolean; lock_type: 'password' | 'user' | 'public'}>>, image) => {
+        if (!acc[image.confession_id]) {
+          acc[image.confession_id] = [];
+        }
+        acc[image.confession_id].push(image);
+        return acc;
+      }, {});
+      
+      // 合并图片信息到表白对象
+      return (fullConfessions || []).map(confession => ({
+        ...confession,
+        images: imagesByConfessionId[confession.id] || []
+      })) as Confession[];
+    } catch (error) {
+      console.error('Error in getConfessionsByHashtag:', error);
+      return [];
+    }
+  },
+
+  // 根据分类获取表白
+  getConfessionsByCategory: async (categoryId: string, page: number = 1, limit: number = 10): Promise<Confession[]> => {
+    try {
+      const offset = (page - 1) * limit;
+      
+      // 使用RPC函数获取分类下的表白
+      const { data: confessions, error } = await supabase
+        .rpc('get_confessions_by_category', { 
+          category_id_param: categoryId, 
+          limit_count: limit, 
+          offset_count: offset 
+        });
+      
+      if (error) {
+        console.error('Error fetching confessions by category:', error);
+        return [];
+      }
+      
+      // 获取完整的表白信息，包括用户资料、分类和标签
+      const confessionIds = confessions.map((c: { id: string }) => c.id);
+      if (confessionIds.length === 0) {
+        return [];
+      }
+      
+      const { data: fullConfessions, error: fullError } = await supabase
+        .from('confessions')
+        .select(`
+          *,
+          profile:profiles(id, display_name, username, avatar_url),
+          category:confession_categories(id, name, icon, color),
+          hashtags:confession_hashtags(
+            id,
+            hashtag:hashtags(id, tag)
+          )
+        `)
+        .in('id', confessionIds)
+        .order('created_at', { ascending: false });
+      
+      if (fullError) {
+        console.error('Error fetching full confessions:', fullError);
+        return [];
+      }
+      
+      // 获取图片信息
+      const { data: images, error: imagesError } = await supabase
+        .from('confession_images')
+        .select('id, confession_id, image_url, file_type, is_locked, lock_type')
+        .in('confession_id', confessionIds);
+      
+      if (imagesError) {
+        console.error('Error fetching images:', imagesError);
+      }
+      
+      // 将图片分组到对应的表白
+      const imagesByConfessionId = (images || []).reduce((acc: Record<string, Array<{id: string; confession_id: string; image_url: string; file_type: string; is_locked: boolean; lock_type: 'password' | 'user' | 'public'}>>, image) => {
+        if (!acc[image.confession_id]) {
+          acc[image.confession_id] = [];
+        }
+        acc[image.confession_id].push(image);
+        return acc;
+      }, {});
+      
+      // 合并图片信息到表白对象
+      return (fullConfessions || []).map(confession => ({
+        ...confession,
+        images: imagesByConfessionId[confession.id] || []
+      })) as Confession[];
+    } catch (error) {
+      console.error('Error in getConfessionsByCategory:', error);
+      return [];
+    }
   },
 };

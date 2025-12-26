@@ -6,7 +6,7 @@ import Image from 'next/image';
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useAuth } from '@/context/AuthContext';
-import { useTheme } from '@/context/ThemeContext';
+import { useTheme } from '@/theme/ThemeContext';
 import { supabase } from '@/lib/supabase/client';
 import { getUsers, getConfessions } from '@/services/admin/adminService';
 

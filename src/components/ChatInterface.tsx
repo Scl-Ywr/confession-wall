@@ -130,8 +130,9 @@ export function ChatInterface({ otherUserId, otherUserProfile: initialOtherUserP
     // 使用唯一的通道名称，包含当前用户和对方用户的ID
     const channelName = `private_chat_${currentUserId}_${otherUserId}`;
 
-
-    // 使用最简单的方式创建实时订阅，不使用过滤条件
+    console.log(`[ChatInterface] Setting up real-time chat for users ${currentUserId} and ${otherUserId}`);
+    
+    // 使用更精确的服务器端过滤条件，减少网络流量
     const channel = supabase
       .channel(channelName, {
         config: {
@@ -145,63 +146,65 @@ export function ChatInterface({ otherUserId, otherUserProfile: initialOtherUserP
         {
           event: 'INSERT',
           schema: 'public',
-          table: 'chat_messages'
+          table: 'chat_messages',
+          // 使用精确的服务器端过滤条件
+          filter: `(sender_id.eq.${currentUserId}.and.receiver_id.eq.${otherUserId}).or(sender_id.eq.${otherUserId}.and.receiver_id.eq.${currentUserId})`
         },
         async (payload) => {
-          // 手动过滤当前对话的消息
-          if (
-            (payload.new.sender_id === currentUserId && payload.new.receiver_id === otherUserId) ||
-            (payload.new.sender_id === otherUserId && payload.new.receiver_id === currentUserId)
-          ) {
-            try {
-              // 过滤掉自己发送的消息，因为乐观UI已经添加了
-              if (payload.new.sender_id === currentUserId) {
-                return;
-              }
-              
-              // 构造完整的消息对象
-              const completeMessage = {
-                ...payload.new,
-                sender_profile: payload.new.sender_id === currentUserId ? 
-                  { id: currentUserId, username: user?.email || '', display_name: user?.email || '', avatar_url: null } : 
-                  otherUserProfile
-              } as ChatMessage;
-              
-              // 更新消息列表，确保消息唯一
-              setMessages(prev => {
-                // 检查消息是否已存在
-                if (prev.some(msg => msg.id === payload.new.id)) {
-                  return prev;
-                }
-                
-                const updatedMessages = [...prev, completeMessage];
-                // 确保消息按时间排序
-                updatedMessages.sort((a, b) => 
-                  new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
-                );
-                // 移除重复消息
-                const uniqueMessages = Array.from(new Map(updatedMessages.map(msg => [msg.id, msg])).values());
-                return uniqueMessages;
-              });
-              
-              // 滚动到最新消息
-              scrollToBottom();
-              
-              // 标记为已读，因为消息是发给当前用户的
-              try {
-                await supabase
-                  .from('chat_messages')
-                  .update({ is_read: true })
-                  .eq('id', payload.new.id);
-                
-                // 触发自定义事件，通知好友列表更新未读消息数量
-                window.dispatchEvent(new CustomEvent('privateMessagesRead', { detail: { friendId: otherUserId } }));
-              } catch (error) {
-                console.error('Error marking message as read:', error);
-              }
-            } catch (error) {
-              console.error('Error processing new message:', error);
+          console.log(`[ChatInterface] New message received:`, payload.new);
+          
+          try {
+            // 过滤掉自己发送的消息，因为乐观UI已经添加了
+            if (payload.new.sender_id === currentUserId) {
+              console.log(`[ChatInterface] Ignoring self-sent message`);
+              return;
             }
+            
+            // 构造完整的消息对象
+            const completeMessage = {
+              ...payload.new,
+              sender_profile: payload.new.sender_id === currentUserId ? 
+                { id: currentUserId, username: user?.email || '', display_name: user?.email || '', avatar_url: null } : 
+                otherUserProfile
+            } as ChatMessage;
+            
+            // 更新消息列表，确保消息唯一
+            setMessages(prev => {
+              // 检查消息是否已存在
+              if (prev.some(msg => msg.id === payload.new.id)) {
+                console.log(`[ChatInterface] Message already exists in state, skipping`);
+                return prev;
+              }
+              
+              const updatedMessages = [...prev, completeMessage];
+              // 确保消息按时间排序
+              updatedMessages.sort((a, b) => 
+                new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+              );
+              // 移除重复消息
+              const uniqueMessages = Array.from(new Map(updatedMessages.map(msg => [msg.id, msg])).values());
+              return uniqueMessages;
+            });
+            
+            // 滚动到最新消息
+            scrollToBottom();
+            
+            // 标记为已读，因为消息是发给当前用户的
+            try {
+              await supabase
+                .from('chat_messages')
+                .update({ is_read: true })
+                .eq('id', payload.new.id);
+              
+              console.log(`[ChatInterface] Marked message ${payload.new.id} as read`);
+              
+              // 触发自定义事件，通知好友列表更新未读消息数量
+              window.dispatchEvent(new CustomEvent('privateMessagesRead', { detail: { friendId: otherUserId } }));
+            } catch (error) {
+              console.error('[ChatInterface] Error marking message as read:', error);
+            }
+          } catch (error) {
+            console.error('[ChatInterface] Error processing new message:', error);
           }
         }
       )
@@ -215,46 +218,59 @@ export function ChatInterface({ otherUserId, otherUserProfile: initialOtherUserP
           filter: `id.eq.${otherUserId}`
         },
         async (payload) => {
-          console.log('Profile update received for', otherUserId, ':', payload.new);
+          console.log(`[ChatInterface] Profile update received for ${otherUserId}:`, payload.new);
           
           // 只更新在线状态和最后活跃时间相关字段
           if (payload.new.online_status !== undefined || payload.new.last_seen !== undefined) {
             try {
               const updatedProfile = await chatService.getUserProfile(otherUserId);
               if (updatedProfile) {
+                console.log(`[ChatInterface] Updated profile for ${otherUserId}:`, updatedProfile);
                 setOtherUserProfile(updatedProfile);
               }
             } catch (error) {
-              console.error('Error fetching updated profile:', error);
+              console.error('[ChatInterface] Error fetching updated profile:', error);
               // 直接使用payload.new中的字段更新，避免再次请求
               setOtherUserProfile(prev => ({
                 ...prev,
                 online_status: payload.new.online_status,
                 last_seen: payload.new.last_seen
               }));
+              console.log(`[ChatInterface] Updated profile fields directly from payload`);
             }
           }
         }
       )
       .subscribe((status) => {
+        console.log(`[ChatInterface] Channel status changed to: ${status}`);
         switch (status) {
           case 'SUBSCRIBED':
+            console.log(`[ChatInterface] Successfully subscribed to channel: ${channelName}`);
             setConnectionStatus('connected');
             break;
           case 'CHANNEL_ERROR':
+            console.error(`[ChatInterface] Channel error for ${channelName}`);
+            setConnectionStatus('connecting');
+            break;
           case 'TIMED_OUT':
+            console.warn(`[ChatInterface] Channel timed out for ${channelName}`);
             setConnectionStatus('connecting');
             break;
           case 'CLOSED':
+            console.log(`[ChatInterface] Channel closed: ${channelName}`);
             setConnectionStatus('disconnected');
             break;
+          default:
+            console.log(`[ChatInterface] Unknown channel status: ${status} for ${channelName}`);
+            setConnectionStatus('connecting');
         }
       });
 
     channelRef.current = channel;
     
-    // 组件卸载时取消订阅
+    // 组件卸载时安全取消订阅，避免内存泄漏
     return () => {
+      console.log(`[ChatInterface] Removing channel: ${channelName}`);
       supabase.removeChannel(channel);
       channelRef.current = null;
     };
@@ -585,6 +601,7 @@ export function ChatInterface({ otherUserId, otherUserProfile: initialOtherUserP
                   width={32}
                   height={32}
                   objectFit="cover"
+                  loading="lazy"
                 />
               ) : (
                 <span className="text-sm font-medium">
@@ -681,6 +698,7 @@ export function ChatInterface({ otherUserId, otherUserProfile: initialOtherUserP
                 width={40}
                 height={40}
                 style={{ objectFit: 'cover' }}
+                loading="lazy"
               />
             ) : (
               <span className="text-lg font-medium">

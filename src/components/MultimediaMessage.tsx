@@ -88,6 +88,7 @@ const MultimediaMessage: React.FC<MultimediaMessageProps> = ({ message }) => {
                 width={600}
                 height={400}
                 className="max-w-full max-h-80 object-contain transition-transform duration-300 hover:scale-[1.02]"
+                loading="lazy"
                 priority={false}
               />
             </div>

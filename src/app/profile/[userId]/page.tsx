@@ -1,14 +1,16 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useParams } from 'next/navigation';
 import { useAuth } from '@/context/AuthContext';
 import { UserSearchResult } from '@/types/chat';
+import { Confession } from '@/types/confession';
 import { chatService } from '@/services/chatService';
 import { profileService } from '@/services/profileService';
 import Navbar from '@/components/Navbar';
 import Image from 'next/image';
 import { UserCircleIcon, MessageCircleIcon, UserPlusIcon, CheckIcon } from 'lucide-react';
+import ConfessionCard from '@/components/ConfessionCard';
 
 const OtherUserProfilePage = () => {
   const { userId } = useParams<{ userId: string }>();
@@ -23,6 +25,11 @@ const OtherUserProfilePage = () => {
   const [userProvince, setUserProvince] = useState<string | null>(null);
   const [userCountry, setUserCountry] = useState<string | null>(null);
   const [ipLoading, setIpLoading] = useState(true);
+  const [userConfessions, setUserConfessions] = useState<Confession[]>([]);
+  const [confessionsLoading, setConfessionsLoading] = useState(false);
+  const [confessionsError, setConfessionsError] = useState<string | null>(null);
+  const [hasMoreConfessions, setHasMoreConfessions] = useState(true);
+  const [confessionsPage, setConfessionsPage] = useState(1);
 
   useEffect(() => {
     const fetchProfileAndFriendship = async () => {
@@ -223,6 +230,85 @@ const OtherUserProfilePage = () => {
       window.removeEventListener('offline', handleOffline);
     };
   }, [profile, user]);
+  
+  // 获取用户表白列表
+  const fetchUserConfessions = useCallback(async (pageNum: number = 1, append: boolean = false) => {
+    if (!profile) return;
+    
+    try {
+      setConfessionsLoading(true);
+      setConfessionsError(null);
+      
+      const response = await fetch(`/api/users/${profile.id}/confessions?limit=10&offset=${(pageNum - 1) * 10}`);
+      const data = await response.json();
+      
+      if (response.ok) {
+        if (append) {
+          setUserConfessions(prev => [...prev, ...(data.confessions || [])]);
+        } else {
+          setUserConfessions(data.confessions || []);
+        }
+        setHasMoreConfessions(data.hasMore);
+      } else {
+        setConfessionsError(data.error || 'Failed to fetch user confessions');
+      }
+    } catch (error) {
+      console.error('Error fetching user confessions:', error);
+      setConfessionsError('Failed to fetch user confessions');
+    } finally {
+      setConfessionsLoading(false);
+    }
+  }, [profile]);
+  
+  // 加载更多表白
+  const loadMoreConfessions = () => {
+    if (!confessionsLoading && hasMoreConfessions) {
+      const nextPage = confessionsPage + 1;
+      setConfessionsPage(nextPage);
+      fetchUserConfessions(nextPage, true);
+    }
+  };
+  
+  // 删除表白
+  const handleDeleteConfession = async (confessionId: string) => {
+    if (!user) {
+      window.location.href = '/auth/login';
+      return;
+    }
+
+    const isConfirmed = window.confirm('确定要删除这条表白吗？此操作不可恢复。');
+    if (!isConfirmed) {
+      return;
+    }
+
+    try {
+      const response = await fetch('/api/confessions', {
+        method: 'DELETE',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ id: confessionId }),
+      });
+      
+      if (response.ok) {
+        // 重新加载表白列表
+        setConfessionsPage(1);
+        fetchUserConfessions(1, false);
+      } else {
+        const data = await response.json();
+        window.alert(data.error || '删除表白失败，请稍后重试。');
+      }
+    } catch (error) {
+      console.error('Delete error:', error);
+      window.alert('删除表白失败，请稍后重试。');
+    }
+  };
+  
+  useEffect(() => {
+    if (profile) {
+      fetchUserConfessions(1, false);
+    }
+  }, [profile, fetchUserConfessions]);
 
   const handleSendFriendRequest = async () => {
     if (!user || !profile) return;
@@ -470,6 +556,71 @@ const OtherUserProfilePage = () => {
 
               </div>
             </div>
+          </div>
+          
+          {/* 用户创作历史 */}
+          <div className="glass-card p-6 rounded-2xl mt-6">
+            <h3 className="text-xl font-bold text-gray-900 dark:text-white mb-4 flex items-center gap-2">
+              <span className="text-2xl">📝</span>
+              创作历史
+            </h3>
+            
+            {confessionsLoading && userConfessions.length === 0 ? (
+              <div className="text-center py-8">
+                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary-500 mx-auto mb-4"></div>
+                <p className="text-gray-500 dark:text-gray-400">加载中...</p>
+              </div>
+            ) : confessionsError ? (
+              <div className="text-center py-8">
+                <p className="text-red-500 dark:text-red-400 mb-4">{confessionsError}</p>
+                <button
+                  onClick={() => {
+                    setConfessionsError(null);
+                    setConfessionsLoading(true);
+                    fetchUserConfessions(1, false);
+                  }}
+                  className="px-4 py-2 bg-primary-600 text-white rounded-xl font-medium hover:bg-primary-700 transition-colors"
+                >
+                  重试
+                </button>
+              </div>
+            ) : userConfessions.length === 0 ? (
+              <div className="text-center py-8">
+                <div className="text-6xl mb-4">📭</div>
+                <p className="text-gray-500 dark:text-gray-400">该用户还没有发布任何表白</p>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                <div className="text-center mb-4">
+                  <p className="text-gray-600 dark:text-gray-300">
+                    共发布了 {userConfessions.length} 条表白
+                  </p>
+                </div>
+                
+                <div className="grid gap-4">
+                  {userConfessions.map((confession) => (
+                    <ConfessionCard
+                      key={confession.id}
+                      confession={confession}
+                      currentUserId={user?.id}
+                      onDelete={handleDeleteConfession}
+                    />
+                  ))}
+                </div>
+                
+                {hasMoreConfessions && (
+                  <div className="text-center mt-6">
+                    <button
+                      onClick={loadMoreConfessions}
+                      disabled={confessionsLoading}
+                      className="px-6 py-3 bg-primary-600 text-white rounded-xl font-medium hover:bg-primary-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      {confessionsLoading ? '加载中...' : '加载更多'}
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         </div>
       </main>

@@ -717,28 +717,21 @@ export const chatService = {
       // 获取所有好友的 ID，确保没有重复
       const friendIds = [...new Set(friendships.map(friendship => friendship.friend_id))];
 
-      // 初始化好友资料对象
-      const friendsProfiles: Record<string, Profile> = {};
+      const { data: profiles, error: profilesError } = await supabase
+        .from('profiles')
+        .select('id, username, display_name, email, avatar_url, online_status, last_seen')
+        .in('id', friendIds);
 
-      // 逐个查询好友资料，避免 in 查询可能出现的问题
-      for (const friendId of friendIds) {
-        try {
-          // 在线状态需要实时更新，所以不使用缓存，直接从数据库获取
-          const { data: profile, error: profileError } = await supabase
-            .from('profiles')
-            .select('id, username, display_name, email, avatar_url, online_status, last_seen')
-            .eq('id', friendId)
-            .single();
-          
-          if (!profileError && profile) {
-            friendsProfiles[friendId] = profile;
-            // 仍然缓存好友资料，但在线状态会在下一次调用时重新获取
-            const profileCacheKey = getUserProfileCacheKey(friendId);
-            await setCache(profileCacheKey, profile, EXPIRY.MEDIUM);
-          }
-        } catch {
-          // ignore error
-        }
+      if (profilesError) {
+        throw new Error(`Failed to fetch friend profiles: ${profilesError.message || 'Unknown error'}`);
+      }
+
+      const friendsProfiles: Record<string, Profile> = {};
+      
+      for (const profile of profiles || []) {
+        friendsProfiles[profile.id] = profile;
+        const profileCacheKey = getUserProfileCacheKey(profile.id);
+        await setCache(profileCacheKey, profile, EXPIRY.MEDIUM);
       }
 
       // 查询每个好友的未读消息数量
@@ -1223,84 +1216,50 @@ export const chatService = {
       // 查询所有群聊的未读消息数量
       // 使用计数查询获取每个群聊的未读消息数量
       const unreadCountsMap: Record<string, number> = {};
-      
-      // 为每个群聊获取未读消息数量
+
+      const { data: unreadStatuses, error: unreadError } = await supabase
+        .from('group_message_read_status')
+        .select('group_id, user_id')
+        .eq('user_id', userId)
+        .eq('is_read', false)
+        .in('group_id', groupIds);
+
+      if (unreadError) {
+        console.error('Error getting unread statuses:', unreadError);
+        return groups;
+      }
+
       for (const groupId of groupIds) {
-        try {
-          // 先检查用户是否是群成员
-          const { data: isMember, error: memberError } = await supabase
-            .from('group_members')
-            .select('id')
-            .eq('group_id', groupId)
-            .eq('user_id', userId)
-            .maybeSingle();
-          
-          if (memberError || !isMember) {
-            console.error(`User is not a member of group ${groupId}`);
-            unreadCountsMap[groupId] = 0;
-            continue;
-          }
-          
-          // 从group_message_read_status表获取未读消息数量
-          const { count, error } = await supabase
-            .from('group_message_read_status')
-            .select('id', { count: 'exact', head: true })
-            .eq('group_id', groupId)
-            .eq('user_id', userId)
-            .eq('is_read', false);
-          
-          if (error) {
-            console.error(`Error getting group unread message count from status table:`, error);
-            // 如果出错，尝试从chat_messages表直接计算未读消息数量
-            try {
-              const { data: unreadMessages, error: messagesError } = await supabase
-                .from('chat_messages')
-                .select('id')
-                .eq('group_id', groupId)
-                .not('sender_id', 'eq', userId)
-                .eq('is_read', false);
-              
-              if (!messagesError && unreadMessages) {
-                unreadCountsMap[groupId] = unreadMessages.length;
-              } else {
-                unreadCountsMap[groupId] = 0;
-              }
-            } catch (fallbackError) {
-              console.error(`Fallback error getting unread messages for group ${groupId}:`, fallbackError);
-              unreadCountsMap[groupId] = 0;
-            }
-          } else {
-            unreadCountsMap[groupId] = count || 0;
-          }
-        } catch (error) {
-          console.error(`Error getting unread count for group ${groupId}:`, error);
-          unreadCountsMap[groupId] = 0;
-        }
+        const count = (unreadStatuses || []).filter(s => s.group_id === groupId).length;
+        unreadCountsMap[groupId] = count;
       }
       
       // 将未读消息数量映射到群聊对象中，并确保member_count准确
-      const groupsWithUnreadCounts = groups?.map(async (group) => {
-        // 为每个群聊获取准确的成员数量
-        try {
-          const { count } = await supabase
-            .from('group_members')
-            .select('id', { count: 'exact', head: true })
-            .eq('group_id', group.id);
-          
-          return {
-            ...group,
-            // 使用计算出的准确成员数量，确保与群聊页面显示一致
-            member_count: count || group.member_count,
-            unread_count: unreadCountsMap[group.id] || 0
-          };
-        } catch (error) {
-          console.error(`Error getting member count for group ${group.id}:`, error);
-          return {
-            ...group,
-            unread_count: unreadCountsMap[group.id] || 0
-          };
-        }
-      }) || [];
+      let groupsWithUnreadCounts: Promise<Group>[] = [];
+      if (groups && groups.length > 0) {
+        groupsWithUnreadCounts = groups.map(async (group) => {
+          // 为每个群聊获取准确的成员数量
+          try {
+            const { count } = await supabase
+              .from('group_members')
+              .select('id', { count: 'exact', head: true })
+              .eq('group_id', group.id);
+            
+            return {
+              ...group,
+              // 使用计算出的准确成员数量，确保与群聊页面显示一致
+              member_count: count || group.member_count,
+              unread_count: unreadCountsMap[group.id] || 0
+            };
+          } catch (error) {
+            console.error(`Error getting member count for group ${group.id}:`, error);
+            return {
+              ...group,
+              unread_count: unreadCountsMap[group.id] || 0
+            };
+          }
+        });
+      }
       
       // 等待所有成员数量查询完成
       const resolvedGroups = await Promise.all(groupsWithUnreadCounts);
@@ -1381,12 +1340,12 @@ export const chatService = {
   },
 
   // 获取群成员列表
-  getGroupMembers: async (groupId: string, ignoreCache?: boolean): Promise<GroupMember[]> => {
+  getGroupMembers: async (groupId: string, page: number = 1, limit: number = 50, ignoreCache?: boolean): Promise<GroupMember[]> => {
     try {
-      // 生成缓存键
+      const offset = (page - 1) * limit;
+      
       const cacheKey = `chat:group:${groupId}:members`;
       
-      // 尝试从缓存获取群成员列表，除非明确要求忽略缓存
       if (!ignoreCache) {
         const cachedMembers = await getCache<GroupMember[]>(cacheKey);
         if (cachedMembers) {
@@ -1394,12 +1353,12 @@ export const chatService = {
         }
       }
       
-      // 先获取群成员基本信息
       const { data: members, error } = await supabase
         .from('group_members')
         .select('*')
         .eq('group_id', groupId)
-        .order('joined_at', { ascending: true });
+        .order('joined_at', { ascending: true })
+        .range(offset, offset + limit - 1);
 
       if (error) {
         console.error('Error getting group members:', error);
@@ -1411,16 +1370,13 @@ export const chatService = {
         return members as GroupMember[];
       }
 
-      // 获取所有成员的用户ID
       const userIds = members.map(member => member.user_id);
       
-      // 直接从数据库获取所有成员的最新资料，包含在线状态，不依赖缓存
       const { data: profiles, error: profilesError } = await supabase
-        .from('profiles')
-        .select('id, username, display_name, email, avatar_url, online_status, last_seen')
-        .in('id', userIds);
+          .from('profiles')
+          .select('id, username, display_name, email, avatar_url, online_status, last_seen')
+          .in('id', userIds);
 
-      // 创建资料映射
       const memberProfiles: Record<string, Profile> = {};
       if (!profilesError && profiles) {
         for (const profile of profiles) {
@@ -1428,25 +1384,22 @@ export const chatService = {
         }
       }
 
-      // 将用户资料映射到群成员信息中
       const membersWithProfiles = members.map(member => {
-        // 查找对应的用户资料
-        const profile = memberProfiles[member.user_id];
-        return {
-          ...member,
-          user_profile: profile // 将用户资料添加到群成员对象中
-        };
-      });
+          const profile = memberProfiles[member.user_id];
+          return {
+            ...member,
+            user_profile: profile
+          };
+        });
 
-      // 缓存群成员列表，设置较短的过期时间（1分钟），确保信息不会过时太久
-      await setCache(cacheKey, membersWithProfiles, EXPIRY.SHORT / 5);
-      
-      return membersWithProfiles as GroupMember[];
-    } catch (error) {
-      console.error('Error in getGroupMembers:', error);
-      return [];
-    }
-  },
+        await setCache(cacheKey, membersWithProfiles, EXPIRY.SHORT);
+
+        return membersWithProfiles;
+      } catch (error) {
+        console.error('Error in getGroupMembers:', error);
+        return [];
+      }
+    },
 
   // 更新群成员信息（群内昵称和头像）
   updateGroupMemberInfo: async (groupId: string, groupNickname?: string, groupAvatarUrl?: string): Promise<void> => {

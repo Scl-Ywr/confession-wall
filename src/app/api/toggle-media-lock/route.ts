@@ -1,7 +1,8 @@
 // API route to toggle media lock status
 import { NextRequest, NextResponse } from 'next/server';
 import { createSupabaseServerClient, createSupabaseAdminClient } from '@/lib/supabase/server';
-import { hash } from 'bcryptjs';
+import { hash, compare } from 'bcryptjs';
+import { handleApiError, createValidationError } from '@/lib/error-handler';
 
 // Toggle the lock status of a confession image
 export async function POST(req: NextRequest) {
@@ -143,48 +144,44 @@ export async function POST(req: NextRequest) {
 // Verify password and unlock media
 export async function PATCH(req: NextRequest) {
   try {
-    // Parse request body
     const { imageId, password } = await req.json();
     
     if (!imageId || !password) {
-      return NextResponse.json({ error: 'Missing imageId or password' }, { status: 400 });
+      throw createValidationError('Missing imageId or password');
     }
     
-    // Use admin client to get the image
     const supabaseAdmin = createSupabaseAdminClient();
     
-    // Get the image
     const { data: images, error: getImageError } = await supabaseAdmin
       .from('confession_images')
       .select('id, lock_password')
       .eq('id', imageId);
     
     if (getImageError) {
-      console.error('Get image error:', getImageError);
-      return NextResponse.json({ error: 'Image not found' }, { status: 404 });
+      return handleApiError(getImageError);
     }
     
     if (!images || images.length === 0) {
       return NextResponse.json({ error: 'Image not found' }, { status: 404 });
     }
     
-    // Get the first (and only) image
     const image = images[0];
     
     if (!image.lock_password) {
       return NextResponse.json({ error: 'Image is not password locked' }, { status: 400 });
     }
     
-    // Verify password (to be implemented in client-side or with a helper function)
-    // Note: This is a placeholder, actual password verification should be done
-    // with a proper comparison using bcryptjs.compare()
+    const isPasswordValid = await compare(password, image.lock_password);
+    
+    if (!isPasswordValid) {
+      return NextResponse.json({ error: 'Invalid password' }, { status: 401 });
+    }
     
     return NextResponse.json({ 
       success: true,
       message: 'Password verified. Image can be unlocked for this session.'
     });
   } catch (error) {
-    console.error('Error verifying media password:', error);
-    return NextResponse.json({ error: 'Failed to verify password' }, { status: 500 });
+    return handleApiError(error);
   }
 }

@@ -1,17 +1,16 @@
 import { NextResponse } from 'next/server';
 import { createSupabaseServerClient } from '@/lib/supabase/server';
+import { handleApiError, createUnauthorizedError, createForbiddenError } from '@/lib/error-handler';
 
 export async function GET() {
   try {
-    // 验证当前用户是否为管理员
     const supabase = await createSupabaseServerClient();
     const { data: authData } = await supabase.auth.getUser();
     
     if (!authData?.user) {
-      return NextResponse.json({ error: '未授权访问' }, { status: 401 });
+      throw createUnauthorizedError();
     }
     
-    // 检查用户是否为管理员
     const { data: profile, error: profileError } = await supabase
       .from('profiles')
       .select('is_admin')
@@ -19,10 +18,9 @@ export async function GET() {
       .single();
     
     if (profileError || !profile || !profile.is_admin) {
-      return NextResponse.json({ error: '只有管理员可以查看安全码' }, { status: 403 });
+      throw createForbiddenError();
     }
     
-    // 获取当前安全码
     const { data: setting, error: settingError } = await supabase
       .from('system_settings')
       .select('value, updated_at')
@@ -33,12 +31,15 @@ export async function GET() {
       return NextResponse.json({ error: '系统设置获取失败' }, { status: 500 });
     }
     
+    const maskedCode = setting.value.length > 4 
+      ? setting.value.substring(0, 4) + '****'
+      : '****';
+    
     return NextResponse.json({ 
-      code: setting.value, 
+      code: maskedCode,
       updatedAt: setting.updated_at 
     });
   } catch (error) {
-    console.error('获取安全码错误:', error);
-    return NextResponse.json({ error: '获取失败，请重试' }, { status: 500 });
+    return handleApiError(error);
   }
 }

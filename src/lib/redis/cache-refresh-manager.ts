@@ -4,7 +4,7 @@
  * 支持基于访问频率的智能刷新和预加载机制
  */
 
-import redis from './client';
+import { redis } from './client';
 import { cacheManager } from './cache-manager';
 import { cacheKeyManager } from './cache-key-manager';
 import { CacheModule, CacheResource } from './cache-key-naming';

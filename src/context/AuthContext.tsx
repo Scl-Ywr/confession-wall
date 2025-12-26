@@ -4,6 +4,7 @@ import React, { createContext, useContext, useState, useEffect, ReactNode, useCa
 import { supabase } from '@/lib/supabase/client';
 import { User, AuthState } from '@/types/auth';
 import { useRouter } from 'next/navigation';
+import { globalMessageService } from '@/services/globalMessageService';
 
 interface AuthContextType extends AuthState {
   register: (email: string, password: string) => Promise<void>;
@@ -278,23 +279,33 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
           // 会话无效，设置用户为未登录
           isAuthChecked = true;
           setState(prev => ({ ...prev, user: null, loading: false }));
+          // 取消消息订阅
+          globalMessageService.unsubscribe();
           return;
         }
         
         if (user) {
-          // 用户已登录，设置在线状态
-          await updateOnlineStatus(user.id, 'online');
+          // 用户已登录，设置在线状态（异步，不阻塞主流程）
+          updateOnlineStatus(user.id, 'online').catch(console.error);
           // 保存userId到闭包变量
           currentUserId = user.id;
           
+          // 初始化全局消息服务
+          globalMessageService.init(user.id);
+          
           // 获取会话信息，检查会话是否即将过期
-          const { data: { session } } = await supabase.auth.getSession();
-          if (session) {
-            // 启动会话刷新定时器
-            if (sessionRefreshInterval) {
-              clearInterval(sessionRefreshInterval);
+          try {
+            const { data: { session } } = await supabase.auth.getSession();
+            if (session) {
+              // 启动会话刷新定时器
+              if (sessionRefreshInterval) {
+                clearInterval(sessionRefreshInterval);
+              }
+              sessionRefreshInterval = setInterval(refreshSession, SESSION_REFRESH_INTERVAL);
             }
-            sessionRefreshInterval = setInterval(refreshSession, SESSION_REFRESH_INTERVAL);
+          } catch (sessionError) {
+            console.error('Error getting session:', sessionError);
+            // 会话获取失败，不影响主流程
           }
         }
         
@@ -310,7 +321,9 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       } catch (error) {
         console.error('Error checking user:', error);
         isAuthChecked = true;
-        setState(prev => ({ ...prev, loading: false, error: 'Failed to check user' }));
+        setState(prev => ({ ...prev, user: null, loading: false, error: 'Failed to check user' }));
+        // 取消消息订阅
+        globalMessageService.unsubscribe();
       }
     };
 
@@ -323,6 +336,9 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         updateOnlineStatus(session.user.id, 'online');
         // 保存userId到闭包变量
         currentUserId = session.user.id;
+        
+        // 初始化全局消息服务
+        globalMessageService.init(session.user.id);
         
         // 获取完整用户资料
         const completeUser = await getCompleteUserProfile(session.user);
@@ -356,6 +372,9 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
           clearInterval(sessionRefreshInterval);
           sessionRefreshInterval = null;
         }
+        
+        // 取消消息订阅
+        globalMessageService.unsubscribe();
         
         // 更新状态为未登录
         setState(prev => ({

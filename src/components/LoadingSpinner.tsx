@@ -2,10 +2,10 @@
 
 import React from 'react';
 import { motion } from 'framer-motion';
-import { BeatLoader, PulseLoader, ScaleLoader, GridLoader, ClimbingBoxLoader, MoonLoader, HashLoader, BarLoader } from 'react-spinners';
+import { BeatLoader, PulseLoader, ScaleLoader, GridLoader, ClimbingBoxLoader, MoonLoader, HashLoader, BarLoader, RingLoader, BounceLoader, SyncLoader } from 'react-spinners';
 
 interface LoadingSpinnerProps {
-  type?: 'beat' | 'pulse' | 'scale' | 'grid' | 'climbingBox' | 'moon' | 'hash' | 'bar';
+  type?: 'beat' | 'pulse' | 'scale' | 'grid' | 'climbingBox' | 'moon' | 'hash' | 'bar' | 'ring' | 'bounce' | 'sync' | 'dots';
   size?: number;
   color?: string;
   className?: string;
@@ -34,6 +34,16 @@ const LoadingSpinner: React.FC<LoadingSpinnerProps> = ({
     moon: MoonLoader,
     hash: HashLoader,
     bar: BarLoader,
+    ring: RingLoader,
+    bounce: BounceLoader,
+    sync: SyncLoader,
+    dots: () => (
+      <div className="loading-dots">
+        <span></span>
+        <span></span>
+        <span></span>
+      </div>
+    ),
   }[type];
 
   const spinnerProps = {
@@ -57,18 +67,28 @@ const LoadingSpinner: React.FC<LoadingSpinnerProps> = ({
     <motion.div
       initial={{ opacity: 0, scale: 0.9 }}
       animate={{ opacity: 1, scale: 1 }}
-      transition={{ duration: 0.5 }}
+      transition={{ duration: 0.5, ease: [0.25, 0.1, 0.25, 1] }}
       className={`flex flex-col items-center justify-center gap-3 ${className}`}
     >
-      <div style={gradientStyle}>
-        <SpinnerComponent {...spinnerProps} />
-      </div>
+      <motion.div 
+        style={gradientStyle}
+        animate={{ 
+          rotate: type === 'ring' || type === 'sync' ? 360 : 0,
+          scale: [1, 1.05, 1]
+        }}
+        transition={{ 
+          rotate: { duration: 1, repeat: Infinity, ease: "linear" },
+          scale: { duration: 1.5, repeat: Infinity }
+        }}
+      >
+        {type === 'dots' ? <SpinnerComponent /> : <SpinnerComponent {...spinnerProps} />}
+      </motion.div>
       {showMessage && (
         <motion.p
           className="text-gray-500 dark:text-gray-300 text-sm font-medium"
           initial={{ opacity: 0, y: 10 }}
           animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.3, duration: 0.5 }}
+          transition={{ delay: 0.3, duration: 0.5, ease: [0.25, 0.1, 0.25, 1] }}
         >
           {message}
         </motion.p>
@@ -93,9 +113,15 @@ const LoadingSpinner: React.FC<LoadingSpinnerProps> = ({
 
   if (fullscreen) {
     return (
-      <div className="fixed inset-0 flex items-center justify-center bg-black/30 backdrop-blur-lg z-50">
+      <motion.div 
+        className="fixed inset-0 flex items-center justify-center bg-black/30 backdrop-blur-lg z-50"
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        exit={{ opacity: 0 }}
+        transition={{ duration: 0.3 }}
+      >
         {container}
-      </div>
+      </motion.div>
     );
   }
 

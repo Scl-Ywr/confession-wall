@@ -8,23 +8,29 @@ import { Confession, ConfessionImage } from '@/types/confession';
 import CommentSection from '@/components/CommentSection';
 import VideoPlayer from '@/components/VideoPlayer';
 import LikeButton from './LikeButton';
-import { TrashIcon } from '@heroicons/react/24/outline';
+import { TrashIcon, TagIcon, FolderIcon, PencilIcon } from '@heroicons/react/24/outline';
 import { PhotoProvider, PhotoView } from 'react-photo-view';
 import 'react-photo-view/dist/react-photo-view.css';
 import { supabase } from '@/lib/supabase/client';
 import toast from 'react-hot-toast';
+import MarkdownRenderer from './MarkdownRenderer';
 interface ConfessionCardProps {
   confession: Confession;
   currentUserId?: string;
-  onDelete: (id: string) => void;
+  onDelete?: (id: string) => void;
+  onEdit?: (id: string, content: string) => void;
 }
 
 export default function ConfessionCard({
   confession,
   currentUserId,
   onDelete,
+  onEdit,
 }: ConfessionCardProps) {
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [isEditing, setIsEditing] = useState(false);
+  const [editContent, setEditContent] = useState('');
+  const [isSaving, setIsSaving] = useState(false);
   const router = useRouter();
 
   const formatDate = (dateString: string) => {
@@ -36,6 +42,65 @@ export default function ConfessionCard({
       hour: '2-digit',
       minute: '2-digit',
     });
+  };
+
+  const handleEditClick = () => {
+    if (!isEditing) {
+      setIsEditing(true);
+      setEditContent(confession.content);
+    }
+  };
+
+  const handleSaveEdit = async () => {
+    if (isSaving) return;
+    
+    setIsSaving(true);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      
+      const response = await fetch('/api/confessions/edit', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(session && { Authorization: `Bearer ${session.access_token}` }),
+        },
+        body: JSON.stringify({
+          id: confession.id,
+          content: editContent,
+        }),
+      });
+
+      if (response.ok) {
+        toast.success('修改成功', {
+          duration: 3000,
+          position: 'top-right',
+        });
+        setIsEditing(false);
+        setEditContent('');
+        if (onEdit) {
+          onEdit(confession.id, editContent);
+        }
+      } else {
+        const error = await response.json();
+        toast.error(error.error || '修改失败', {
+          duration: 3000,
+          position: 'top-right',
+        });
+      }
+    } catch (error) {
+      console.error('Error editing confession:', error);
+      toast.error('修改失败，请重试', {
+        duration: 3000,
+        position: 'top-right',
+      });
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const handleCancelEdit = () => {
+    setIsEditing(false);
+    setEditContent('');
   };
 
   // Handle profile click
@@ -288,33 +353,42 @@ export default function ConfessionCard({
   
   return (
     <motion.div 
-      className="glass-card rounded-xl sm:rounded-2xl p-4 sm:p-6 mb-5 sm:mb-6 transition-all duration-300 hover:-translate-y-2 hover:shadow-xl border border-white/20"
-      initial={{ opacity: 0, y: 20 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.5 }}
+      className="glass-card rounded-xl sm:rounded-2xl md:rounded-3xl p-4 sm:p-5 md:p-7 mb-4 sm:mb-6 md:mb-8 card-hover gpu-accelerated border border-white/30"
+      initial={{ opacity: 0, y: 30, scale: 0.95 }}
+      animate={{ opacity: 1, y: 0, scale: 1 }}
+      exit={{ opacity: 0, y: -20, scale: 0.95 }}
+      transition={{ 
+        duration: 0.5, 
+        ease: [0.25, 0.1, 0.25, 1] 
+      }}
+      whileHover={{ 
+        y: -4,
+        boxShadow: '0 20px 40px -10px rgba(0, 0, 0, 0.15), 0 10px 20px -6px rgba(0, 0, 0, 0.08)'
+      }}
     >
       <div className="flex justify-between items-start mb-4">
         <div className="flex items-center">
           {confession.is_anonymous ? (
-            <div className="w-12 h-12 bg-gradient-to-br from-primary-100 to-primary-200 rounded-full flex items-center justify-center mr-4 shadow-inner dark:from-primary-900 dark:to-primary-800">
-              <span className="text-primary-600 font-bold text-lg dark:text-primary-300">?</span>
+            <div className="w-12 h-12 sm:w-14 sm:h-14 bg-gradient-to-br from-warm-100 to-warm-200 rounded-full flex items-center justify-center mr-3 sm:mr-4 shadow-lg dark:from-warm-900/40 dark:to-warm-800/40">
+              <span className="text-warm-600 font-bold text-lg sm:text-xl dark:text-warm-300">?</span>
             </div>
           ) : (
             <div 
-              className="w-12 h-12 rounded-full overflow-hidden mr-4 border-2 border-white shadow-sm dark:border-gray-700 cursor-pointer hover:scale-110 transition-transform duration-300"
+              className="w-12 h-12 sm:w-14 sm:h-14 rounded-full overflow-hidden mr-3 sm:mr-4 border-2 sm:border-3 border-white/60 shadow-md dark:border-gray-700/60 cursor-pointer hover:scale-110 transition-transform duration-300"
               onClick={handleProfileClick}
             >
               {confession.profile?.avatar_url ? (
                 <Image
                   src={confession.profile.avatar_url}
                   alt={confession.profile.display_name}
-                  width={48}
-                  height={48}
+                  width={56}
+                  height={56}
                   className="w-full h-full object-cover"
+                  loading="lazy"
                 />
               ) : (
-                <div className="w-full h-full bg-gradient-to-br from-secondary-100 to-secondary-200 flex items-center justify-center dark:from-secondary-900 dark:to-secondary-800">
-                  <span className="text-secondary-600 font-bold text-lg dark:text-secondary-300">
+                <div className="w-full h-full bg-gradient-to-br from-secondary-100 to-secondary-200 flex items-center justify-center dark:from-secondary-900/40 dark:to-secondary-800/40">
+                  <span className="text-secondary-600 font-bold text-lg sm:text-xl dark:text-secondary-300">
                     {confession.profile?.display_name?.[0] || 'U'}
                   </span>
                 </div>
@@ -323,33 +397,96 @@ export default function ConfessionCard({
           )}
           <div>
             <h3 
-              className="font-bold text-gray-900 dark:text-white text-lg cursor-pointer hover:text-primary-600 dark:hover:text-primary-400 transition-colors duration-300"
+              className="font-bold text-gray-900 dark:text-white text-base sm:text-lg md:text-xl cursor-pointer hover:text-warm-600 dark:hover:text-warm-400 transition-colors duration-300"
               onClick={handleProfileClick}
             >
               {confession.is_anonymous ? '匿名用户' : confession.profile?.display_name || '未知用户'}
             </h3>
-            <p className="text-xs text-gray-500 dark:text-gray-400 font-medium tracking-wide">
+            <p className="text-xs text-gray-500 dark:text-gray-400 font-medium tracking-wide mt-1">
               {formatDate(confession.created_at)}
             </p>
           </div>
         </div>
       </div>
 
-      <div className="mb-6">
-        <p className="text-gray-700 dark:text-gray-200 leading-relaxed text-base whitespace-pre-wrap font-sans">
-          {confession.content}
-        </p>
+      <div className="mb-5 sm:mb-7">
+        {isEditing ? (
+          <div className="space-y-2">
+            <textarea
+              value={editContent}
+              onChange={(e) => setEditContent(e.target.value)}
+              className="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 dark:bg-gray-800 dark:text-white resize-none"
+              rows={6}
+              placeholder="编辑内容..."
+            />
+            <div className="flex gap-2">
+              <motion.button
+                onClick={handleSaveEdit}
+                disabled={isSaving}
+                className="px-6 py-2.5 bg-blue-600 text-white rounded-lg font-medium hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed shadow-md"
+                whileHover={{ scale: isSaving ? 1 : 1.02 }}
+                whileTap={{ scale: isSaving ? 1 : 0.98 }}
+              >
+                {isSaving ? '保存中...' : '保存'}
+              </motion.button>
+              <motion.button
+                onClick={handleCancelEdit}
+                disabled={isSaving}
+                className="px-6 py-2.5 bg-gray-200 text-gray-700 rounded-lg font-medium hover:bg-gray-300 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                whileHover={{ scale: isSaving ? 1 : 1.02 }}
+                whileTap={{ scale: isSaving ? 1 : 0.98 }}
+              >
+                取消
+              </motion.button>
+            </div>
+          </div>
+        ) : (
+          <div className="prose prose-sm sm:prose-base dark:prose-invert max-w-none">
+            <MarkdownRenderer content={confession.content} />
+          </div>
+        )}
       </div>
+
+      {confession.category && (
+        <div className="mb-4 sm:mb-5">
+          <button
+            onClick={() => router.push(`/category/${confession.category!.id}`)}
+            className="inline-flex items-center gap-2 px-3 sm:px-4 py-1.5 sm:py-2 rounded-full text-xs sm:text-sm font-medium border transition-all duration-300 cursor-pointer hover:shadow-lg hover:scale-105"
+            style={{ 
+              backgroundColor: `${confession.category.color}20` || '#f3f4f6',
+              borderColor: confession.category.color || '#d1d5db',
+              color: confession.category.color || '#374151'
+            }}
+          >
+            <FolderIcon className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+            <span>{confession.category.name}</span>
+          </button>
+        </div>
+      )}
+
+      {confession.hashtags && confession.hashtags.length > 0 && (
+        <div className="mb-4 sm:mb-5 flex flex-wrap gap-2">
+          {confession.hashtags.map((confessionHashtag) => (
+            <button
+              key={confessionHashtag.id}
+              onClick={() => router.push(`/hashtag/${encodeURIComponent(confessionHashtag.hashtag!.tag.substring(1))}`)}
+              className="inline-flex items-center gap-1 sm:gap-1.5 px-2.5 sm:px-3 py-1 sm:py-1.5 rounded-full text-xs font-medium bg-blue-50/80 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 hover:bg-blue-100 dark:hover:bg-blue-900/50 transition-all duration-300 cursor-pointer border border-blue-200/60 dark:border-blue-800/60 hover:shadow-md hover:scale-105"
+            >
+              <TagIcon className="w-3 h-3 sm:w-3.5 sm:h-3.5" />
+              <span>{confessionHashtag.hashtag?.tag}</span>
+            </button>
+          ))}
+        </div>
+      )}
 
       {confession.images && confession.images.length > 0 && (
           <PhotoProvider>
-            <div className="mb-4 sm:mb-6 grid grid-cols-1 md:grid-cols-2 gap-3 sm:gap-4">
+            <div className="mb-3 sm:mb-4 md:mb-6 grid grid-cols-1 sm:grid-cols-2 gap-2 sm:gap-3 md:gap-4">
               {confession.images.map((media) => (
                 <div
                   key={media.id}
                   className={`relative w-full rounded-lg sm:rounded-xl border border-gray-100 dark:border-gray-700 shadow-sm transition-all duration-500 ease-in-out ${media.file_type === 'video' ? '' : 'aspect-square overflow-hidden'} group`}
                 >
-                  {/* Media content - always show the media, no lock overlay */}
                     {media.file_type === 'image' ? (
                       <PhotoView src={media.image_url}>
                         <Image
@@ -358,55 +495,51 @@ export default function ConfessionCard({
                           width={600}
                           height={600}
                           className="w-full h-full object-cover transition-transform duration-500 cursor-pointer group-hover:scale-110"
+                          loading="lazy"
                         />
                       </PhotoView>
                     ) : media.file_type === 'video' && media.image_url ? (
                       <VideoPlayer
+                        id={`${confession.id}-${media.id}`}
                         videoUrl={media.image_url}
-                        className="w-full h-full transition-transform duration-500 cursor-pointer group-hover:scale-110"
+                        className="w-full h-full cursor-pointer"
                       />
                     ) : (
                       <div className="w-full h-full flex items-center justify-center bg-gray-900">
                         <p className="text-white text-sm">无效的视频</p>
                       </div>
                     )}
-                    
-
                 </div>
               ))}
             </div>
           </PhotoProvider>
         )}
 
-      <div className="flex flex-col sm:flex-row items-center justify-between pt-3 sm:pt-4 border-t border-gray-100 dark:border-gray-700/50 space-y-3 sm:space-y-0">
-        <div className="flex items-center space-x-3 sm:space-x-6">
-          {/* 使用现代化点赞按钮组件 */}
+      <div className="flex flex-col sm:flex-row items-center justify-between pt-2 sm:pt-3 md:pt-4 border-t border-gray-100 dark:border-gray-700/50 space-y-2 sm:space-y-0">
+        <div className="flex items-center space-x-2 sm:space-x-3 md:space-x-6">
           <LikeButton
             confessionId={confession.id}
             initialLikesCount={Math.max(0, Number(confession.likes_count) || 0)}
             initialLiked={confession.liked_by_user || false}
           />
           
-          {/* Media Controls: Download and Lock Toggle */}
           {confession.images && confession.images.length > 0 && (
-            <div className="flex items-center space-x-3">
-              {/* Lock toggle for post owner */}
+            <div className="flex items-center space-x-2 sm:space-x-3">
               {currentUserId === confession.user_id && (
                 <div className="relative group">
                   <button
                     onClick={() => {
-                      // Toggle lock for all media in the confession
                       confession.images!.forEach((media) => {
                         handleToggleLock(media.id, !media.is_locked);
                       });
                     }}
-                    className="relative flex items-center justify-center w-10 h-10 rounded-full transition-all duration-300 bg-gray-100 hover:bg-gray-200 dark:bg-gray-800 dark:hover:bg-gray-700 cursor-pointer"
+                    className="relative flex items-center justify-center w-9 h-9 sm:w-10 sm:h-10 rounded-full transition-all duration-300 bg-gray-100 hover:bg-gray-200 dark:bg-gray-800 dark:hover:bg-gray-700 cursor-pointer"
                     aria-label={confession.images![0].is_locked ? '解锁所有内容' : '锁定所有内容'}
                     title={confession.images![0].is_locked ? '解锁所有内容' : '锁定所有内容'}
                   >
                     <svg 
                       xmlns="http://www.w3.org/2000/svg" 
-                      className={`h-5 w-5 transition-colors duration-200 ${confession.images![0].is_locked ? 'text-blue-500' : 'text-yellow-500'}`} 
+                      className={`h-4 w-4 sm:h-5 sm:w-5 transition-colors duration-200 ${confession.images![0].is_locked ? 'text-blue-500' : 'text-yellow-500'}`} 
                       fill="none" 
                       viewBox="0 0 24 24" 
                       stroke="currentColor"
@@ -414,29 +547,27 @@ export default function ConfessionCard({
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
                     </svg>
                   </button>
-                  <span className="absolute top-full right-1/2 transform translate-x-1/2 mt-2 px-3 py-1.5 bg-black/90 backdrop-blur-sm text-white text-sm rounded whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity duration-200 pointer-events-none">
+                  <span className="absolute top-full right-1/2 transform translate-x-1/2 mt-2 px-2 sm:px-3 py-1 sm:py-1.5 bg-black/90 backdrop-blur-sm text-white text-xs rounded whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity duration-200 pointer-events-none">
                     {confession.images![0].is_locked ? '解锁所有内容' : '锁定所有内容'}
                   </span>
                 </div>
               )}
               
-              {/* Download button */}
               <div className="relative group">
                 <button
                   onClick={() => {
-                    // Download the first media
                     handleDownload(confession.images![0].id, confession.images![0]);
                   }}
-                  className="relative flex items-center justify-center w-10 h-10 rounded-full transition-all duration-300 bg-gray-100 hover:bg-gray-200 dark:bg-gray-800 dark:hover:bg-gray-700 cursor-pointer"
+                  className="relative flex items-center justify-center w-9 h-9 sm:w-10 sm:h-10 rounded-full transition-all duration-300 bg-gray-100 hover:bg-gray-200 dark:bg-gray-800 dark:hover:bg-gray-700 cursor-pointer"
                   aria-label="下载"
                   title="下载"
                 >
-                  <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-gray-600 dark:text-gray-300" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 sm:h-5 sm:w-5 text-gray-600 dark:text-gray-300" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
                   </svg>
                 </button>
                 {confession.images!.length > 1 && (
-                  <span className="absolute top-full left-1/2 transform -translate-x-1/2 mt-2 px-3 py-1.5 bg-black/80 backdrop-blur-sm text-white text-xs rounded whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity duration-200 pointer-events-none">
+                  <span className="absolute top-full left-1/2 transform -translate-x-1/2 mt-2 px-2 sm:px-3 py-1 sm:py-1.5 bg-black/80 backdrop-blur-sm text-white text-xs rounded whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity duration-200 pointer-events-none">
                     点击下载第一个媒体
                   </span>
                 )}
@@ -448,13 +579,21 @@ export default function ConfessionCard({
 
         {currentUserId && confession.user_id === currentUserId && (
           <>
-            <button
+            <motion.button
               onClick={() => setShowDeleteConfirm(true)}
               className="flex items-center gap-2 text-gray-400 hover:text-red-500 transition-colors duration-300"
             >
-              <TrashIcon className="w-5 h-5" />
-              <span className="text-sm font-medium">删除</span>
-            </button>
+              <TrashIcon className="w-4 h-4 sm:w-5 sm:h-5" />
+              <span className="text-xs sm:text-sm font-medium">删除</span>
+            </motion.button>
+            
+            <motion.button
+              onClick={handleEditClick}
+              className="flex items-center gap-2 text-gray-400 hover:text-blue-500 transition-colors duration-300"
+            >
+              <PencilIcon className="w-4 h-4 sm:w-5 sm:h-5" />
+              <span className="text-xs sm:text-sm font-medium">编辑</span>
+            </motion.button>
             
             {/* 自定义删除确认对话框 */}
             {showDeleteConfirm && (
@@ -477,7 +616,9 @@ export default function ConfessionCard({
                     <button
                       onClick={() => {
                         setShowDeleteConfirm(false);
-                        onDelete(confession.id);
+                        if (onDelete) {
+                          onDelete(confession.id);
+                        }
                       }}
                       className="flex-1 px-4 py-2 bg-red-500 text-white rounded-xl hover:bg-red-600 transition-all"
                     >

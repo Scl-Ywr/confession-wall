@@ -73,6 +73,7 @@ export function MediaGallery({ mediaFiles }: MediaGalleryProps) {
               /* 视频显示区域 - 左侧 */
               <div className="w-full lg:w-2/3 bg-black overflow-hidden">
                 <VideoPlayer 
+                  id={`media-gallery-${file.id}`}
                   videoUrl={file.url}
                   posterUrl={file.url}
                   className="w-full h-full object-contain"

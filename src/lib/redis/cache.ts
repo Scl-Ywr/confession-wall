@@ -177,7 +177,7 @@ export const acquireLock = async (key: string): Promise<boolean> => {
     
     // 实现简单的Redis锁机制
     const redisModule = await import('./client');
-    const redisClient = redisModule.default;
+    const { redis: redisClient } = redisModule;
     
     if (redisClient && typeof window === 'undefined') {
       const result = await redisClient.set(`confession_wall:${fullLockKey}`, '1', 'PX', EXPIRY.LOCK, 'NX');
@@ -205,7 +205,7 @@ export const releaseLock = async (key: string): Promise<boolean> => {
     
     // 实现简单的Redis锁释放
     const redisModule = await import('./client');
-    const redisClient = redisModule.default;
+    const { redis: redisClient } = redisModule;
     
     if (redisClient && typeof window === 'undefined') {
       await redisClient.del(`confession_wall:${fullLockKey}`);

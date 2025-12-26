@@ -4,23 +4,60 @@ import React, { useState } from 'react';
 import Image from 'next/image';
 import { ConfessionFormData } from '@/types/confession';
 import { confessionService } from '@/services/confessionService';
-import { PhotoIcon, PaperAirplaneIcon, XMarkIcon, FilmIcon } from '@heroicons/react/24/outline';
+import { PhotoIcon, PaperAirplaneIcon, XMarkIcon, FilmIcon, PencilIcon } from '@heroicons/react/24/outline';
 import VideoUploader from './VideoUploader';
 import VideoPlayer from './VideoPlayer';
-import { motion } from 'framer-motion';
+import { motion, AnimatePresence } from 'framer-motion';
+import { HashtagInput } from './HashtagInput';
+import { CategorySelect } from './CategorySelect';
+import { MentionInput } from './MentionInput';
+import MarkdownEditor from './MarkdownEditor';
 
 interface CreateConfessionFormProps {
   onSuccess: () => void;
   user: { id: string; email?: string } | null;
+  groupId?: string;
 }
 
-export default function CreateConfessionForm({ onSuccess, user }: CreateConfessionFormProps) {
+export default function CreateConfessionForm({ onSuccess, user, groupId }: CreateConfessionFormProps) {
   const [formData, setFormData] = useState<ConfessionFormData>({
     content: '',
     is_anonymous: false,
     images: [],
     videoUrls: [],
+    category_id: undefined,
+    hashtags: [],
+    group_id: groupId,
   });
+  const [availableGroups, setAvailableGroups] = useState<Array<{ id: string; name: string }>>([]);
+  const [loadingGroups, setLoadingGroups] = useState(false);
+
+  // Fetch user's groups when component mounts
+  React.useEffect(() => {
+    const fetchGroups = async () => {
+      if (user) {
+        setLoadingGroups(true);
+        try {
+          // This would be a real API call in production
+          // const response = await fetch('/api/interest-groups/user');
+          // const data = await response.json();
+          // setAvailableGroups(data.groups);
+          // For now, we'll use mock data
+          setAvailableGroups([
+            { id: '1', name: '情感交流圈' },
+            { id: '2', name: '校园生活圈' },
+            { id: '3', name: '兴趣爱好圈' }
+          ]);
+        } catch (error) {
+          console.error('Failed to fetch groups:', error);
+        } finally {
+          setLoadingGroups(false);
+        }
+      }
+    };
+
+    fetchGroups();
+  }, [user]);
   const [videoPosters, setVideoPosters] = useState<Record<string, string>>({});
   const [selectedImages, setSelectedImages] = useState<File[]>([]);
   const [previewUrls, setPreviewUrls] = useState<string[]>([]);
@@ -30,6 +67,7 @@ export default function CreateConfessionForm({ onSuccess, user }: CreateConfessi
   const [showVideoUploader, setShowVideoUploader] = useState(false);
   const [videoUrl, setVideoUrl] = useState<string | null>(null);
   const [showConfirmModal, setShowConfirmModal] = useState(false);
+  const [showMarkdownEditor, setShowMarkdownEditor] = useState(false);
 
   const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
@@ -80,7 +118,14 @@ export default function CreateConfessionForm({ onSuccess, user }: CreateConfessi
     try {
       await confessionService.createConfession(formData);
       // 重置表单数据，包括videoUrls
-      setFormData({ content: '', is_anonymous: false, images: [], videoUrls: [] });
+      setFormData({ 
+        content: '', 
+        is_anonymous: false, 
+        images: [], 
+        videoUrls: [],
+        category_id: undefined,
+        hashtags: []
+      });
       setSelectedImages([]);
       previewUrls.forEach(url => URL.revokeObjectURL(url));
       setPreviewUrls([]);
@@ -188,16 +233,80 @@ export default function CreateConfessionForm({ onSuccess, user }: CreateConfessi
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.5, delay: 0.3, ease: "easeOut" }}
         >
-          <textarea
-            className="w-full h-32 sm:h-40 px-4 sm:px-6 py-3 sm:py-4 bg-white/50 dark:bg-gray-800/50 backdrop-blur-sm border border-gray-200 dark:border-gray-700 rounded-xl sm:rounded-2xl focus:ring-2 focus:ring-primary-500 focus:border-transparent transition-all resize-none text-base sm:text-lg placeholder-gray-400 dark:text-white dark:placeholder-gray-500 group-hover:bg-white/80 dark:group-hover:bg-gray-800/80"
-            placeholder="在这里写下你想说的话..."
+          <MentionInput
             value={formData.content}
-            onChange={(e) => setFormData(prev => ({ ...prev, content: e.target.value }))}
-            disabled={loading}
-          ></textarea>
-          <div className="absolute bottom-3 right-3 sm:bottom-4 sm:right-4 text-xs text-gray-400 font-medium bg-white/80 dark:bg-gray-800/80 px-2 py-1 rounded-lg backdrop-blur-sm">
-            {formData.content.length} 字
+            onChange={(value) => setFormData(prev => ({ ...prev, content: value }))}
+            placeholder="在这里写下你想说的话..."
+            onMention={(username) => {
+              console.log('Mentioned user:', username);
+            }}
+          />
+          <div className="absolute bottom-3 right-3 sm:bottom-4 sm:right-4 flex items-center gap-2">
+            <div className="text-xs text-gray-400 font-medium bg-white/80 dark:bg-gray-800/80 px-2 py-1 rounded-lg backdrop-blur-sm">
+              {formData.content.length} 字
+            </div>
+            <motion.button
+              type="button"
+              onClick={() => setShowMarkdownEditor(true)}
+              className="p-2 rounded-lg bg-primary-50 dark:bg-primary-900/30 hover:bg-primary-100 dark:hover:bg-primary-900/50 transition-colors"
+              whileHover={{ scale: 1.05 }}
+              whileTap={{ scale: 0.95 }}
+              title="打开Markdown编辑器"
+            >
+              <PencilIcon className="w-4 h-4 text-primary-600 dark:text-primary-400" />
+            </motion.button>
           </div>
+        </motion.div>
+
+        {/* Category Selection */}
+        <motion.div 
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.5, delay: 0.4, ease: "easeOut" }}
+        >
+          <CategorySelect
+            value={formData.category_id}
+            onChange={(categoryId) => setFormData(prev => ({ ...prev, category_id: categoryId }))}
+            placeholder="选择分类（可选）"
+          />
+        </motion.div>
+
+        {/* Interest Group Selection */}
+        <motion.div 
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.5, delay: 0.45, ease: "easeOut" }}
+        >
+          <div className="mb-2 text-sm font-medium text-gray-700 dark:text-gray-300">发布到圈子（可选）</div>
+          <select
+            value={formData.group_id || ''}
+            onChange={(e) => setFormData(prev => ({ ...prev, group_id: e.target.value || undefined }))}
+            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-800 dark:border-gray-700 dark:text-white"
+          >
+            <option value="">不发布到特定圈子</option>
+            {loadingGroups ? (
+              <option value="" disabled>加载中...</option>
+            ) : (
+              availableGroups.map(group => (
+                <option key={group.id} value={group.id}>
+                  {group.name}
+                </option>
+              ))
+            )}
+          </select>
+        </motion.div>
+
+        {/* Hashtag Input */}
+        <motion.div 
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.5, delay: 0.5, ease: "easeOut" }}
+        >
+          <HashtagInput
+            hashtags={formData.hashtags || []}
+            onChange={(hashtags) => setFormData(prev => ({ ...prev, hashtags }))}
+            placeholder="添加话题标签..."
+          />
         </motion.div>
 
         {/* Image Upload Preview */}
@@ -252,6 +361,7 @@ export default function CreateConfessionForm({ onSuccess, user }: CreateConfessi
           <div className="mt-6 animate-fade-in">
             <div className="relative rounded-xl overflow-hidden shadow-lg border border-gray-200 dark:border-gray-700">
               <VideoPlayer 
+                id="preview-video"
                 videoUrl={videoUrl} 
                 posterUrl={videoPosters[videoUrl]}
               />
@@ -281,7 +391,11 @@ export default function CreateConfessionForm({ onSuccess, user }: CreateConfessi
 
         <div className="flex flex-col gap-4 pt-2">
           <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 w-full">
-            <label className="cursor-pointer group relative">
+            <motion.label 
+              className="cursor-pointer group relative"
+              whileHover={{ scale: 1.02 }}
+              whileTap={{ scale: 0.98 }}
+            >
               <input
                 type="file"
                 accept="image/*"
@@ -290,23 +404,39 @@ export default function CreateConfessionForm({ onSuccess, user }: CreateConfessi
                 onChange={handleImageChange}
                 disabled={loading || previewUrls.length >= 9}
               />
-              <div className="flex items-center justify-center gap-1.5 px-3 py-2 bg-gray-50 dark:bg-gray-800/50 hover:bg-gray-100 dark:hover:bg-gray-700/50 text-gray-600 dark:text-gray-300 rounded-lg sm:rounded-xl transition-all border border-gray-200 dark:border-gray-700 group-hover:border-primary-300 dark:group-hover:border-primary-700 text-sm">
-                <PhotoIcon className="w-4 h-4 text-primary-500 group-hover:scale-110 transition-transform" />
+              <div className="flex items-center justify-center gap-1.5 px-3 py-2 bg-gray-50 dark:bg-gray-800/50 hover:bg-gray-100 dark:hover:bg-gray-700/50 text-gray-600 dark:text-gray-300 rounded-lg sm:rounded-xl transition-all border border-gray-200 dark:border-gray-700 group-hover:border-primary-300 dark:group-hover:border-primary-700 text-sm btn-hover-lift ripple-effect">
+                <motion.div
+                  animate={previewUrls.length >= 9 ? { scale: [1, 1.1, 1] } : {}}
+                  transition={{ duration: 0.3 }}
+                >
+                  <PhotoIcon className="w-4 h-4 text-primary-500 group-hover:scale-110 transition-transform" />
+                </motion.div>
                 <span className="font-medium">图片</span>
               </div>
-            </label>
+            </motion.label>
 
-            <button
+            <motion.button
               type="button"
               onClick={() => setShowVideoUploader(!showVideoUploader)}
               disabled={loading}
-              className="flex items-center justify-center gap-1.5 px-3 py-2 bg-gray-50 dark:bg-gray-800/50 hover:bg-gray-100 dark:hover:bg-gray-700/50 text-gray-600 dark:text-gray-300 rounded-lg sm:rounded-xl transition-all border border-gray-200 dark:border-gray-700 group-hover:border-primary-300 dark:group-hover:border-primary-700 text-sm"
+              className="flex items-center justify-center gap-1.5 px-3 py-2 bg-gray-50 dark:bg-gray-800/50 hover:bg-gray-100 dark:hover:bg-gray-700/50 text-gray-600 dark:text-gray-300 rounded-lg sm:rounded-xl transition-all border border-gray-200 dark:border-gray-700 group-hover:border-primary-300 dark:group-hover:border-primary-700 text-sm btn-hover-lift btn-press ripple-effect"
+              whileHover={{ scale: 1.02 }}
+              whileTap={{ scale: 0.98 }}
             >
-              <FilmIcon className="w-4 h-4 text-primary-500 group-hover:scale-110 transition-transform" />
+              <motion.div
+                animate={showVideoUploader ? { rotate: [0, 360] } : {}}
+                transition={{ duration: 0.5 }}
+              >
+                <FilmIcon className="w-4 h-4 text-primary-500 group-hover:scale-110 transition-transform" />
+              </motion.div>
               <span className="font-medium">视频</span>
-            </button>
+            </motion.button>
 
-            <label className="flex items-center justify-center gap-2 cursor-pointer group select-none px-3 py-2 bg-gray-50 dark:bg-gray-800/50 hover:bg-gray-100 dark:hover:bg-gray-700/50 rounded-lg sm:rounded-xl transition-all border border-gray-200 dark:border-gray-700 group-hover:border-primary-300 dark:group-hover:border-primary-700">
+            <motion.label 
+              className="flex items-center justify-center gap-2 cursor-pointer group select-none px-3 py-2 bg-gray-50 dark:bg-gray-800/50 hover:bg-gray-100 dark:hover:bg-gray-700/50 rounded-lg sm:rounded-xl transition-all border border-gray-200 dark:border-gray-700 group-hover:border-primary-300 dark:group-hover:border-primary-700 btn-hover-lift"
+              whileHover={{ scale: 1.02 }}
+              whileTap={{ scale: 0.98 }}
+            >
               <div className="relative">
                 <input
                   type="checkbox"
@@ -314,29 +444,63 @@ export default function CreateConfessionForm({ onSuccess, user }: CreateConfessi
                   checked={formData.is_anonymous}
                   onChange={(e) => setFormData(prev => ({ ...prev, is_anonymous: e.target.checked }))}
                 />
-                <div className="w-9 h-5 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-primary-300 dark:peer-focus:ring-primary-800 rounded-full peer dark:bg-gray-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[1px] after:left-[1px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all dark:border-gray-600 peer-checked:bg-primary-600"></div>
+                <motion.div 
+                  className={`w-9 h-5 rounded-full peer after:content-[''] after:absolute after:top-[1px] after:left-[1px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all dark:border-gray-600 transition-all duration-300 ${formData.is_anonymous ? 'bg-primary-600 after:translate-x-full' : 'bg-gray-200 peer-focus:ring-4 peer-focus:ring-primary-300 dark:bg-gray-700'}`}
+                  animate={formData.is_anonymous ? { scale: [1, 1.1, 1] } : {}}
+                  transition={{ duration: 0.3 }}
+                />
               </div>
-              <span className="text-gray-600 dark:text-gray-300 font-medium group-hover:text-primary-600 dark:group-hover:text-primary-400 transition-colors text-sm">匿名</span>
-            </label>
+              <motion.span 
+                className="text-gray-600 dark:text-gray-300 font-medium group-hover:text-primary-600 dark:group-hover:text-primary-400 transition-colors text-sm"
+                animate={formData.is_anonymous ? { color: ['#4b5563', '#ea580c'] } : {}}
+                transition={{ duration: 0.3 }}
+              >
+                匿名
+              </motion.span>
+            </motion.label>
           </div>
 
-          <button
+          <motion.button
               type="submit"
               disabled={loading}
-              className={`w-full px-6 py-3 sm:py-3 bg-gradient-to-r from-blue-500 to-pink-500 text-white rounded-xl font-bold shadow-lg shadow-blue-500/30 hover:shadow-pink-500/50 transform hover:-translate-y-0.5 transition-all disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none flex items-center justify-center gap-2`}
+              className={`w-full px-6 py-3 sm:py-3 bg-gradient-to-r from-blue-500 to-pink-500 text-white rounded-xl font-bold shadow-lg shadow-blue-500/30 hover:shadow-pink-500/50 transform hover:-translate-y-0.5 transition-all disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none flex items-center justify-center gap-2 btn-hover-lift btn-press ripple-effect`}
+              whileHover={{ scale: 1.02, boxShadow: '0 20px 25px -5px rgba(59, 130, 246, 0.4), 0 10px 10px -5px rgba(236, 72, 153, 0.4)' }}
+              whileTap={{ scale: 0.98 }}
             >
             {loading ? (
               <>
-                <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
-                <span>发布中...</span>
+                <motion.div 
+                  className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full"
+                  animate={{ rotate: 360 }}
+                  transition={{ duration: 1, repeat: Infinity, ease: "linear" }}
+                />
+                <motion.span
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  transition={{ delay: 0.2 }}
+                >
+                  发布中...
+                </motion.span>
               </>
             ) : (
               <>
-                <span>发布表白</span>
-                <PaperAirplaneIcon className="w-5 h-5 -rotate-45 mb-1" />
+                <motion.span
+                  initial={{ x: -10, opacity: 0 }}
+                  animate={{ x: 0, opacity: 1 }}
+                  transition={{ duration: 0.3 }}
+                >
+                  发布表白
+                </motion.span>
+                <motion.div
+                  initial={{ rotate: -45, opacity: 0 }}
+                  animate={{ rotate: -45, opacity: 1 }}
+                  transition={{ duration: 0.3, delay: 0.1 }}
+                >
+                  <PaperAirplaneIcon className="w-5 h-5 -rotate-45 mb-1" />
+                </motion.div>
               </>
             )}
-          </button>
+          </motion.button>
         </div>
 
         {error && (
@@ -389,6 +553,17 @@ export default function CreateConfessionForm({ onSuccess, user }: CreateConfessi
           </div>
         </div>
       )}
+
+      {/* Markdown编辑器模态框 */}
+      <AnimatePresence>
+        {showMarkdownEditor && (
+          <MarkdownEditor
+            content={formData.content}
+            onChange={(value) => setFormData(prev => ({ ...prev, content: value }))}
+            onClose={() => setShowMarkdownEditor(false)}
+          />
+        )}
+      </AnimatePresence>
     </motion.div>
   );
 }

@@ -1,17 +1,17 @@
-import { Redis } from 'ioredis';
 // Redis客户端实例
 // 注意：此模块只在服务器端使用
-// 使用动态导入避免在客户端或构建过程中加载ioredis
+import type { Redis } from 'ioredis';
 
 // 定义Redis类型
 let redis: Redis | undefined;
 
 // 只在服务器端初始化Redis客户端
 if (typeof window === 'undefined') {
-  try {
-    // 动态导入ioredis，只在服务器端执行
-    import('ioredis').then((RedisModule) => {
-      const Redis = RedisModule.default;
+  (async () => {
+    try {
+      // 动态导入ioredis，避免ESLint错误
+      const RedisModule = await import('ioredis');
+      const Redis = RedisModule.default || RedisModule;
       
       redis = new Redis({
         host: process.env.REDIS_HOST || 'localhost',
@@ -52,11 +52,11 @@ if (typeof window === 'undefined') {
           console.log(`Redis reconnecting: attempt ${info.attempt}, delay ${info.delay}ms`);
         });
       }
-    });
-  } catch (error) {
-    console.error('Failed to initialize Redis client:', error);
-    redis = undefined;
-  }
+    } catch (error) {
+      console.error('Failed to initialize Redis client:', error);
+      redis = undefined;
+    }
+  })();
 }
 
-export default redis;
+export { redis };

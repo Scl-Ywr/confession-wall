@@ -1,494 +1,308 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
-import { useRouter } from 'next/navigation';
-import { useAuth } from '@/context/AuthContext';
-import { supabase } from '@/lib/supabase/client';
+import { useState, useEffect, useRef, useCallback } from 'react';
+import Image from 'next/image';
 import { Notification } from '@/types/chat';
-import { BellIcon, CheckCircleIcon, ClockIcon, XCircleIcon } from '@heroicons/react/24/outline';
-import { chatService } from '@/services/chatService';
-import { queueService, getNotificationChannel, QueueMessage } from '@/lib/redis/queue-service';
+import { motion, AnimatePresence } from 'framer-motion';
+import { 
+  BellIcon, 
+  XMarkIcon, 
+  HeartIcon, 
+  UsersIcon 
+} from '@heroicons/react/24/outline';
+import { useAuth } from '@/context/AuthContext';
 
 interface NotificationCenterProps {
   isOpen: boolean;
   onClose: () => void;
-  onNotificationClick?: () => void;
 }
 
-export default function NotificationCenter({ isOpen, onClose, onNotificationClick }: NotificationCenterProps) {
-  const router = useRouter();
-  const { user } = useAuth();
+export function NotificationCenter({ isOpen, onClose }: NotificationCenterProps) {
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [loading, setLoading] = useState(true);
   const [unreadCount, setUnreadCount] = useState(0);
-  // 跟踪已处理的请求，防止重复处理
-  const [processedRequests, setProcessedRequests] = useState<Set<string>>(new Set());
+  const [hasMore, setHasMore] = useState(true);
+  const [page, setPage] = useState(1);
+  const { user } = useAuth();
+  const notificationRef = useRef<HTMLDivElement>(null);
 
-  // 获取通知列表
-  const fetchNotifications = useCallback(async () => {
+  // 获取通知
+  const fetchNotifications = useCallback(async (pageNum: number = 1, append: boolean = false) => {
     if (!user) return;
     
     try {
-      setLoading(true);
-      const notifications = await chatService.getNotifications();
-      setNotifications(notifications);
+      const response = await fetch(`/api/notifications?user_id=${user.id}&limit=20&offset=${(pageNum - 1) * 20}`);
+      const data = await response.json();
       
-      // 计算未读通知数量
-      const count = notifications.filter(n => !n.read_status).length;
-      setUnreadCount(count);
+      if (response.ok) {
+        if (append) {
+          setNotifications(prev => [...prev, ...(data.notifications || [])]);
+        } else {
+          setNotifications(data.notifications || []);
+        }
+        setUnreadCount(data.unreadCount || 0);
+        
+        // 如果返回的通知数量少于20，说明没有更多数据了
+        setHasMore((data.notifications || []).length >= 20);
+      } else {
+        console.error('Error fetching notifications:', data.error);
+      }
     } catch (error) {
-      console.error('Failed to fetch notifications:', error);
+      console.error('Error fetching notifications:', error);
     } finally {
       setLoading(false);
     }
   }, [user]);
 
-  // 初始加载通知
-  useEffect(() => {
-    if (isOpen && user) {
-      fetchNotifications();
-    }
-  }, [isOpen, user, fetchNotifications]);
-
-  // 监听通知变化
-  useEffect(() => {
-    if (!user) return;
-
-    // 创建Realtime通道监听通知变化（备用方案）
-    const channel = supabase.channel('user-notifications');
-
-    channel
-      .on('postgres_changes', {
-        event: '*',
-        schema: 'public',
-        table: 'notifications',
-        filter: `recipient_id=eq.${user.id}`
-      }, (payload) => {
-        if (payload.eventType === 'INSERT') {
-          // 新通知
-          setNotifications(prev => [payload.new as Notification, ...prev]);
-          setUnreadCount(prev => prev + 1);
-        } else if (payload.eventType === 'UPDATE') {
-          // 更新通知状态
-          setNotifications(prev => prev.map(notification => 
-            notification.id === payload.new.id ? payload.new as Notification : notification
-          ));
-          
-          // 更新未读计数
-          const updatedUnreadCount = notifications.filter(n => !n.read_status).length;
-          setUnreadCount(updatedUnreadCount);
-        } else if (payload.eventType === 'DELETE') {
-          // 删除通知
-          setNotifications(prev => prev.filter(notification => notification.id !== payload.old?.id));
-          
-          // 更新未读计数
-          const updatedUnreadCount = notifications.filter(n => !n.read_status).length;
-          setUnreadCount(updatedUnreadCount);
-        }
-      })
-      .subscribe();
-
-    // 订阅Redis消息队列
-    const notificationChannel = getNotificationChannel(user.id);
-    
-    // 处理Redis通知消息
-    const handleRedisNotification = (message: QueueMessage<unknown>) => {
-      console.log('Received Redis notification:', message);
-      
-      const payload = message.payload;
-      
-      // 检查payload是否是对象
-      if (typeof payload === 'object' && payload !== null) {
-        // 使用类型断言处理payload属性
-        const payloadObj = payload as {
-          type?: string;
-          notification?: unknown;
-          updateType?: string;
-          notificationId?: string;
-        };
-        
-        // 根据消息类型处理
-        if (payloadObj.type === 'new_notification' && payloadObj.notification) {
-          // 新通知 - 使用类型断言确保返回类型正确
-          setNotifications(prev => {
-            const newNotification = payloadObj.notification as Notification;
-            return [newNotification, ...prev];
-          });
-          setUnreadCount(prev => prev + 1);
-        } else if (payloadObj.type === 'notification_updated' && payloadObj.notification) {
-          // 更新通知状态 - 使用类型断言确保返回类型正确
-          setNotifications(prev => {
-            const updatedNotification = payloadObj.notification as Notification;
-            return prev.map(notification => 
-              notification.id === updatedNotification.id ? updatedNotification : notification
-            );
-          });
-          
-          // 更新未读计数
-          const updatedUnreadCount = notifications.filter(n => !n.read_status).length;
-          setUnreadCount(updatedUnreadCount);
-        } else if (payloadObj.type === 'notifications_updated' && payloadObj.updateType === 'mark_all_as_read') {
-          // 标记所有通知为已读
-          setNotifications(prev => prev.map(notification => ({ ...notification, read_status: true })));
-          setUnreadCount(0);
-        } else if (payloadObj.type === 'notification_deleted' && payloadObj.notificationId) {
-          // 删除通知
-          setNotifications(prev => prev.filter(notification => notification.id !== payloadObj.notificationId));
-          
-          // 更新未读计数
-          const updatedUnreadCount = notifications.filter(n => !n.read_status).length;
-          setUnreadCount(updatedUnreadCount);
-        }
-      }
-    };
-
-    // 订阅Redis频道
-    queueService.subscribe(notificationChannel, handleRedisNotification);
-
-    return () => {
-      // 移除Realtime通道
-      supabase.removeChannel(channel);
-      // 取消Redis订阅
-      queueService.unsubscribe(notificationChannel, handleRedisNotification);
-    };
-  }, [user, notifications]);
-
   // 标记通知为已读
   const markAsRead = async (notificationId: string) => {
     try {
-      const updatedNotification = await chatService.markNotificationAsRead(notificationId);
-      setNotifications(prev => prev.map(notification => 
-        notification.id === notificationId ? updatedNotification : notification
-      ));
-      setUnreadCount(prev => Math.max(prev - 1, 0));
+      const response = await fetch('/api/notifications', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ notificationId }),
+      });
+      
+      if (response.ok) {
+        // 更新本地状态
+        setNotifications(prev => 
+          prev.map(notif => 
+            notif.id === notificationId 
+              ? { ...notif, read_status: true }
+              : notif
+          )
+        );
+        
+        // 减少未读数量
+        setUnreadCount(prev => Math.max(0, prev - 1));
+      } else {
+        const data = await response.json();
+        console.error('Error marking notification as read:', data.error);
+      }
     } catch (error) {
-      console.error('Failed to mark notification as read:', error);
+      console.error('Error marking notification as read:', error);
     }
   };
 
   // 标记所有通知为已读
   const markAllAsRead = async () => {
+    if (!user) return;
+    
     try {
-      await chatService.markAllNotificationsAsRead();
-      setNotifications(prev => prev.map(notification => ({ ...notification, read_status: true })));
-      setUnreadCount(0);
-    } catch (error) {
-      console.error('Failed to mark all notifications as read:', error);
-    }
-  };
-
-  // 删除通知
-  const deleteNotification = async (notificationId: string) => {
-    try {
-      await chatService.deleteNotification(notificationId);
-      setNotifications(prev => prev.filter(notification => notification.id !== notificationId));
+      const response = await fetch(`/api/notifications?user_id=${user.id}`, {
+        method: 'PATCH',
+      });
       
-      // 更新未读计数
-      const updatedUnreadCount = notifications.filter(n => !n.read_status).length;
-      setUnreadCount(updatedUnreadCount);
+      if (response.ok) {
+        // 更新本地状态
+        setNotifications(prev => 
+          prev.map(notif => ({ ...notif, read_status: true }))
+        );
+        setUnreadCount(0);
+      } else {
+        const data = await response.json();
+        console.error('Error marking all notifications as read:', data.error);
+      }
     } catch (error) {
-      console.error('Failed to delete notification:', error);
+      console.error('Error marking all notifications as read:', error);
     }
   };
 
   // 处理通知点击
   const handleNotificationClick = (notification: Notification) => {
-    // 如果通知未读，标记为已读
+    // 标记为已读
     if (!notification.read_status) {
       markAsRead(notification.id);
     }
     
     // 根据通知类型导航到相应页面
-    switch (notification.type) {
-      case 'friend_request':
-        router.push('/friends/requests');
-        break;
-      case 'friend_accepted':
-        router.push('/chat');
-        break;
-      case 'group_invite':
-        router.push('/chat/groups');
-        break;
-      default:
-        break;
+    if (notification.type === 'group_invite') {
+      // 导航到群聊页面
+      window.location.href = `/chat/group/${notification.group_id}`;
+    } else if (notification.type === 'friend_request' || notification.type === 'friend_accepted' || notification.type === 'friend_rejected' || notification.type === 'friend_request_sent') {
+      // 导航到好友请求页面
+      window.location.href = `/profile/friends`;
     }
     
-    if (onNotificationClick) {
-      onNotificationClick();
-    }
+    // 关闭通知中心
     onClose();
   };
 
-  // 获取通知类型的图标和颜色
+  // 获取通知图标
   const getNotificationIcon = (type: string) => {
     switch (type) {
       case 'friend_request':
-        return { icon: <ClockIcon className="w-5 h-5" />, color: 'text-blue-500', bgColor: 'bg-blue-100' };
       case 'friend_accepted':
-        return { icon: <CheckCircleIcon className="w-5 h-5" />, color: 'text-green-500', bgColor: 'bg-green-100' };
       case 'friend_rejected':
-        return { icon: <XCircleIcon className="w-5 h-5" />, color: 'text-red-500', bgColor: 'bg-red-100' };
+      case 'friend_request_sent':
+        return <HeartIcon className="w-5 h-5 text-red-500" />;
       case 'group_invite':
-        return { icon: <BellIcon className="w-5 h-5" />, color: 'text-purple-500', bgColor: 'bg-purple-100' };
+        return <UsersIcon className="w-5 h-5 text-blue-500" />;
       default:
-        return { icon: <BellIcon className="w-5 h-5" />, color: 'text-gray-500', bgColor: 'bg-gray-100' };
+        return <BellIcon className="w-5 h-5 text-gray-500" />;
     }
   };
+
+  // 格式化时间
+  const formatTime = (dateString: string) => {
+    const date = new Date(dateString);
+    const now = new Date();
+    const diffMs = now.getTime() - date.getTime();
+    const diffMins = Math.floor(diffMs / 60000);
+    const diffHours = Math.floor(diffMs / 3600000);
+    const diffDays = Math.floor(diffMs / 86400000);
+
+    if (diffMins < 1) return '刚刚';
+    if (diffMins < 60) return `${diffMins}分钟前`;
+    if (diffHours < 24) return `${diffHours}小时前`;
+    if (diffDays < 30) return `${diffDays}天前`;
+    return date.toLocaleDateString();
+  };
+
+  // 加载更多通知
+  const loadMore = () => {
+    if (!loading && hasMore) {
+      const nextPage = page + 1;
+      setPage(nextPage);
+      fetchNotifications(nextPage, true);
+    }
+  };
+
+  // 点击外部关闭
+  const handleClickOutside = useCallback((e: MouseEvent) => {
+    if (notificationRef.current && !notificationRef.current.contains(e.target as Node)) {
+      onClose();
+    }
+  }, [onClose]);
+
+  useEffect(() => {
+    if (isOpen) {
+      setLoading(true);
+      setPage(1);
+      fetchNotifications(1, false);
+      
+      document.addEventListener('mousedown', handleClickOutside);
+      return () => {
+        document.removeEventListener('mousedown', handleClickOutside);
+      };
+    }
+  }, [isOpen, fetchNotifications, handleClickOutside]);
 
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-start justify-end">
-      {/* 点击外部关闭 */}
-      <div className="absolute inset-0" onClick={onClose}></div>
-      
-      {/* 通知中心 */}
-      <div className="relative w-full max-w-sm bg-white dark:bg-gray-800 rounded-l-xl shadow-2xl h-full overflow-hidden flex flex-col">
-        {/* 通知中心头部 */}
-        <div className="p-4 border-b border-gray-200 dark:border-gray-700 flex justify-between items-center bg-gray-50 dark:bg-gray-900">
-          <div className="flex items-center gap-2">
-            <BellIcon className="w-6 h-6 text-primary-600 dark:text-primary-400" />
-            <h2 className="text-lg font-semibold text-gray-800 dark:text-white">通知中心</h2>
+    <AnimatePresence>
+      <motion.div
+        initial={{ opacity: 0, y: 10 }}
+        animate={{ opacity: 1, y: 0 }}
+        exit={{ opacity: 0, y: 10 }}
+        transition={{ duration: 0.2 }}
+        className="absolute left-0 top-full mt-2 w-[95vw] max-w-80 max-h-96 bg-white dark:bg-gray-800 rounded-lg shadow-xl border border-gray-200 dark:border-gray-700 z-50 overflow-hidden"
+        ref={notificationRef}
+      >
+        {/* Header */}
+        <div className="flex items-center justify-between p-4 border-b border-gray-200 dark:border-gray-700">
+          <h3 className="text-lg font-semibold text-gray-900 dark:text-white flex items-center gap-2">
+            <BellIcon className="w-5 h-5" />
+            通知
             {unreadCount > 0 && (
-              <span className="inline-flex items-center justify-center px-2 py-0.5 text-xs font-medium text-white bg-red-500 rounded-full">
+              <span className="bg-red-500 text-white text-xs px-2 py-0.5 rounded-full">
                 {unreadCount}
               </span>
             )}
-          </div>
-          
-          <div className="flex gap-2">
+          </h3>
+          <div className="flex items-center gap-2">
             {unreadCount > 0 && (
               <button
                 onClick={markAllAsRead}
-                className="text-sm text-primary-600 hover:text-primary-800 dark:text-primary-400 dark:hover:text-primary-300 transition-colors"
+                className="text-sm text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300"
               >
                 全部已读
               </button>
             )}
             <button
               onClick={onClose}
-              className="p-2 rounded-full hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors"
-              aria-label="关闭"
+              className="p-1 rounded-full hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
             >
-              <XCircleIcon className="w-5 h-5 text-gray-500 dark:text-gray-400" />
+              <XMarkIcon className="w-5 h-5 text-gray-500" />
             </button>
           </div>
         </div>
-        
-        {/* 通知列表 */}
-        <div className="flex-grow overflow-y-auto p-4 max-h-[calc(100vh-150px)] scrollbar-thin scrollbar-thumb-gray-300 dark:scrollbar-thumb-gray-600 scrollbar-track-gray-100 dark:scrollbar-track-gray-800">
-          {loading ? (
-            <div className="flex justify-center items-center py-12">
-              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary-500"></div>
+
+        {/* Content */}
+        <div className="overflow-y-auto max-h-80">
+          {loading && notifications.length === 0 ? (
+            <div className="flex justify-center p-8">
+              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500"></div>
             </div>
           ) : notifications.length === 0 ? (
-            <div className="flex flex-col items-center justify-center py-12 text-center">
-              <BellIcon className="w-12 h-12 text-gray-300 dark:text-gray-600 mb-4" />
-              <h3 className="text-lg font-medium text-gray-900 dark:text-white mb-1">暂无通知</h3>
-              <p className="text-gray-500 dark:text-gray-400">当有新的好友请求或通知时，这里会显示</p>
+            <div className="text-center p-8 text-gray-500 dark:text-gray-400">
+              暂无通知
             </div>
           ) : (
-            <div className="space-y-3">
-              {notifications.map((notification) => {
-                const iconProps = getNotificationIcon(notification.type);
-                
-                return (
-                  <div
-                    key={notification.id}
-                    className={`p-3 rounded-lg border transition-all duration-200 cursor-pointer hover:shadow-md ${
-                      notification.read_status
-                        ? 'border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-800'
-                        : 'border-primary-200 bg-primary-50 dark:border-primary-900/50 dark:bg-primary-900/10'
-                    }`}
-                    onClick={() => handleNotificationClick(notification)}
-                  >
-                    <div className="flex items-start gap-3">
-                      <div className={`p-2 rounded-full ${iconProps.bgColor} ${iconProps.color}`}>
-                        {iconProps.icon}
-                      </div>
-                      
-                      <div className="flex-grow min-w-0">
-                        <p className="text-sm text-gray-800 dark:text-gray-200 mb-1">
-                          {notification.content}
-                        </p>
-                        
-                        {/* 好友请求操作按钮 */}
-                        {notification.type === 'friend_request' && notification.friend_request_id && (
-                          <div className="flex gap-2 mt-2">
-                            <button
-                              onClick={async (e) => {
-                                e.stopPropagation();
-                                // 检查是否已经处理过该请求
-                                if (processedRequests.has(notification.friend_request_id!)) {
-                                  return;
-                                }
-                                
-                                // 将请求标记为已处理
-                                setProcessedRequests(prev => new Set(prev).add(notification.friend_request_id!));
-                                
-                                try {
-                                  await chatService.handleFriendRequest(notification.friend_request_id!, 'accepted');
-                                  // 更新通知内容
-                                  setNotifications(prev => prev.map(n => 
-                                    n.id === notification.id ? { ...n, content: `${n.content} - 已接受` } : n
-                                  ));
-                                } catch (error) {
-                                  console.error('Error accepting friend request:', error);
-                                  // 如果处理失败，从已处理集合中移除
-                                  setProcessedRequests(prev => {
-                                    const newSet = new Set(prev);
-                                    newSet.delete(notification.friend_request_id!);
-                                    return newSet;
-                                  });
-                                }
-                              }}
-                              className={`flex-1 px-3 py-1 text-xs rounded-lg transition-colors duration-200 ${processedRequests.has(notification.friend_request_id!) ? 'bg-gray-200 text-gray-500 cursor-not-allowed' : 'bg-green-500 text-white hover:bg-green-600'}`}
-                              disabled={processedRequests.has(notification.friend_request_id!)}
-                            >
-                              接受
-                            </button>
-                            <button
-                              onClick={async (e) => {
-                                e.stopPropagation();
-                                // 检查是否已经处理过该请求
-                                if (processedRequests.has(notification.friend_request_id!)) {
-                                  return;
-                                }
-                                
-                                // 将请求标记为已处理
-                                setProcessedRequests(prev => new Set(prev).add(notification.friend_request_id!));
-                                
-                                try {
-                                  await chatService.handleFriendRequest(notification.friend_request_id!, 'rejected');
-                                  // 更新通知内容
-                                  setNotifications(prev => prev.map(n => 
-                                    n.id === notification.id ? { ...n, content: `${n.content} - 已拒绝` } : n
-                                  ));
-                                } catch (error) {
-                                  console.error('Error rejecting friend request:', error);
-                                  // 如果处理失败，从已处理集合中移除
-                                  setProcessedRequests(prev => {
-                                    const newSet = new Set(prev);
-                                    newSet.delete(notification.friend_request_id!);
-                                    return newSet;
-                                  });
-                                }
-                              }}
-                              className={`flex-1 px-3 py-1 text-xs rounded-lg transition-colors duration-200 ${processedRequests.has(notification.friend_request_id!) ? 'bg-gray-200 text-gray-500 cursor-not-allowed' : 'bg-red-500 text-white hover:bg-red-600'}`}
-                              disabled={processedRequests.has(notification.friend_request_id!)}
-                            >
-                              拒绝
-                            </button>
-                          </div>
-                        )}
-                        
-                        {/* 群聊邀请操作按钮 */}
-                        {notification.type === 'group_invite' && notification.group_id && (
-                          <div className="flex gap-2 mt-2">
-                            <button
-                              onClick={async (e) => {
-                                e.stopPropagation();
-                                // 检查是否已经处理过该请求
-                                if (processedRequests.has(notification.id)) {
-                                  return;
-                                }
-                                
-                                // 将请求标记为已处理
-                                setProcessedRequests(prev => new Set(prev).add(notification.id));
-                                
-                                try {
-                                  // 接受群聊邀请 - 目前已经直接添加到群成员，只需要标记通知
-                                  await markAsRead(notification.id);
-                                  // 更新通知内容
-                                  setNotifications(prev => prev.map(n => 
-                                    n.id === notification.id ? { ...n, content: `${n.content} - 已接受` } : n
-                                  ));
-                                } catch (error) {
-                                  console.error('Error accepting group invite:', error);
-                                  // 如果处理失败，从已处理集合中移除
-                                  setProcessedRequests(prev => {
-                                    const newSet = new Set(prev);
-                                    newSet.delete(notification.id);
-                                    return newSet;
-                                  });
-                                }
-                              }}
-                              className={`flex-1 px-3 py-1 text-xs rounded-lg transition-colors duration-200 ${processedRequests.has(notification.id) ? 'bg-gray-200 text-gray-500 cursor-not-allowed' : 'bg-green-500 text-white hover:bg-green-600'}`}
-                              disabled={processedRequests.has(notification.id)}
-                            >
-                              接受
-                            </button>
-                            <button
-                              onClick={async (e) => {
-                                e.stopPropagation();
-                                // 检查是否已经处理过该请求
-                                if (processedRequests.has(notification.id)) {
-                                  return;
-                                }
-                                
-                                // 将请求标记为已处理
-                                setProcessedRequests(prev => new Set(prev).add(notification.id));
-                                
-                                try {
-                                  // 拒绝群聊邀请 - 从群成员列表中移除
-                                  await chatService.leaveGroup(notification.group_id!);
-                                  // 更新通知内容
-                                  setNotifications(prev => prev.map(n => 
-                                    n.id === notification.id ? { ...n, content: `${n.content} - 已拒绝` } : n
-                                  ));
-                                } catch (error) {
-                                  console.error('Error rejecting group invite:', error);
-                                  // 如果处理失败，从已处理集合中移除
-                                  setProcessedRequests(prev => {
-                                    const newSet = new Set(prev);
-                                    newSet.delete(notification.id);
-                                    return newSet;
-                                  });
-                                }
-                              }}
-                              className={`flex-1 px-3 py-1 text-xs rounded-lg transition-colors duration-200 ${processedRequests.has(notification.id) ? 'bg-gray-200 text-gray-500 cursor-not-allowed' : 'bg-red-500 text-white hover:bg-red-600'}`}
-                              disabled={processedRequests.has(notification.id)}
-                            >
-                              拒绝
-                            </button>
-                          </div>
-                        )}
-                        
-                        <div className="flex items-center justify-between mt-2">
+            <div className="divide-y divide-gray-100 dark:divide-gray-700">
+              {notifications.map((notification) => (
+                <div
+                  key={notification.id}
+                  className={`p-4 hover:bg-gray-50 dark:hover:bg-gray-700/50 cursor-pointer transition-colors ${
+                    !notification.read_status ? 'bg-blue-50 dark:bg-blue-900/10' : ''
+                  }`}
+                  onClick={() => handleNotificationClick(notification)}
+                >
+                  <div className="flex items-start gap-3">
+                    <div className="mt-0.5">
+                      {getNotificationIcon(notification.type)}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm text-gray-900 dark:text-gray-100 line-clamp-2">
+                        {notification.content}
+                      </p>
+                      <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                        {formatTime(notification.created_at)}
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      {notification.sender_profile?.avatar_url ? (
+                        <Image
+                          src={notification.sender_profile.avatar_url}
+                          alt={notification.sender_profile.display_name}
+                          width={24}
+                          height={24}
+                          className="w-6 h-6 rounded-full"
+                        />
+                      ) : (
+                        <div className="w-6 h-6 rounded-full bg-gray-200 dark:bg-gray-700 flex items-center justify-center">
                           <span className="text-xs text-gray-500 dark:text-gray-400">
-                            {new Date(notification.created_at).toLocaleString('zh-CN', {
-                              month: 'short',
-                              day: 'numeric',
-                              hour: '2-digit',
-                              minute: '2-digit'
-                            })}
+                            {notification.sender_profile?.display_name?.[0] || 'U'}
                           </span>
-                          
-                          <div className="flex gap-1">
-                            {!notification.read_status && (
-                              <div className="w-2 h-2 rounded-full bg-red-500"></div>
-                            )}
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                deleteNotification(notification.id);
-                              }}
-                              className="p-1 hover:text-red-500 transition-colors"
-                              aria-label="删除通知"
-                            >
-                              <XCircleIcon className="w-4 h-4 text-gray-400 hover:text-red-500" />
-                            </button>
-                          </div>
                         </div>
-                      </div>
+                      )}
+                      {!notification.read_status && (
+                        <div className="w-2 h-2 bg-blue-500 rounded-full"></div>
+                      )}
                     </div>
                   </div>
-                );
-              })}
+                </div>
+              ))}
             </div>
           )}
         </div>
-      </div>
-    </div>
+
+        {/* Load More */}
+        {hasMore && (
+          <div className="p-3 border-t border-gray-200 dark:border-gray-700">
+            <button
+              onClick={loadMore}
+              disabled={loading}
+              className="w-full py-2 text-center text-sm text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300 disabled:opacity-50"
+            >
+              {loading ? '加载中...' : '加载更多'}
+            </button>
+          </div>
+        )}
+      </motion.div>
+    </AnimatePresence>
   );
 }

@@ -14,7 +14,7 @@ import {
 } from './cache.config';
 
 // 导入Redis客户端
-import redis from './client';
+import { redis } from './client';
 
 // 缓存键前缀
 const CACHE_PREFIX = 'confession_wall:';

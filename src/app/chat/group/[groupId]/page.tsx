@@ -142,7 +142,7 @@ const GroupChatPage = ({ params }: { params: Promise<{ groupId: string }> }) => 
       try {
         // 使用新添加的 getGroup 方法获取群信息，而不是从群列表中查找
         const groupData = await chatService.getGroup(groupId);
-        const membersData = await chatService.getGroupMembers(groupId, true);
+        const membersData = await chatService.getGroupMembers(groupId);
         
         setGroup(groupData);
         setGroupMembers(membersData);
@@ -197,7 +197,7 @@ const GroupChatPage = ({ params }: { params: Promise<{ groupId: string }> }) => 
       },
       async () => {
         try {
-          const membersData = await chatService.getGroupMembers(groupId, true);
+          const membersData = await chatService.getGroupMembers(groupId);
           setGroupMembers(membersData);
           
           // 更新当前用户在群聊中的角色和群内个人信息
@@ -456,7 +456,6 @@ const GroupChatPage = ({ params }: { params: Promise<{ groupId: string }> }) => 
     // 使用唯一的通道名称
     const channelName = `group_chat_${groupId}_${user.id}`;
 
-
     // 完全复制私聊的通道创建方式
     const channel = supabase
       .channel(channelName)
@@ -510,6 +509,8 @@ const GroupChatPage = ({ params }: { params: Promise<{ groupId: string }> }) => 
               // 标记为已读
               try {
                 await chatService.markGroupMessagesAsRead(groupId, [payload.new.id]);
+                // 触发群聊列表页面更新未读消息数量
+                window.dispatchEvent(new CustomEvent('groupMessagesRead', { detail: { groupId } }));
               } catch (error) {
                 console.error('Error marking message as read:', error);
               }
@@ -740,7 +741,7 @@ const GroupChatPage = ({ params }: { params: Promise<{ groupId: string }> }) => 
       setSearchResults([]);
       
       // 刷新群成员列表
-      const updatedMembers = await chatService.getGroupMembers(groupId, true);
+      const updatedMembers = await chatService.getGroupMembers(groupId);
       setGroupMembers(updatedMembers);
       
       showToast.success('邀请发送成功！');
@@ -908,7 +909,7 @@ const GroupChatPage = ({ params }: { params: Promise<{ groupId: string }> }) => 
       handleCloseRemoveMemberConfirm();
       
       // 刷新群成员列表
-      const updatedMembers = await chatService.getGroupMembers(groupId, true);
+      const updatedMembers = await chatService.getGroupMembers(groupId);
       setGroupMembers(updatedMembers);
       
       // 更新群信息
@@ -1607,7 +1608,7 @@ const GroupChatPage = ({ params }: { params: Promise<{ groupId: string }> }) => 
 
       {/* 邀请成员模态框 */}
       {showAddMembersModal && (
-        <div className="fixed inset-0 bg-gradient-to-br from-orange-500 to-red-500 opacity-50 backdrop-blur-sm flex items-center justify-center z-50">
+        <div className="fixed inset-0 bg-gradient-to-br from-orange-500 to-red-500 opacity-100 backdrop-blur-sm flex items-center justify-center z-50">
           <div className="bg-white dark:bg-gray-800 rounded-2xl p-6 w-full max-w-md mx-4 shadow-xl">
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-xl font-bold text-gray-900 dark:text-white">
