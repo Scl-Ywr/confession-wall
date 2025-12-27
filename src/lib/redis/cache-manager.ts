@@ -113,19 +113,46 @@ export class RedisCacheManager {
   private async initialize(): Promise<void> {
     try {
       if (redis) {
-        // 检查Redis连接
-        await redis.ping();
+        // 检查Redis客户端状态
+        if (redis.status !== 'ready') {
+          if (process.env.NODE_ENV === 'development') {
+            console.log('Redis client not ready, skipping initialization');
+          }
+          this.isInitialized = false;
+          return;
+        }
+        
+        // 使用Promise.race添加超时保护
+        const pingPromise = redis.ping();
+        const timeoutPromise = new Promise<void>((_, reject) => {
+          setTimeout(() => reject(new Error('Redis ping timed out')), 5000);
+        });
+        
+        await Promise.race([pingPromise, timeoutPromise]);
+        
         this.isInitialized = true;
         if (process.env.NODE_ENV === 'development') {
           console.log('RedisCacheManager initialized successfully');
         }
         
-        // 初始化缓存版本
-        await this.setCache(
-          generateCacheKey('CACHE_VERSION', {}),
-          { version: 1, lastUpdated: Date.now() },
-          CACHE_EXPIRY.FOREVER
-        );
+        // 初始化缓存版本，添加超时保护
+        try {
+          await Promise.race([
+            this.setCache(
+              generateCacheKey('CACHE_VERSION', {}),
+              { version: 1, lastUpdated: Date.now() },
+              CACHE_EXPIRY.FOREVER
+            ),
+            new Promise<void>((_, reject) => {
+              setTimeout(() => reject(new Error('Redis setCache timed out')), 5000);
+            })
+          ]);
+        } catch (setCacheError) {
+          if (process.env.NODE_ENV === 'development') {
+            console.error('Failed to set cache version:', setCacheError);
+          }
+          // 缓存版本设置失败不影响整体初始化
+        }
       }
     } catch (error) {
       if (process.env.NODE_ENV === 'development') {
@@ -194,8 +221,19 @@ export class RedisCacheManager {
     const statsKey = this.getFullCacheKey('statistics:cache:main');
     
     try {
-      // 获取当前统计数据
-      const statsStr = await redis.get(statsKey);
+      // 获取当前统计数据，添加超时保护
+      let statsStr: string | null = null;
+      try {
+        const getStatsPromise = redis.get(statsKey);
+        const getStatsTimeoutPromise = new Promise<string | null>((_, reject) => {
+          setTimeout(() => reject(new Error('Redis get stats timed out')), 3000);
+        });
+        statsStr = await Promise.race([getStatsPromise, getStatsTimeoutPromise]);
+      } catch (getStatsError) {
+        if (process.env.NODE_ENV === 'development') {
+          console.error('Error getting stats:', getStatsError);
+        }
+      }
       
       if (statsStr) {
         this.stats = JSON.parse(statsStr);
@@ -254,19 +292,51 @@ export class RedisCacheManager {
       // 更新操作计数
       this.stats.cacheOperations = this.operations;
       
-      // 更新缓存键总数和大小
-      const keys = await redis.keys(`${CACHE_PREFIX}*`);
-      this.stats.totalKeys = keys.length;
+      // 更新缓存键总数和大小，添加超时保护
+      try {
+        const keysPromise = redis.keys(`${CACHE_PREFIX}*`);
+        const keysTimeoutPromise = new Promise<string[]>((_, reject) => {
+          setTimeout(() => reject(new Error('Redis keys operation timed out')), 3000);
+        });
+        const keys = await Promise.race([keysPromise, keysTimeoutPromise]);
+        this.stats.totalKeys = keys.length;
+      } catch (keysError) {
+        if (process.env.NODE_ENV === 'development') {
+          console.error('Error getting cache keys for stats:', keysError);
+        }
+        // 保持上次的统计数据，不更新totalKeys
+      }
       
-      // 计算热点键
-      const hotKeys = await this.getHotKeys(5);
-      this.stats.热点键 = hotKeys;
+      // 计算热点键，添加超时保护
+      try {
+        const hotKeysPromise = this.getHotKeys(5);
+        const hotKeysTimeoutPromise = new Promise<string[]>((_, reject) => {
+          setTimeout(() => reject(new Error('Get hot keys timed out')), 3000);
+        });
+        const hotKeys = await Promise.race([hotKeysPromise, hotKeysTimeoutPromise]);
+        this.stats.热点键 = hotKeys;
+      } catch (hotKeysError) {
+        if (process.env.NODE_ENV === 'development') {
+          console.error('Error getting hot keys:', hotKeysError);
+        }
+        // 保持上次的热点键数据
+      }
       
       // 更新最后更新时间
       this.stats.lastUpdated = Date.now();
 
-      // 保存统计数据
-      await redis.set(statsKey, JSON.stringify(this.stats), 'PX', CACHE_EXPIRY.MEDIUM);
+      // 保存统计数据，添加超时保护
+      try {
+        const setStatsPromise = redis.set(statsKey, JSON.stringify(this.stats), 'PX', CACHE_EXPIRY.MEDIUM);
+        const setStatsTimeoutPromise = new Promise<string>((_, reject) => {
+          setTimeout(() => reject(new Error('Redis set stats timed out')), 3000);
+        });
+        await Promise.race([setStatsPromise, setStatsTimeoutPromise]);
+      } catch (setStatsError) {
+        if (process.env.NODE_ENV === 'development') {
+          console.error('Error saving stats:', setStatsError);
+        }
+      }
     } catch (error) {
       console.error('Failed to update cache statistics:', error);
       this.stats.errorCount++;
@@ -286,7 +356,8 @@ export class RedisCacheManager {
   ): Promise<boolean> {
     try {
       await this.ensureInitialized();
-      if (typeof window === 'undefined' && redis && this.isInitialized) {
+      // 检查Redis客户端是否可用
+      if (typeof window === 'undefined' && redis && this.isInitialized && redis.status === 'ready') {
         // 记录缓存设置操作，只在开发环境输出
         if (process.env.NODE_ENV === 'development') {
           console.log(`[RedisCache] Setting cache for key: ${key} with expiry: ${expiry}ms at ${new Date().toISOString()}`);
@@ -302,11 +373,16 @@ export class RedisCacheManager {
           hits: 0
         };
 
-        if (adjustedExpiry > 0) {
-          await redis.set(cacheKey, JSON.stringify(cacheItem), 'PX', adjustedExpiry);
-        } else {
-          await redis.set(cacheKey, JSON.stringify(cacheItem));
-        }
+        // 使用Promise.race添加超时保护
+        const setPromise = adjustedExpiry > 0 
+          ? redis.set(cacheKey, JSON.stringify(cacheItem), 'PX', adjustedExpiry)
+          : redis.set(cacheKey, JSON.stringify(cacheItem));
+        
+        const setTimeoutPromise = new Promise<string>((_, reject) => {
+          setTimeout(() => reject(new Error('Redis set operation timed out')), 3000);
+        });
+        
+        await Promise.race([setPromise, setTimeoutPromise]);
         
         if (process.env.NODE_ENV === 'development') {
           console.log(`[RedisCache] Cache set successfully for key: ${key} at ${new Date().toISOString()}`);
@@ -330,14 +406,21 @@ export class RedisCacheManager {
   public async getCache<T>(key: string): Promise<T | null> {
     try {
       await this.ensureInitialized();
-      if (typeof window === 'undefined' && redis && this.isInitialized) {
+      // 检查Redis客户端是否可用
+      if (typeof window === 'undefined' && redis && this.isInitialized && redis.status === 'ready') {
         const cacheKey = this.getFullCacheKey(key);
         
         if (process.env.NODE_ENV === 'development') {
           console.log(`[RedisCache] Getting cache for key: ${key} at ${new Date().toISOString()}`);
         }
         
-        const cacheItemStr = await redis.get(cacheKey);
+        // 使用Promise.race添加超时保护
+        const getPromise = redis.get(cacheKey);
+        const getTimeoutPromise = new Promise<string | null>((_, reject) => {
+          setTimeout(() => reject(new Error('Redis get operation timed out')), 3000);
+        });
+        
+        const cacheItemStr = await Promise.race([getPromise, getTimeoutPromise]);
         
         if (!cacheItemStr) {
           if (process.env.NODE_ENV === 'development') {
@@ -350,9 +433,43 @@ export class RedisCacheManager {
         try {
           const cacheItem: CacheItem<T> = JSON.parse(cacheItemStr);
           
-          // 更新命中次数
+          // 更新命中次数，添加超时保护
           cacheItem.hits++;
-          await redis.set(cacheKey, JSON.stringify(cacheItem), 'PX', await redis.pttl(cacheKey));
+          
+          // 获取剩余过期时间，添加超时保护
+          let ttl = 0;
+          try {
+            const ttlPromise = redis.pttl(cacheKey);
+            const ttlTimeoutPromise = new Promise<number>((_, reject) => {
+              setTimeout(() => reject(new Error('Redis pttl operation timed out')), 3000);
+            });
+            ttl = await Promise.race([ttlPromise, ttlTimeoutPromise]);
+          } catch (ttlError) {
+            if (process.env.NODE_ENV === 'development') {
+              console.error(`[RedisCache] Error getting TTL for key: ${key}`, ttlError);
+            }
+            // TTL获取失败，使用默认过期时间
+            ttl = CACHE_EXPIRY.DEFAULT;
+          }
+          
+          // 更新缓存项，添加超时保护
+          try {
+            let setPromise;
+            if (ttl > 0) {
+              setPromise = redis.set(cacheKey, JSON.stringify(cacheItem), 'PX', ttl);
+            } else {
+              setPromise = redis.set(cacheKey, JSON.stringify(cacheItem));
+            }
+            const setTimeoutPromise = new Promise<string | null>((_, reject) => {
+              setTimeout(() => reject(new Error('Redis set operation timed out')), 3000);
+            });
+            await Promise.race([setPromise, setTimeoutPromise]);
+          } catch (setError) {
+            if (process.env.NODE_ENV === 'development') {
+              console.error(`[RedisCache] Error updating cache hits for key: ${key}`, setError);
+            }
+            // 更新失败不影响主流程，继续返回缓存数据
+          }
           
           if (process.env.NODE_ENV === 'development') {
             console.log(`[RedisCache] Cache hit for key: ${key}, hits: ${cacheItem.hits} at ${new Date().toISOString()}`);
@@ -506,8 +623,22 @@ export class RedisCacheManager {
         return await dataSource();
       }
       
-      // 1. 尝试从缓存获取
-      const cachedData = await this.getCache<T>(key);
+      // 1. 尝试从缓存获取，添加超时保护
+      let cachedData: T | null = null;
+      try {
+        const getCachePromise = this.getCache<T>(key);
+        const getCacheTimeoutPromise = new Promise<T | null>((_, reject) => {
+          setTimeout(() => reject(new Error('Redis get cache timed out')), 3000);
+        });
+        cachedData = await Promise.race([getCachePromise, getCacheTimeoutPromise]);
+      } catch (getCacheError) {
+        if (process.env.NODE_ENV === 'development') {
+          console.error(`[RedisCache] Error getting cache for key ${key}:`, getCacheError);
+        }
+        // 缓存获取失败，直接从数据源获取
+        return await dataSource();
+      }
+      
       if (cachedData !== null) {
         // 添加调试日志
         if (process.env.NODE_ENV === 'development') {
@@ -516,10 +647,23 @@ export class RedisCacheManager {
         return cachedData;
       }
 
-      // 2. 缓存穿透防护：检查空值缓存
+      // 2. 缓存穿透防护：检查空值缓存，添加超时保护
       const nullCacheKey = `${key}:null`;
       if (CACHE_PENETRATION_PROTECTION.ENABLED) {
-        const hasNullCache = await this.getCache<boolean>(nullCacheKey);
+        let hasNullCache: boolean | null = null;
+        try {
+          const getNullCachePromise = this.getCache<boolean>(nullCacheKey);
+          const getNullCacheTimeoutPromise = new Promise<boolean | null>((_, reject) => {
+            setTimeout(() => reject(new Error('Redis get null cache timed out')), 3000);
+          });
+          hasNullCache = await Promise.race([getNullCachePromise, getNullCacheTimeoutPromise]);
+        } catch (getNullCacheError) {
+          if (process.env.NODE_ENV === 'development') {
+            console.error(`[RedisCache] Error getting null cache for key ${key}:`, getNullCacheError);
+          }
+          // 空值缓存检查失败，继续执行
+        }
+        
         if (hasNullCache) {
           return null;
         }
@@ -539,27 +683,65 @@ export class RedisCacheManager {
       }
 
       try {
-        // 4. 双重检查缓存
-        const doubleCheckData = await this.getCache<T>(key);
+        // 4. 双重检查缓存，添加超时保护
+        let doubleCheckData: T | null = null;
+        try {
+          const doubleCheckCachePromise = this.getCache<T>(key);
+          const doubleCheckCacheTimeoutPromise = new Promise<T | null>((_, reject) => {
+            setTimeout(() => reject(new Error('Redis double check cache timed out')), 3000);
+          });
+          doubleCheckData = await Promise.race([doubleCheckCachePromise, doubleCheckCacheTimeoutPromise]);
+        } catch (doubleCheckError) {
+          if (process.env.NODE_ENV === 'development') {
+            console.error(`[RedisCache] Error double checking cache for key ${key}:`, doubleCheckError);
+          }
+          // 双重检查失败，继续执行
+        }
+        
         if (doubleCheckData !== null) {
           return doubleCheckData;
         }
 
-        // 5. 从数据源获取数据
+        // 5. 从数据源获取数据，添加超时保护
         if (process.env.NODE_ENV === 'development') {
           console.log(`[RedisCache] Cache miss for key: ${key}, fetching from data source`);
         }
-        const data = await dataSource();
+        
+        let data: T;
+        try {
+          // 为数据源调用添加超时保护
+          const dataSourcePromise = dataSource();
+          const dataSourceTimeoutPromise = new Promise<T>((_, reject) => {
+            setTimeout(() => reject(new Error('Data source timed out')), 10000);
+          });
+          data = await Promise.race([dataSourcePromise, dataSourceTimeoutPromise]);
+        } catch (dataSourceError) {
+          if (process.env.NODE_ENV === 'development') {
+            console.error(`[RedisCache] Error fetching from data source for key ${key}:`, dataSourceError);
+          }
+          throw dataSourceError;
+        }
         
         if (data === null || data === undefined) {
-          // 6. 缓存穿透防护：设置空值缓存
+          // 6. 缓存穿透防护：设置空值缓存，添加超时保护
           if (CACHE_PENETRATION_PROTECTION.ENABLED) {
-            await this.setCache(nullCacheKey, true, CACHE_EXPIRY.NULL_VALUE);
+            try {
+              const setNullCachePromise = this.setCache(nullCacheKey, true, CACHE_EXPIRY.NULL_VALUE);
+              const setNullCacheTimeoutPromise = new Promise<boolean>((_, reject) => {
+                setTimeout(() => reject(new Error('Redis set null cache timed out')), 3000);
+              });
+              await Promise.race([setNullCachePromise, setNullCacheTimeoutPromise]);
+            } catch (setNullCacheError) {
+              if (process.env.NODE_ENV === 'development') {
+                console.error(`[RedisCache] Error setting null cache for key ${key}:`, setNullCacheError);
+              }
+              // 空值缓存设置失败，不影响主流程
+            }
           }
           return null;
         }
 
-        // 7. 设置缓存
+        // 7. 设置缓存，添加超时保护
         const finalExpiry = expiry || (module ? getModuleExpiry(module) : CACHE_EXPIRY.DEFAULT);
         
         // 添加调试日志
@@ -567,13 +749,31 @@ export class RedisCacheManager {
           console.log(`[RedisCache] Setting cache for key: ${key}, expiry: ${finalExpiry}ms`);
         }
         
-        await this.setCache(key, data, finalExpiry);
+        try {
+          const setCachePromise = this.setCache(key, data, finalExpiry);
+          const setCacheTimeoutPromise = new Promise<boolean>((_, reject) => {
+            setTimeout(() => reject(new Error('Redis set cache timed out')), 3000);
+          });
+          await Promise.race([setCachePromise, setCacheTimeoutPromise]);
+        } catch (setCacheError) {
+          if (process.env.NODE_ENV === 'development') {
+            console.error(`[RedisCache] Error setting cache for key ${key}:`, setCacheError);
+          }
+          // 缓存设置失败，不影响主流程，继续返回数据
+        }
         
         return data;
       } finally {
-        // 8. 释放锁
+        // 8. 释放锁，添加超时保护
         if (CACHE_BREAKDOWN_PROTECTION.ENABLED && lockAcquired) {
-          await this.releaseLock(lockKey);
+          try {
+            await this.releaseLock(lockKey);
+          } catch (releaseLockError) {
+            if (process.env.NODE_ENV === 'development') {
+              console.error(`[RedisCache] Error releasing lock for key ${key}:`, releaseLockError);
+            }
+            // 锁释放失败，继续执行
+          }
         }
       }
     } catch (error) {
@@ -751,28 +951,49 @@ export class RedisCacheManager {
    * @param pattern 键模式
    */
   public async deleteCacheByPattern(pattern: string): Promise<number> {
+    // 在浏览器环境中，直接返回，不执行Redis操作
+    if (typeof window !== 'undefined') {
+      return 0;
+    }
+    
     try {
       await this.ensureInitialized();
-      if (typeof window === 'undefined' && redis && this.isInitialized) {
-        const keys = await redis.keys(`${CACHE_PREFIX}${pattern}`);
-        
-        // 过滤掉受保护的键       
-        const keysToDelete = keys.filter((key: string) => {
-          const keyWithoutPrefix = key.replace(CACHE_PREFIX, '');
-          return !PROTECTED_KEYS.includes(keyWithoutPrefix);
+      // 检查Redis客户端是否可用
+      if (!redis || !this.isInitialized || redis.status !== 'ready') {
+        if (process.env.NODE_ENV === 'development') {
+          console.log(`[RedisCache] Redis not ready, skipping deleteCacheByPattern for pattern: ${pattern}`);
+        }
+        return 0;
+      }
+      
+      // 使用Promise.race设置操作超时
+      const keysPromise = redis.keys(`${CACHE_PREFIX}${pattern}`);
+      const timeoutPromise = new Promise<string[]>((_, reject) => {
+        setTimeout(() => reject(new Error('Redis keys operation timed out')), 3000);
+      });
+      
+      const keys = await Promise.race([keysPromise, timeoutPromise]);
+      
+      // 过滤掉受保护的键       
+      const keysToDelete = keys.filter((key: string) => {
+        const keyWithoutPrefix = key.replace(CACHE_PREFIX, '');
+        return !PROTECTED_KEYS.includes(keyWithoutPrefix);
+      });
+      
+      if (keysToDelete.length > 0) {
+        // 使用Promise.race设置操作超时
+        const delPromise = redis.del(...keysToDelete);
+        const delTimeoutPromise = new Promise<number>((_, reject) => {
+          setTimeout(() => reject(new Error('Redis del operation timed out')), 3000);
         });
         
-        if (keysToDelete.length > 0) {
-          // ioredis的del方法不支持直接传递数组，需要使用展开运算符
-          await redis.del(...keysToDelete);
-        }
-        
-        if (process.env.NODE_ENV === 'development') {
-          console.log(`[RedisCache] Deleted ${keysToDelete.length} keys matching pattern: ${pattern}`);
-        }
-        return keysToDelete.length;
+        await Promise.race([delPromise, delTimeoutPromise]);
       }
-      return 0;
+      
+      if (process.env.NODE_ENV === 'development') {
+        console.log(`[RedisCache] Deleted ${keysToDelete.length} keys matching pattern: ${pattern}`);
+      }
+      return keysToDelete.length;
     } catch (error) {
       if (process.env.NODE_ENV === 'development') {
         console.error('Error deleting cache by pattern:', error);
@@ -804,7 +1025,20 @@ export class RedisCacheManager {
     if (!redis) return [];
     
     try {
-      const keys = await redis.keys(`${CACHE_PREFIX}*`);
+      // 获取所有键，添加超时保护
+      let keys: string[] = [];
+      try {
+        const keysPromise = redis.keys(`${CACHE_PREFIX}*`);
+        const keysTimeoutPromise = new Promise<string[]>((_, reject) => {
+          setTimeout(() => reject(new Error('Redis keys for hot keys timed out')), 3000);
+        });
+        keys = await Promise.race([keysPromise, keysTimeoutPromise]);
+      } catch (keysError) {
+        if (process.env.NODE_ENV === 'development') {
+          console.error('Error getting keys for hot keys:', keysError);
+        }
+        return [];
+      }
       
       // 过滤掉系统键和统计键     
       const cacheKeys = keys.filter((key: string) => {
@@ -812,15 +1046,39 @@ export class RedisCacheManager {
         return !keyWithoutPrefix.startsWith('system:') && !keyWithoutPrefix.startsWith('statistics:');
       });
       
-      // 获取每个键的命中次数
+      // 限制处理的键数量，避免性能问题
+      const MAX_KEYS_TO_PROCESS = 1000;
+      const limitedCacheKeys = cacheKeys.slice(0, MAX_KEYS_TO_PROCESS);
+      
+      // 获取每个键的命中次数，为每个get操作添加超时保护
       const keyHits = await Promise.all(
-        cacheKeys.map(async (key: string) => {
+        limitedCacheKeys.map(async (key: string) => {
           try {
             if (redis) {
-              const cacheItemStr = await redis.get(key);
+              let cacheItemStr: string | null = null;
+              try {
+                const getCacheItemPromise = redis.get(key);
+                const getCacheItemTimeoutPromise = new Promise<string | null>((_, reject) => {
+                  setTimeout(() => reject(new Error('Redis get cache item timed out')), 1000);
+                });
+                cacheItemStr = await Promise.race([getCacheItemPromise, getCacheItemTimeoutPromise]);
+              } catch (getError) {
+                if (process.env.NODE_ENV === 'development') {
+                  console.error(`Error getting cache item for key ${key}:`, getError);
+                }
+                return { key: key.replace(CACHE_PREFIX, ''), hits: 0 };
+              }
+              
               if (cacheItemStr) {
-                const cacheItem = JSON.parse(cacheItemStr);
-                return { key: key.replace(CACHE_PREFIX, ''), hits: cacheItem.hits || 0 };
+                try {
+                  const cacheItem = JSON.parse(cacheItemStr);
+                  return { key: key.replace(CACHE_PREFIX, ''), hits: cacheItem.hits || 0 };
+                } catch (parseError) {
+                  if (process.env.NODE_ENV === 'development') {
+                    console.error(`Error parsing cache item for key ${key}:`, parseError);
+                  }
+                  return { key: key.replace(CACHE_PREFIX, ''), hits: 0 };
+                }
               }
             }
             return { key: key.replace(CACHE_PREFIX, ''), hits: 0 };

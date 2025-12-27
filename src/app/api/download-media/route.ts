@@ -3,6 +3,56 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createSupabaseAdminClient, createSupabaseServerClient } from '@/lib/supabase/server';
 import bcryptjs from 'bcryptjs';
 
+// Simple in-memory rate limiting store - for production use Redis or database
+interface RateLimitEntry {
+  count: number;
+  lastReset: number;
+}
+
+// Store for rate limiting - key: IP address, value: RateLimitEntry
+const rateLimitStore = new Map<string, RateLimitEntry>();
+
+// Rate limit configuration
+const RATE_LIMIT_WINDOW = 60 * 1000; // 1 minute window
+const RATE_LIMIT_MAX = 10; // 10 downloads per minute per IP
+
+// Check rate limit for a given IP address
+function checkRateLimit(ip: string): boolean {
+  const now = Date.now();
+  const entry = rateLimitStore.get(ip);
+  
+  if (!entry) {
+    // First request from this IP, create entry
+    rateLimitStore.set(ip, {
+      count: 1,
+      lastReset: now
+    });
+    return true;
+  }
+  
+  // Check if window has expired
+  if (now - entry.lastReset > RATE_LIMIT_WINDOW) {
+    // Reset counter for new window
+    rateLimitStore.set(ip, {
+      count: 1,
+      lastReset: now
+    });
+    return true;
+  }
+  
+  // Check if count exceeds limit
+  if (entry.count >= RATE_LIMIT_MAX) {
+    return false;
+  }
+  
+  // Increment count
+  rateLimitStore.set(ip, {
+    count: entry.count + 1,
+    lastReset: entry.lastReset
+  });
+  return true;
+}
+
 // Download a confession image or video with authorization checks
 export async function GET(req: NextRequest) {
   try {
@@ -63,11 +113,6 @@ export async function GET(req: NextRequest) {
     
     // Check if media is locked
     if (image.is_locked) {
-      // For locked media, require login
-      if (!session) {
-        return NextResponse.json({ error: 'Please log in to download locked media' }, { status: 401 });
-      }
-      
       // Check lock type and handle accordingly
       switch (image.lock_type) {
         case 'password':
@@ -83,31 +128,40 @@ export async function GET(req: NextRequest) {
           
         case 'user':
           if (!session) {
-            return NextResponse.json({ error: 'Media is locked. Please log in.' }, { status: 401 });
+            return NextResponse.json({ error: 'Please log in to download this media' }, { status: 401 });
           }
-          // Verify user has access to this media
-          const { data: confession, error: getConfessionError } = await supabaseAdmin
-            .from('confessions')
-            .select('id, user_id')
-            .eq('id', image.confession_id)
-            .single();
-          
-          if (getConfessionError || !confession) {
-            return NextResponse.json({ error: 'Confession not found' }, { status: 404 });
-          }
-          
-          // Check if user is the owner or has been granted access
-          if (confession.user_id !== session.user.id) {
-            return NextResponse.json({ error: 'You do not have access to this media' }, { status: 403 });
-          }
+          // Allow any logged-in user to download
           break;
           
         case 'public':
-          // Publicly locked media is accessible to everyone
+          // Get client IP for rate limiting
+          const clientIpPublic = req.headers.get('x-forwarded-for') || 'unknown';
+          
+          // Check rate limit for public locked media
+          if (!checkRateLimit(clientIpPublic)) {
+            return NextResponse.json(
+              { error: 'Download limit exceeded. Please try again later.' },
+              { status: 429 }
+            );
+          }
           break;
           
         default:
           return NextResponse.json({ error: 'Invalid lock type' }, { status: 400 });
+      }
+    } 
+    
+    // Apply rate limiting for all public downloads (even if not locked)
+    if (!image.is_locked) {
+      // Get client IP for rate limiting
+      const clientIpPublic = req.headers.get('x-forwarded-for') || 'unknown';
+      
+      // Check rate limit for public downloads
+      if (!checkRateLimit(clientIpPublic)) {
+        return NextResponse.json(
+          { error: 'Download limit exceeded. Please try again later.' },
+          { status: 429 }
+        );
       }
     }
     

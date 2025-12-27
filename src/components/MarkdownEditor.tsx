@@ -3,6 +3,11 @@
 import React, { useState, useEffect } from 'react';
 import { XMarkIcon, PencilIcon } from '@heroicons/react/24/outline';
 import { motion, AnimatePresence } from 'framer-motion';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
+import remarkBreaks from 'remark-breaks';
+import rehypeHighlight from 'rehype-highlight';
+import 'highlight.js/styles/github-dark.css';
 
 interface MarkdownEditorProps {
   content: string;
@@ -13,6 +18,7 @@ interface MarkdownEditorProps {
 export default function MarkdownEditor({ content, onChange, onClose }: MarkdownEditorProps) {
   const [editorContent, setEditorContent] = useState(content);
   const [isFullscreen, setIsFullscreen] = useState(false);
+  const [activeTab, setActiveTab] = useState<'edit' | 'preview'>('edit');
 
   useEffect(() => {
     setEditorContent(content);
@@ -47,6 +53,22 @@ export default function MarkdownEditor({ content, onChange, onClose }: MarkdownE
               <h2 className="text-xl font-bold text-gray-900 dark:text-white">Markdown 编辑器</h2>
             </div>
             <div className="flex items-center gap-2">
+              {/* Tab navigation */}
+              <div className="flex bg-gray-100 dark:bg-gray-700 rounded-lg overflow-hidden">
+                <button
+                  onClick={() => setActiveTab('edit')}
+                  className={`px-3 py-1.5 text-sm font-medium transition-colors ${activeTab === 'edit' ? 'bg-white dark:bg-gray-800 text-primary-600 dark:text-primary-400' : 'text-gray-600 dark:text-gray-300 hover:text-primary-600 dark:hover:text-primary-400'}`}
+                >
+                  编辑
+                </button>
+                <button
+                  onClick={() => setActiveTab('preview')}
+                  className={`px-3 py-1.5 text-sm font-medium transition-colors ${activeTab === 'preview' ? 'bg-white dark:bg-gray-800 text-primary-600 dark:text-primary-400' : 'text-gray-600 dark:text-gray-300 hover:text-primary-600 dark:hover:text-primary-400'}`}
+                >
+                  预览
+                </button>
+              </div>
+              
               <motion.button
                 onClick={toggleFullscreen}
                 className="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
@@ -69,13 +91,26 @@ export default function MarkdownEditor({ content, onChange, onClose }: MarkdownE
           </div>
 
           <div className="flex-1 overflow-hidden">
-            <textarea
-              value={editorContent}
-              onChange={(e) => handleChange(e.target.value)}
-              className="w-full h-full p-6 text-gray-900 dark:text-gray-100 bg-transparent resize-none focus:outline-none font-mono text-base"
-              placeholder="开始输入Markdown内容..."
-              autoFocus
-            />
+            {activeTab === 'edit' ? (
+              <textarea
+                value={editorContent}
+                onChange={(e) => handleChange(e.target.value)}
+                className="w-full h-full p-6 text-gray-900 dark:text-gray-100 bg-transparent resize-none focus:outline-none font-mono text-base"
+                placeholder="开始输入Markdown内容..."
+                autoFocus
+              />
+            ) : (
+              <div className="w-full h-full p-6 text-gray-900 dark:text-gray-100 overflow-auto">
+                <div className="prose prose-sm sm:prose-base dark:prose-invert max-w-none">
+                  <ReactMarkdown
+                    remarkPlugins={[remarkGfm, remarkBreaks]}
+                    rehypePlugins={[rehypeHighlight]}
+                  >
+                    {editorContent}
+                  </ReactMarkdown>
+                </div>
+              </div>
+            )}
           </div>
 
           <div className="p-4 border-t border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900/50">

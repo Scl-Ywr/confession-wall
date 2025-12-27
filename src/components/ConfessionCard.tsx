@@ -14,6 +14,7 @@ import 'react-photo-view/dist/react-photo-view.css';
 import { supabase } from '@/lib/supabase/client';
 import toast from 'react-hot-toast';
 import MarkdownRenderer from './MarkdownRenderer';
+import { useQueryClient } from '@tanstack/react-query';
 interface ConfessionCardProps {
   confession: Confession;
   currentUserId?: string;
@@ -32,6 +33,7 @@ export default function ConfessionCard({
   const [editContent, setEditContent] = useState('');
   const [isSaving, setIsSaving] = useState(false);
   const router = useRouter();
+  const queryClient = useQueryClient();
 
   const formatDate = (dateString: string) => {
     const date = new Date(dateString);
@@ -141,7 +143,7 @@ export default function ConfessionCard({
     try {
       // Get the current session token for authentication
       const { data: { session } } = await supabase.auth.getSession();
-      
+
       const response = await fetch('/api/toggle-media-lock', {
         method: 'POST',
         headers: {
@@ -150,13 +152,17 @@ export default function ConfessionCard({
         },
         body: JSON.stringify({ imageId, isLocked, lockType, password }),
       });
-      
+
       if (response.ok) {
         // Show success message using react-hot-toast
         toast.success(isLocked ? '锁定设置已更新' : '已成功解锁', {
           duration: 3000,
           position: 'top-right',
         });
+
+        // Invalidate React Query cache to fetch fresh data
+        await queryClient.invalidateQueries({ queryKey: ['confessions'] });
+
         // Reload the page to show updated lock status
         router.refresh();
       } else {
@@ -202,52 +208,63 @@ export default function ConfessionCard({
     try {
       // Get the current session token for authentication
       const { data: { session } } = await supabase.auth.getSession();
-      
+
+      console.log('=== Download Debug Info ===');
+      console.log('handleDownload called with imageId:', imageId);
+      console.log('media object:', media);
+      console.log('media.is_locked:', media.is_locked, 'Type:', typeof media.is_locked);
+      console.log('media.lock_type:', media.lock_type, 'Type:', typeof media.lock_type);
+      console.log('session:', session ? 'User logged in' : 'No session');
+
       // Check if media is locked
       if (media.is_locked) {
+        console.log('✓ Media is locked, checking lock type...');
         // For locked media, check if user is logged in first
         if (!session) {
           // Show login prompt
+          console.log('✗ No session, showing login prompt');
           toast.error('请先登录才能下载此媒体', {
             duration: 3000,
             position: 'top-right',
           });
-          // Redirect to login page or show login modal
-          // For now, just show error message
           return;
         }
-        
+
         // Password lock: show password modal if user is not the owner
         if (media.lock_type === 'password') {
+          console.log('✓ Media is password locked');
           // Check if current user is the owner
           const isOwner = currentUserId && confession.user_id && currentUserId === confession.user_id;
           console.log('isOwner:', isOwner, 'currentUserId:', currentUserId, 'confession.user_id:', confession.user_id);
-          console.log('media.is_locked:', media.is_locked, 'media.lock_type:', media.lock_type);
-          if (!isOwner) {
-            // Show password input modal
-            console.log('Showing password modal');
-            setDownloadImageId(imageId);
-            setPasswordForDownload('');
-            setPasswordError(''); // Clear any previous error
-            setShowPassword(false); // Reset password visibility
-            setShowPasswordModal(true);
-            console.log('showPasswordModal set to true');
-            return;
-          }
+
+          // Always show password modal for password-locked media, even for owners
+          // This ensures consistent behavior and allows owners to also use password if needed
+          console.log('✓ Showing password modal');
+          setDownloadImageId(imageId);
+          setPasswordForDownload('');
+          setPasswordError(''); // Clear any previous error
+          setShowPassword(false); // Reset password visibility
+          setShowPasswordModal(true);
+          console.log('showPasswordModal state set to true');
+          console.log('=== End Download Debug Info ===');
+          return;
         }
         // User lock: check if user is logged in (redundant check, but kept for safety)
         else if (media.lock_type === 'user' && !session) {
           // Show login prompt
+          console.log('✗ User lock but no session');
           toast.error('请先登录才能下载此媒体', {
             duration: 3000,
             position: 'top-right',
           });
-          // Redirect to login page or show login modal
-          // For now, just show error message
           return;
         }
+        console.log('Lock type:', media.lock_type, '- Proceeding with download');
+      } else {
+        console.log('✓ Media is not locked, proceeding with download');
       }
-      
+
+      console.log('Calling download API...');
       // Use the download API endpoint with proper authorization
       // Let the API handle all other validation (user lock, ownership, etc.)
       const response = await fetch(`/api/download-media?imageId=${imageId}`, {
@@ -256,12 +273,12 @@ export default function ConfessionCard({
           ...(session && { Authorization: `Bearer ${session.access_token}` }),
         },
       });
-      
+
       if (response.ok) {
         // Create a blob from the response
         const blob = await response.blob();
         const url = window.URL.createObjectURL(blob);
-        
+
         // Create a temporary link and trigger download
         const link = document.createElement('a');
         link.href = url;
@@ -269,22 +286,34 @@ export default function ConfessionCard({
         document.body.appendChild(link);
         link.click();
         link.remove();
-        
+
         // Revoke the blob URL after download
         setTimeout(() => window.URL.revokeObjectURL(url), 1000);
-        
+
         // Show success message
         toast.success('下载成功', {
           duration: 3000,
           position: 'top-right',
         });
+        console.log('✓ Download successful');
       } else {
         const error = await response.json();
-        toast.error(error.error || '下载失败', {
+        console.log('✗ Download failed:', error);
+        // 根据lock_type显示不同的错误信息
+        let errorMessage = error.error || '下载失败';
+        
+        if (media.lock_type === 'user') {
+          errorMessage = '您没有权限下载此媒体，只有授权用户才能访问';
+        } else if (media.lock_type === 'password') {
+          errorMessage = error.error || '密码错误或您没有权限下载此媒体';
+        }
+        
+        toast.error(errorMessage, {
           duration: 3000,
           position: 'top-right',
         });
       }
+      console.log('=== End Download Debug Info ===');
     } catch (error) {
       console.error('Error downloading media:', error);
       toast.error('下载失败，请重试', {

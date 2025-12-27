@@ -20,18 +20,26 @@ if (typeof window === 'undefined') {
         password: process.env.REDIS_PASSWORD || '',
         db: 0,
         // 连接选项
+        connectTimeout: 10000, // 连接超时时间（毫秒）
+        keepAlive: 300, // 保持连接的时间（秒）
         retryStrategy(times: number) {
-          const delay = Math.min(times * 50, 2000);
+          // 优化重连策略，避免频繁重连
+          const delay = Math.min(times * 100, 5000); // 延迟时间：100ms, 200ms, 300ms, ..., 5000ms
           return delay;
         },
         reconnectOnError(err: Error) {
-          const targetError = 'READONLY';
-          if (err.message.includes(targetError)) {
+          // 处理更多类型的错误，包括ECONNRESET
+          const errorMessages = ['READONLY', 'ECONNRESET', 'ETIMEDOUT', 'EAI_AGAIN'];
+          if (errorMessages.some(msg => err.message.includes(msg))) {
             // 重新连接
             return true;
           }
           return false;
         },
+        // 连接池配置
+        maxRetriesPerRequest: 3, // 每个请求的最大重试次数
+        enableReadyCheck: true, // 启用就绪检查
+        maxLoadingRetryTime: 10000, // 加载时的最大重试时间
       });
 
       // 监听连接事件 - 只在开发环境输出

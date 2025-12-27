@@ -44,6 +44,7 @@ export function CategorySelect({
   };
 
   const handleSelect = (categoryId: string) => {
+    console.log('CategorySelect: Selected category ID:', categoryId, 'Type:', typeof categoryId);
     onChange(categoryId);
     setIsOpen(false);
   };

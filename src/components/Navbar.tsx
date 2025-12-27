@@ -2,12 +2,13 @@
 
 import { useEffect, useState, useCallback, useRef } from 'react';
 import Link from 'next/link';
+import Image from 'next/image';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useAuth } from '@/context/AuthContext';
 import { useTheme } from '@/theme/ThemeContext';
 import { useChat } from '@/context/ChatContext';
 import { useDeviceDetection } from '@/hooks/useDeviceDetection';
-import { HomeIcon, UserIcon, ArrowLeftOnRectangleIcon, UserPlusIcon, MoonIcon, SunIcon, BellIcon, VideoCameraIcon, MusicalNoteIcon, Bars3Icon, XMarkIcon, PaintBrushIcon } from '@heroicons/react/20/solid';
+import { HomeIcon, UserIcon, ArrowLeftOnRectangleIcon, UserPlusIcon, UsersIcon, MoonIcon, SunIcon, BellIcon, VideoCameraIcon, MusicalNoteIcon, Bars3Icon, XMarkIcon, PaintBrushIcon, HeartIcon } from '@heroicons/react/20/solid';
 import { MessageCircleIcon } from 'lucide-react';
 import { chatService } from '@/services/chatService';
 import { Notification } from '@/types/chat';
@@ -28,6 +29,7 @@ const Navbar = () => {
   const [showAlert, setShowAlert] = useState(false);
   const [showMobileMenu, setShowMobileMenu] = useState(false);
   const [showConfirmModal, setShowConfirmModal] = useState(false);
+  const [showMobileNotifications, setShowMobileNotifications] = useState(false);
   const [targetUrl, setTargetUrl] = useState('');
   const [showBrowserModal, setShowBrowserModal] = useState(false);
   const [browserModalMaximized, setBrowserModalMaximized] = useState(false);
@@ -129,10 +131,20 @@ const Navbar = () => {
       setShowAlert(true);
       return;
     }
-    setShowNotifications(!showNotifications);
     
-    // 当通知列表打开时，重新获取通知列表，确保数据最新
-    if (!showNotifications) {
+    // 如果当前是关闭状态，则打开并获取通知
+    if (!showNotifications && !showMobileNotifications) {
+      if (isMobile) {
+        setShowMobileNotifications(true);
+      } else {
+        setShowNotifications(true);
+      }
+      // 打开通知列表时，获取最新通知
+      await fetchNotifications();
+    } else {
+      // 当前是打开状态，则关闭并标记所有通知为已读
+      setShowNotifications(false);
+      setShowMobileNotifications(false);
       // 关闭通知列表时，标记所有通知为已读
       if (unreadCount > 0) {
         try {
@@ -143,9 +155,6 @@ const Navbar = () => {
           console.error('Error marking all notifications as read:', error);
         }
       }
-    } else {
-      // 打开通知列表时，获取最新通知
-      await fetchNotifications();
     }
   };
 
@@ -211,6 +220,51 @@ const Navbar = () => {
     // 跨域iframe无法访问history对象，所以固定导航状态
     setCanGoBack(false);
     setCanGoForward(false);
+  };
+
+  // 标记通知为已读
+  const markAsRead = async (notificationId: string) => {
+    try {
+      const response = await fetch('/api/notifications', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ notificationId }),
+      });
+      
+      if (response.ok) {
+        // 更新本地状态
+        setNotifications(prev => 
+          prev.map(notif => 
+            notif.id === notificationId 
+              ? { ...notif, read_status: true }
+              : notif
+          )
+        );
+      } else {
+        const data = await response.json();
+        console.error('Error marking notification as read:', data.error);
+      }
+    } catch (error) {
+      console.error('Error marking notification as read:', error);
+    }
+  };
+
+  // 格式化时间
+  const formatTime = (dateString: string) => {
+    const date = new Date(dateString);
+    const now = new Date();
+    const diffMs = now.getTime() - date.getTime();
+    const diffMins = Math.floor(diffMs / 60000);
+    const diffHours = Math.floor(diffMs / 3600000);
+    const diffDays = Math.floor(diffMs / 86400000);
+
+    if (diffMins < 1) return '刚刚';
+    if (diffMins < 60) return `${diffMins}分钟前`;
+    if (diffHours < 24) return `${diffHours}小时前`;
+    if (diffDays < 30) return `${diffDays}天前`;
+    return date.toLocaleDateString();
   };
 
   // 计算未读通知数量
@@ -384,10 +438,11 @@ const Navbar = () => {
                   </Link>
                   <Link
                     href="/auth/register"
-                    className="flex items-center justify-center w-11 h-11 rounded-full bg-gradient-to-r from-warm-500 to-primary-500 hover:from-warm-600 hover:to-primary-600 text-white transition-all duration-300 transform hover:scale-110 shadow-lg shadow-warm-500/30"
+                    className="flex items-center justify-center gap-2 px-6 py-3 rounded-full bg-gradient-to-r from-orange-500 to-red-500 hover:from-orange-600 hover:to-red-600 text-white font-bold text-lg transition-all duration-300 transform hover:scale-105 shadow-xl shadow-orange-500/60"
                     aria-label="注册"
                   >
-                    <UserPlusIcon className="w-5.5 h-5.5" />
+                    <UserPlusIcon className="w-6 h-6" />
+                    <span>注册</span>
                   </Link>
                 </div>
               )}
@@ -447,7 +502,7 @@ const Navbar = () => {
                       <span className="text-lg font-medium text-gray-800 dark:text-white">通知</span>
                     </div>
                     {unreadCount > 0 && (
-                      <span className="w-6 h-6 bg-accent-500 text-white text-xs font-bold rounded-full flex items-center justify-center">
+                      <span className="bg-red-500 text-white text-xs px-2 py-0.5 rounded-full">
                         {unreadCount}
                       </span>
                     )}
@@ -907,6 +962,133 @@ const Navbar = () => {
               </div>
             </div>
           )}
+        </div>
+      )}
+      
+      {/* 移动端通知模态框 */}
+      {showMobileNotifications && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <motion.div
+            initial={{ opacity: 0, scale: 0.9 }}
+            animate={{ opacity: 1, scale: 1 }}
+            exit={{ opacity: 0, scale: 0.9 }}
+            transition={{ duration: 0.2 }}
+            className="bg-white dark:bg-gray-800 rounded-xl shadow-2xl w-full max-w-md max-h-[80vh] overflow-hidden"
+          >
+            {/* Header */}
+            <div className="flex items-center justify-between p-4 border-b border-gray-200 dark:border-gray-700">
+              <h3 className="text-lg font-semibold text-gray-900 dark:text-white flex items-center gap-2">
+                <BellIcon className="w-5 h-5" />
+                通知
+                {unreadCount > 0 && (
+                  <span className="bg-red-500 text-white text-xs px-2 py-0.5 rounded-full">
+                    {unreadCount}
+                  </span>
+                )}
+              </h3>
+              <button
+                onClick={() => setShowMobileNotifications(false)}
+                className="p-1 rounded-full hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+              >
+                <XMarkIcon className="w-5 h-5 text-gray-500" />
+              </button>
+            </div>
+
+            {/* Content */}
+            <div className="overflow-y-auto max-h-60">
+              {notifications.length === 0 ? (
+                <div className="text-center p-8 text-gray-500 dark:text-gray-400">
+                  暂无通知
+                </div>
+              ) : (
+                <div className="divide-y divide-gray-100 dark:divide-gray-700">
+                  {notifications.map((notification) => (
+                    <div
+                      key={notification.id}
+                      className={`p-4 hover:bg-gray-50 dark:hover:bg-gray-700/50 cursor-pointer transition-colors ${
+                        !notification.read_status ? 'bg-blue-50 dark:bg-blue-900/10' : ''
+                      }`}
+                      onClick={() => {
+                        // 标记为已读
+                        if (!notification.read_status) {
+                          markAsRead(notification.id);
+                        }
+                        
+                        // 根据通知类型导航到相应页面
+                        if (notification.type === 'group_invite') {
+                          window.location.href = `/chat/group/${notification.group_id}`;
+                        } else if (notification.type === 'friend_request' || notification.type === 'friend_accepted' || notification.type === 'friend_rejected' || notification.type === 'friend_request_sent') {
+                          window.location.href = `/profile/friends`;
+                        }
+                        
+                        // 关闭通知模态框
+                        setShowMobileNotifications(false);
+                      }}
+                    >
+                      <div className="flex items-start gap-3">
+                        <div className="mt-0.5">
+                          {notification.type === 'group_invite' ? (
+                            <UsersIcon className="w-5 h-5 text-blue-500" />
+                          ) : (
+                            <HeartIcon className="w-5 h-5 text-red-500" />
+                          )}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm text-gray-900 dark:text-gray-100 line-clamp-2">
+                            {notification.content}
+                          </p>
+                          <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                            {formatTime(notification.created_at)}
+                          </p>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          {notification.sender_profile?.avatar_url ? (
+                            <Image
+                              src={notification.sender_profile.avatar_url}
+                              alt={notification.sender_profile.display_name}
+                              width={24}
+                              height={24}
+                              className="w-6 h-6 rounded-full"
+                            />
+                          ) : (
+                            <div className="w-6 h-6 rounded-full bg-gray-200 dark:bg-gray-700 flex items-center justify-center">
+                              <span className="text-xs text-gray-500 dark:text-gray-400">
+                                {notification.sender_profile?.display_name?.[0] || 'U'}
+                              </span>
+                            </div>
+                          )}
+                          {!notification.read_status && (
+                            <div className="w-2 h-2 bg-blue-500 rounded-full"></div>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* Footer */}
+            <div className="p-3 border-t border-gray-200 dark:border-gray-700">
+              <button
+                onClick={async () => {
+                  if (unreadCount > 0) {
+                    try {
+                      await chatService.markAllNotificationsAsRead();
+                      // 更新本地状态
+                      setNotifications(prev => prev.map(notification => ({ ...notification, read_status: true })));
+                    } catch (error) {
+                      console.error('Error marking all notifications as read:', error);
+                    }
+                  }
+                  setShowMobileNotifications(false);
+                }}
+                className="w-full py-2 text-center text-sm text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300"
+              >
+                {unreadCount > 0 ? '全部已读' : '关闭'}
+              </button>
+            </div>
+          </motion.div>
         </div>
       )}
     </>

@@ -99,7 +99,6 @@ const createNotification = async (
       }
     } catch (jsonError) {
       console.error('Error parsing notification JSON:', jsonError);
-      console.error('Response text:', await response.clone().text());
       // 解析失败时构造一个基本的通知对象
       notification = {
         id: crypto.randomUUID(),
@@ -853,95 +852,178 @@ export const chatService = {
   // 获取聊天消息
   getChatMessages: async (otherUserId: string, limit: number = 50, offset: number = 0): Promise<ChatMessage[]> => {
     try {
-      // 获取当前认证用户
-      const user = await supabase.auth.getUser();
-      
-      // 检查认证错误
-      if (user.error || !user.data.user?.id) {
-        return [];
-      }
-      
-      const userId = user.data.user.id;
-      
-      // 导入缓存工具函数（动态导入避免循环依赖）
-      const { getCache, setCache, getChatCacheKey } = await import('../utils/cache');
-      
-      // 如果是初始加载（offset为0），尝试从缓存获取消息
-      let cachedMessages: ChatMessage[] = [];
-      if (offset === 0) {
-        const cacheKey = getChatCacheKey(userId, otherUserId, false);
-        const cachedData = await getCache<ChatMessage[]>(cacheKey);
-        if (cachedData) {
-          cachedMessages = cachedData;
+      // 为整个函数添加超时保护
+      const mainPromise = (async () => {
+        // 获取当前认证用户，添加超时保护
+        interface UserResponse {
+          data: { user: { id: string } | null };
+          error: { message: string } | null;
         }
-      }
-
-      // 在数据库查询时就过滤出当前对话的消息，使用and和or组合条件
-      // 确保只返回当前用户和指定用户之间的消息
-      const { data: messages, error: messagesError } = await supabase
-        .from('chat_messages')
-        .select('*')
-        .or(`and(sender_id.eq.${userId},receiver_id.eq.${otherUserId}),and(sender_id.eq.${otherUserId},receiver_id.eq.${userId})`)
-        .order('created_at', { ascending: false })
-        .range(offset, offset + limit - 1);
-
-      if (messagesError) {
-        // 如果从服务器获取失败，返回缓存消息（如果有）
-        return cachedMessages;
-      }
-
-      // 确保 messages 是数组
-      const chatMessages = messages || [];
-
-      // 客户端再次过滤，确保只返回当前用户和对方之间的消息
-      // 这是一个额外的安全检查，确保不会返回其他对话的消息
-      const filteredMessages = chatMessages.filter(message => 
-        (message.sender_id === userId && message.receiver_id === otherUserId) ||
-        (message.sender_id === otherUserId && message.receiver_id === userId)
-      );
-
-      // 如果没有消息，直接返回空数组
-      if (filteredMessages.length === 0) {
-        return cachedMessages;
-      }
-
-      // 获取所有发送者的 ID
-      const senderIds = [...new Set(filteredMessages.map(message => message.sender_id))];
-
-      // 查询所有发送者的资料，包含在线状态
-      const { data: sendersProfiles, error: profilesError } = await supabase
-        .from('profiles')
-        .select('id, username, display_name, email, avatar_url, online_status, last_seen')
-        .in('id', senderIds);
-
-      if (profilesError) {
-        // 即使获取资料失败，也返回消息数据
-        const result = filteredMessages as ChatMessage[];
-        // 如果是初始加载，缓存结果
+        let user: UserResponse;
+        try {
+          const getUserPromise = supabase.auth.getUser();
+          const getUserTimeoutPromise = new Promise<UserResponse>((_, reject) => {
+            setTimeout(() => reject(new Error('Supabase auth.getUser timed out')), 5000);
+          });
+          user = await Promise.race([getUserPromise, getUserTimeoutPromise]);
+        } catch (error) {
+          console.error('Error getting user:', error);
+          return [];
+        }
+        
+        // 检查认证错误
+        if (user.error || !user.data.user?.id) {
+          return [];
+        }
+        
+        const userId = user.data.user.id;
+        
+        // 导入缓存工具函数（动态导入避免循环依赖）
+        const { getCache, setCache, getChatCacheKey } = await import('../utils/cache');
+        
+        // 如果是初始加载（offset为0），尝试从缓存获取消息
+        let cachedMessages: ChatMessage[] = [];
         if (offset === 0) {
-          const cacheKey = getChatCacheKey(userId, otherUserId, false);
-          setCache(cacheKey, result);
+          try {
+            const cacheKey = getChatCacheKey(userId, otherUserId, false);
+            const cachedData = await getCache<ChatMessage[]>(cacheKey);
+            if (cachedData) {
+              cachedMessages = cachedData;
+            }
+          } catch (cacheError) {
+            console.error('Error getting cache:', cacheError);
+            // 缓存获取失败，继续执行
+          }
         }
-        return result;
-      }
 
-      // 将发送者资料合并到消息中
-      const messagesWithProfiles = filteredMessages.map(message => {
-        const senderProfile = sendersProfiles?.find(profile => profile.id === message.sender_id);
-        return {
-          ...message,
-          sender_profile: senderProfile
-        };
+        // 在数据库查询时就过滤出当前对话的消息，使用and和or组合条件
+        // 确保只返回当前用户和指定用户之间的消息
+        let chatMessages: ChatMessage[] = [];
+        try {
+          const messagesPromise = supabase
+            .from('chat_messages')
+            .select('*')
+            .or(`and(sender_id.eq.${userId},receiver_id.eq.${otherUserId}),and(sender_id.eq.${otherUserId},receiver_id.eq.${userId})`)
+            .order('created_at', { ascending: false })
+            .range(offset, offset + limit - 1);
+          
+          const messagesTimeoutPromise = new Promise<never>((_, reject) => {
+            setTimeout(() => reject(new Error('Supabase get chat messages timed out')), 5000);
+          });
+          
+          const result = await Promise.race([messagesPromise, messagesTimeoutPromise]);
+          if (result.error) {
+            // 如果从服务器获取失败，返回缓存消息（如果有）
+            return cachedMessages;
+          }
+          
+          // 确保 messages 是数组
+          chatMessages = result.data || [];
+        } catch (error) {
+          console.error('Error getting chat messages:', error);
+          return cachedMessages;
+        }
+
+        // 客户端再次过滤，确保只返回当前用户和对方之间的消息
+        // 这是一个额外的安全检查，确保不会返回其他对话的消息
+        const filteredMessages = chatMessages.filter(message => 
+          (message.sender_id === userId && message.receiver_id === otherUserId) ||
+          (message.sender_id === otherUserId && message.receiver_id === userId)
+        );
+
+        // 如果没有消息，直接返回空数组
+        if (filteredMessages.length === 0) {
+          return cachedMessages;
+        }
+
+        // 获取所有发送者的 ID
+        const senderIds = [...new Set(filteredMessages.map(message => message.sender_id))];
+
+        // 查询所有发送者的资料，包含在线状态，添加超时保护
+        interface ProfileData {
+          id: string;
+          username: string | null;
+          display_name: string | null;
+          email: string | null;
+          avatar_url: string | null;
+          online_status: string | null;
+          last_seen: string | null;
+        }
+        let profiles: ProfileData[] = [];
+        try {
+          const profilesPromise = supabase
+            .from('profiles')
+            .select('id, username, display_name, email, avatar_url, online_status, last_seen')
+            .in('id', senderIds);
+          
+          const profilesTimeoutPromise = new Promise<never>((_, reject) => {
+            setTimeout(() => reject(new Error('Supabase get profiles timed out')), 5000);
+          });
+          
+          const result = await Promise.race([profilesPromise, profilesTimeoutPromise]);
+          
+          if (result.error) {
+            // 即使获取资料失败，也返回消息数据
+            const messagesResult = filteredMessages as ChatMessage[];
+            // 如果是初始加载，尝试缓存结果
+            if (offset === 0) {
+              try {
+                const cacheKey = getChatCacheKey(userId, otherUserId, false);
+                await setCache(cacheKey, messagesResult);
+              } catch (cacheError) {
+                console.error('Error setting cache:', cacheError);
+              }
+            }
+            return messagesResult;
+          }
+          
+          profiles = result.data || [];
+        } catch (error) {
+          console.error('Error getting profiles:', error);
+          // 即使获取资料失败，也返回消息数据
+          const messagesResult = filteredMessages as ChatMessage[];
+          // 如果是初始加载，尝试缓存结果
+          if (offset === 0) {
+            try {
+              const cacheKey = getChatCacheKey(userId, otherUserId, false);
+              await setCache(cacheKey, messagesResult);
+            } catch (cacheError) {
+              console.error('Error setting cache:', cacheError);
+            }
+          }
+          return messagesResult;
+        }
+
+        // 将发送者资料合并到消息中
+        const messagesWithProfiles = filteredMessages.map(message => {
+          const senderProfile = profiles.find(profile => profile.id === message.sender_id);
+          return {
+            ...message,
+            sender_profile: senderProfile
+          };
+        });
+
+        // 如果是初始加载，尝试缓存结果
+        if (offset === 0) {
+          try {
+            const cacheKey = getChatCacheKey(userId, otherUserId, false);
+            await setCache(cacheKey, messagesWithProfiles);
+          } catch (cacheError) {
+            console.error('Error setting cache:', cacheError);
+          }
+        }
+
+        return messagesWithProfiles as ChatMessage[];
+      })();
+      
+      // 设置整个函数的超时时间
+      const timeoutPromise = new Promise<ChatMessage[]>((_, reject) => {
+        setTimeout(() => reject(new Error('getChatMessages timed out')), 10000);
       });
-
-      // 如果是初始加载，缓存结果
-      if (offset === 0) {
-        const cacheKey = getChatCacheKey(userId, otherUserId, false);
-        setCache(cacheKey, messagesWithProfiles);
-      }
-
-      return messagesWithProfiles as ChatMessage[];
-    } catch {
+      
+      return await Promise.race([mainPromise, timeoutPromise]);
+    } catch (error) {
+      console.error('Error in getChatMessages:', error);
       // 返回空数组而不是抛出错误，避免影响用户体验
       return [] as ChatMessage[];
     }
@@ -1942,73 +2024,156 @@ export const chatService = {
 
   // 检查好友关系状态
   checkFriendshipStatus: async (otherUserId: string): Promise<'none' | 'pending' | 'accepted'> => {
-    const user = await supabase.auth.getUser();
-    const userId = user.data.user?.id;
-
-    if (!userId) {
-      return 'none'; // 未登录用户，默认返回 none
-    }
-
     try {
-      // 先根据 otherUserId 获取用户的实际 UUID
-      let targetUserId = otherUserId;
-      
-      // 如果 otherUserId 不是 UUID 格式，尝试根据用户名获取用户信息
-      if (otherUserId.length !== 36 || !otherUserId.includes('-')) {
-        const { data: profile, error: profileError } = await supabase
-          .from('profiles')
-          .select('id')
-          .eq('username', otherUserId)
-          .limit(1);
-        
-        if (!profileError && profile && profile.length > 0) {
-          targetUserId = profile[0].id;
-        } else {
-          // 如果不是 UUID 且不是有效的用户名，返回 none
+      // 为整个函数添加超时保护
+      const mainPromise = (async () => {
+        // 获取当前用户，添加超时保护
+        interface UserResponse {
+          data: { user: { id: string } | null };
+          error: { message: string } | null;
+        }
+        let user: UserResponse;
+        try {
+          const getUserPromise = supabase.auth.getUser();
+          const getUserTimeoutPromise = new Promise<UserResponse>((_, reject) => {
+            setTimeout(() => reject(new Error('Supabase auth.getUser timed out')), 5000);
+          });
+          user = await Promise.race([getUserPromise, getUserTimeoutPromise]);
+        } catch (error) {
+          console.error('Error getting user:', error);
           return 'none';
         }
-      }
-      
-      // 使用 fetch 直接调用 Supabase API，避免 Postgrest 客户端的问题
-      // 检查是否已经是好友
-      const friendshipsResponse = await fetch(
-        `${process.env.NEXT_PUBLIC_SUPABASE_URL}/rest/v1/friendships?select=id&user_id=eq.${userId}&friend_id=eq.${targetUserId}&limit=1`,
-        {
-          headers: {
-            'Content-Type': 'application/json',
-            'apikey': process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-            'Authorization': `Bearer ${(await supabase.auth.getSession()).data.session?.access_token || ''}`
-          }
-        }
-      );
-      
-      const friendships = await friendshipsResponse.json();
-      if (Array.isArray(friendships) && friendships.length > 0) {
-        return 'accepted';
-      }
+        
+        const userId = user.data.user?.id;
 
-      // 检查是否有未处理的好友请求
-      const requestsResponse = await fetch(
-        `${process.env.NEXT_PUBLIC_SUPABASE_URL}/rest/v1/friend_requests?select=id&or=(and(sender_id.eq.${userId},receiver_id.eq.${targetUserId},status.eq.pending),and(sender_id.eq.${targetUserId},receiver_id.eq.${userId},status.eq.pending))&limit=1`,
-        {
-          headers: {
-            'Content-Type': 'application/json',
-            'apikey': process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-            'Authorization': `Bearer ${(await supabase.auth.getSession()).data.session?.access_token || ''}`
-          }
+        if (!userId) {
+          return 'none'; // 未登录用户，默认返回 none
         }
-      );
+
+        try {
+          // 先根据 otherUserId 获取用户的实际 UUID
+          let targetUserId = otherUserId;
+          
+          // 如果 otherUserId 不是 UUID 格式，尝试根据用户名获取用户信息
+          if (otherUserId.length !== 36 || !otherUserId.includes('-')) {
+            try {
+              interface ProfileResponse {
+                data: { id: string }[] | null;
+                error: { message: string } | null;
+              }
+              const getProfilePromise = supabase
+                .from('profiles')
+                .select('id')
+                .eq('username', otherUserId)
+                .limit(1);
+              const getProfileTimeoutPromise = new Promise<ProfileResponse>((_, reject) => {
+                setTimeout(() => reject(new Error('Supabase get profile timed out')), 5000);
+              });
+              const { data: profile, error: profileError } = await Promise.race([getProfilePromise, getProfileTimeoutPromise]);
+              
+              if (!profileError && profile && profile.length > 0) {
+                targetUserId = profile[0].id;
+              } else {
+                // 如果不是 UUID 且不是有效的用户名，返回 none
+                return 'none';
+              }
+            } catch (profileError) {
+              console.error('Error getting profile:', profileError);
+              return 'none';
+            }
+          }
+          
+          // 获取会话，添加超时保护
+          interface SessionResponse {
+            data: { session: { access_token: string } | null };
+            error: { message: string } | null;
+          }
+          let session: SessionResponse;
+          try {
+            const getSessionPromise = supabase.auth.getSession();
+            const getSessionTimeoutPromise = new Promise<SessionResponse>((_, reject) => {
+              setTimeout(() => reject(new Error('Supabase auth.getSession timed out')), 5000);
+            });
+            session = await Promise.race([getSessionPromise, getSessionTimeoutPromise]);
+          } catch (sessionError) {
+            console.error('Error getting session:', sessionError);
+            return 'none';
+          }
+          
+          const accessToken = session.data.session?.access_token || '';
+          
+          // 使用 fetch 直接调用 Supabase API，避免 Postgrest 客户端的问题
+          // 检查是否已经是好友，添加超时保护
+          let friendshipsResponse: Response;
+          try {
+            const friendshipsPromise = fetch(
+              `${process.env.NEXT_PUBLIC_SUPABASE_URL}/rest/v1/friendships?select=id&user_id=eq.${userId}&friend_id=eq.${targetUserId}&limit=1`,
+              {
+                headers: {
+                  'Content-Type': 'application/json',
+                  'apikey': process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+                  'Authorization': `Bearer ${accessToken}`
+                }
+              }
+            );
+            const friendshipsTimeoutPromise = new Promise<Response>((_, reject) => {
+              setTimeout(() => reject(new Error('Friendships fetch timed out')), 5000);
+            });
+            friendshipsResponse = await Promise.race([friendshipsPromise, friendshipsTimeoutPromise]);
+          } catch (friendshipsError) {
+            console.error('Error fetching friendships:', friendshipsError);
+            return 'none';
+          }
+          
+          const friendships = await friendshipsResponse.json();
+          if (Array.isArray(friendships) && friendships.length > 0) {
+            return 'accepted';
+          }
+
+          // 检查是否有未处理的好友请求，添加超时保护
+          let requestsResponse: Response;
+          try {
+            const requestsPromise = fetch(
+              `${process.env.NEXT_PUBLIC_SUPABASE_URL}/rest/v1/friend_requests?select=id&or=(and(sender_id.eq.${userId},receiver_id.eq.${targetUserId},status.eq.pending),and(sender_id.eq.${targetUserId},receiver_id.eq.${userId},status.eq.pending))&limit=1`,
+              {
+                headers: {
+                  'Content-Type': 'application/json',
+                  'apikey': process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+                  'Authorization': `Bearer ${accessToken}`
+                }
+              }
+            );
+            const requestsTimeoutPromise = new Promise<Response>((_, reject) => {
+              setTimeout(() => reject(new Error('Friend requests fetch timed out')), 5000);
+            });
+            requestsResponse = await Promise.race([requestsPromise, requestsTimeoutPromise]);
+          } catch (requestsError) {
+            console.error('Error fetching friend requests:', requestsError);
+            return 'none';
+          }
+          
+          const friendRequests = await requestsResponse.json();
+          if (Array.isArray(friendRequests) && friendRequests.length > 0) {
+            return 'pending';
+          }
+        } catch (error) {
+          // 如果发生任何错误，返回默认状态
+          console.error('Error checking friendship status:', error);
+        }
+
+        return 'none';
+      })();
       
-      const friendRequests = await requestsResponse.json();
-      if (Array.isArray(friendRequests) && friendRequests.length > 0) {
-        return 'pending';
-      }
+      // 设置整个函数的超时时间
+      const timeoutPromise = new Promise<'none' | 'pending' | 'accepted'>((_, reject) => {
+        setTimeout(() => reject(new Error('checkFriendshipStatus timed out')), 10000);
+      });
+      
+      return await Promise.race([mainPromise, timeoutPromise]);
     } catch (error) {
-      // 如果发生任何错误，返回默认状态
-      console.error('Error checking friendship status:', error);
+      console.error('Error in checkFriendshipStatus outer catch:', error);
+      return 'none';
     }
-
-    return 'none';
   },
 
   // 删除好友

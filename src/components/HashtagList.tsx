@@ -14,11 +14,19 @@ interface HashtagListProps {
 export function HashtagList({ limit = 10, showTitle = true, className = '' }: HashtagListProps) {
   const [hashtags, setHashtags] = useState<Hashtag[]>([]);
   const [loading, setLoading] = useState(true);
+  const [mounted, setMounted] = useState(false);
   const router = useRouter();
 
   useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  useEffect(() => {
+    if (!mounted) return;
+
     const fetchHashtags = async () => {
       try {
+        setLoading(true);
         const response = await fetch(`/api/hashtags?limit=${limit}`);
         if (!response.ok) {
           throw new Error('Failed to fetch hashtags');
@@ -34,7 +42,7 @@ export function HashtagList({ limit = 10, showTitle = true, className = '' }: Ha
     };
 
     fetchHashtags();
-  }, [limit]);
+  }, [limit, mounted]);
 
   const handleHashtagClick = (tag: string) => {
     // 导航到标签页面

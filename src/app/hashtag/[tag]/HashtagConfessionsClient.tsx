@@ -6,8 +6,10 @@ import { confessionService } from '@/services/confessionService';
 import ConfessionCard from '@/components/ConfessionCard';
 import { useAuth } from '@/context/AuthContext';
 import { useRouter } from 'next/navigation';
-import { HashtagIcon, ArrowLeftIcon } from '@heroicons/react/24/outline';
+import { ArrowLeftIcon, HashtagIcon } from '@heroicons/react/24/outline';
 import LoadingSpinner from '@/components/LoadingSpinner';
+import Modal from '@/components/AnimatedModal';
+import toast from 'react-hot-toast';
 
 interface HashtagConfessionsClientProps {
   tag: string;
@@ -19,6 +21,8 @@ export default function HashtagConfessionsClient({ tag }: HashtagConfessionsClie
   const [error, setError] = useState<string | null>(null);
   const [hasMore, setHasMore] = useState(true);
   const [page, setPage] = useState(1);
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [confessionToDelete, setConfessionToDelete] = useState<string | null>(null);
   const { user } = useAuth();
   const router = useRouter();
 
@@ -55,30 +59,87 @@ export default function HashtagConfessionsClient({ tag }: HashtagConfessionsClie
     }
   };
 
-  const handleDeleteConfession = async (confessionId: string) => {
+  const handleDeleteConfession = (confessionId: string) => {
     if (!user) {
       router.push('/auth/login');
       return;
     }
 
-    const isConfirmed = window.confirm('确定要删除这条表白吗？此操作不可恢复。');
-    if (!isConfirmed) {
-      return;
-    }
+    setConfessionToDelete(confessionId);
+    setShowDeleteModal(true);
+  };
+
+  const confirmDelete = async () => {
+    if (!confessionToDelete) return;
 
     try {
-      await confessionService.deleteConfession(confessionId);
+      await confessionService.deleteConfession(confessionToDelete);
       // 重新加载表白列表
       setPage(1);
       loadConfessions(1, false);
+      setShowDeleteModal(false);
+      // 显示删除成功提示
+      toast.success('删除表白成功', {
+        position: 'top-right',
+        duration: 3000,
+        style: {
+          backgroundColor: '#10b981',
+          color: '#fff',
+          borderRadius: '0.5rem',
+        },
+      });
     } catch (err) {
       console.error('Delete error:', err);
-      window.alert('删除表白失败，请稍后重试。');
+      setShowDeleteModal(false);
+      // 显示删除失败提示
+      toast.error('删除表白失败，请稍后重试', {
+        position: 'top-right',
+        duration: 3000,
+        style: {
+          backgroundColor: '#ef4444',
+          color: '#fff',
+          borderRadius: '0.5rem',
+        },
+      });
     }
+  };
+
+  const cancelDelete = () => {
+    setShowDeleteModal(false);
+    setConfessionToDelete(null);
   };
 
   return (
     <div className="min-h-screen pb-20">
+      {/* 删除确认模态框 */}
+      <Modal
+        isOpen={showDeleteModal}
+        onClose={cancelDelete}
+        title="确认删除"
+        size="sm"
+        closeOnOverlayClick={true}
+      >
+        <div className="space-y-4">
+          <p className="text-gray-700 dark:text-gray-300">
+            确定要删除这条表白吗？此操作不可恢复。
+          </p>
+          <div className="flex justify-end gap-3 pt-4 border-t border-gray-200 dark:border-gray-700">
+            <button
+              onClick={cancelDelete}
+              className="px-4 py-2 bg-gray-200 dark:bg-gray-700 text-gray-800 dark:text-gray-200 rounded-lg hover:bg-gray-300 dark:hover:bg-gray-600 transition-colors"
+            >
+              取消
+            </button>
+            <button
+              onClick={confirmDelete}
+              className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors"
+            >
+              确认删除
+            </button>
+          </div>
+        </div>
+      </Modal>
+      
       <div className="sticky top-0 z-10 bg-white/90 dark:bg-gray-900/90 backdrop-blur-md border-b border-gray-200 dark:border-gray-700">
         <div className="w-full mx-auto px-4 sm:px-6 lg:px-8 py-4">
           <div className="flex items-center gap-3">

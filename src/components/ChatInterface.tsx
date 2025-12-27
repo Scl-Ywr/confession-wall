@@ -61,7 +61,6 @@ export function ChatInterface({ otherUserId, otherUserProfile: initialOtherUserP
         setShowFriendDeletedAlert(true);
       }
       setInitialCheckDone(true);
-      setInitialCheckDone(true);
     } catch {
       setInitialCheckDone(true);
     }
@@ -287,19 +286,45 @@ export function ChatInterface({ otherUserId, otherUserProfile: initialOtherUserP
         if (!currentUserId || !otherUserId) return;
         
         try {
-          const { data: unreadMessages } = await supabase
-            .from('chat_messages')
-            .select('id')
-            .eq('sender_id', otherUserId)
-            .eq('receiver_id', currentUserId)
-            .eq('is_read', false);
+          // 获取未读消息，添加超时保护
+          interface UnreadMessage {
+            id: string;
+          }
+          let unreadMessages: UnreadMessage[] = [];
+          try {
+            const getUnreadMessagesPromise = supabase
+              .from('chat_messages')
+              .select('id')
+              .eq('sender_id', otherUserId)
+              .eq('receiver_id', currentUserId)
+              .eq('is_read', false);
+            const getUnreadMessagesTimeoutPromise = new Promise<UnreadMessage[]>((_, reject) => {
+              setTimeout(() => reject(new Error('Supabase get unread messages timed out')), 5000);
+            });
+            const result = await Promise.race([getUnreadMessagesPromise, getUnreadMessagesTimeoutPromise]) as { data: UnreadMessage[] | null; error: { message: string } | null } | UnreadMessage[];
+            unreadMessages = 'data' in result ? (result.data || []) : result;
+          } catch (error) {
+            console.error('Error getting unread messages:', error);
+            return;
+          }
           
           if (unreadMessages && unreadMessages.length > 0) {
             const messageIds = unreadMessages.map(msg => msg.id);
-            await supabase
-              .from('chat_messages')
-              .update({ is_read: true })
-              .in('id', messageIds);
+            
+            // 更新未读消息为已读，添加超时保护
+            try {
+              const updateMessagesPromise = supabase
+                .from('chat_messages')
+                .update({ is_read: true })
+                .in('id', messageIds);
+              const updateMessagesTimeoutPromise = new Promise<never>((_, reject) => {
+                setTimeout(() => reject(new Error('Supabase update messages timed out')), 5000);
+              });
+              await Promise.race([updateMessagesPromise, updateMessagesTimeoutPromise]);
+            } catch (updateError) {
+              console.error('Error updating messages:', updateError);
+              return;
+            }
             
             // 触发自定义事件，通知好友列表更新未读消息数量
             window.dispatchEvent(new CustomEvent('privateMessagesRead', { detail: { friendId: otherUserId } }));

@@ -601,13 +601,15 @@ export async function GET(request: NextRequest) {
     }
     
     const geoLocation = await getGeoLocation(userIp);
-    
+
     const limitedGeoLocation = {
       ip: geoLocation.ip,
+      city: geoLocation.city,
+      province: geoLocation.province,
       country: geoLocation.country,
       is_proxy: geoLocation.is_proxy
     };
-    
+
     return NextResponse.json(limitedGeoLocation);
   } catch (error) {
     return handleApiError(error);

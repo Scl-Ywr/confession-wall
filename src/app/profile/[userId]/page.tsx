@@ -4,13 +4,15 @@ import { useState, useEffect, useCallback } from 'react';
 import { useParams } from 'next/navigation';
 import { useAuth } from '@/context/AuthContext';
 import { UserSearchResult } from '@/types/chat';
-import { Confession } from '@/types/confession';
+import { Confession, Comment } from '@/types/confession';
 import { chatService } from '@/services/chatService';
 import { profileService } from '@/services/profileService';
+import { confessionService } from '@/services/confessionService';
 import Navbar from '@/components/Navbar';
 import Image from 'next/image';
 import { UserCircleIcon, MessageCircleIcon, UserPlusIcon, CheckIcon } from 'lucide-react';
-import ConfessionCard from '@/components/ConfessionCard';
+import HorizontalConfessionHistory from '@/components/HorizontalConfessionHistory';
+import CrossBrowserVideoPlayer from '@/components/CrossBrowserVideoPlayer';
 
 const OtherUserProfilePage = () => {
   const { userId } = useParams<{ userId: string }>();
@@ -30,6 +32,10 @@ const OtherUserProfilePage = () => {
   const [confessionsError, setConfessionsError] = useState<string | null>(null);
   const [hasMoreConfessions, setHasMoreConfessions] = useState(true);
   const [confessionsPage, setConfessionsPage] = useState(1);
+  const [selectedConfession, setSelectedConfession] = useState<Confession | null>(null);
+  const [selectedConfessionComments, setSelectedConfessionComments] = useState<Comment[]>([]);
+  const [commentsLoading, setCommentsLoading] = useState(false);
+  const [commentsError, setCommentsError] = useState<string | null>(null);
 
   useEffect(() => {
     const fetchProfileAndFriendship = async () => {
@@ -294,6 +300,11 @@ const OtherUserProfilePage = () => {
         // 重新加载表白列表
         setConfessionsPage(1);
         fetchUserConfessions(1, false);
+        // 如果删除的是当前选中的表白，清空选中状态
+        if (selectedConfession?.id === confessionId) {
+          setSelectedConfession(null);
+          setSelectedConfessionComments([]);
+        }
       } else {
         const data = await response.json();
         window.alert(data.error || '删除表白失败，请稍后重试。');
@@ -303,12 +314,37 @@ const OtherUserProfilePage = () => {
       window.alert('删除表白失败，请稍后重试。');
     }
   };
+
+  // 获取表白评论
+  const fetchComments = useCallback(async (confessionId: string) => {
+    try {
+      setCommentsLoading(true);
+      setCommentsError(null);
+      const comments = await confessionService.getComments(confessionId);
+      setSelectedConfessionComments(comments);
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : '获取评论失败';
+      setCommentsError(errorMessage);
+      console.error('Error fetching comments:', error);
+    } finally {
+      setCommentsLoading(false);
+    }
+  }, []);
   
   useEffect(() => {
     if (profile) {
       fetchUserConfessions(1, false);
     }
   }, [profile, fetchUserConfessions]);
+
+  // 当选中表白变化时，获取评论
+  useEffect(() => {
+    if (selectedConfession) {
+      fetchComments(selectedConfession.id);
+    } else {
+      setSelectedConfessionComments([]);
+    }
+  }, [selectedConfession, fetchComments]);
 
   const handleSendFriendRequest = async () => {
     if (!user || !profile) return;
@@ -558,58 +594,39 @@ const OtherUserProfilePage = () => {
             </div>
           </div>
           
-          {/* 用户创作历史 */}
-          <div className="glass-card p-6 rounded-2xl mt-6">
-            <h3 className="text-xl font-bold text-gray-900 dark:text-white mb-4 flex items-center gap-2">
-              <span className="text-2xl">📝</span>
-              创作历史
-            </h3>
-            
-            {confessionsLoading && userConfessions.length === 0 ? (
-              <div className="text-center py-8">
-                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary-500 mx-auto mb-4"></div>
-                <p className="text-gray-500 dark:text-gray-400">加载中...</p>
-              </div>
-            ) : confessionsError ? (
-              <div className="text-center py-8">
-                <p className="text-red-500 dark:text-red-400 mb-4">{confessionsError}</p>
-                <button
-                  onClick={() => {
-                    setConfessionsError(null);
-                    setConfessionsLoading(true);
-                    fetchUserConfessions(1, false);
-                  }}
-                  className="px-4 py-2 bg-primary-600 text-white rounded-xl font-medium hover:bg-primary-700 transition-colors"
-                >
-                  重试
-                </button>
-              </div>
-            ) : userConfessions.length === 0 ? (
-              <div className="text-center py-8">
-                <div className="text-6xl mb-4">📭</div>
-                <p className="text-gray-500 dark:text-gray-400">该用户还没有发布任何表白</p>
-              </div>
-            ) : (
-              <div className="space-y-4">
-                <div className="text-center mb-4">
-                  <p className="text-gray-600 dark:text-gray-300">
-                    共发布了 {userConfessions.length} 条表白
-                  </p>
-                </div>
+          {/* 用户创作历史和详情区域 */}
+          <div className="md:col-span-3">
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+              {/* 左侧：创作历史 */}
+              <div className="lg:col-span-2">
+                <HorizontalConfessionHistory
+                  confessions={userConfessions}
+                  totalCount={userConfessions.length}
+                  isLoading={confessionsLoading && userConfessions.length === 0}
+                  onDelete={handleDeleteConfession}
+                  onConfessionClick={setSelectedConfession}
+                />
                 
-                <div className="grid gap-4">
-                  {userConfessions.map((confession) => (
-                    <ConfessionCard
-                      key={confession.id}
-                      confession={confession}
-                      currentUserId={user?.id}
-                      onDelete={handleDeleteConfession}
-                    />
-                  ))}
-                </div>
+                {/* 错误状态显示 */}
+                {confessionsError && (
+                  <div className="text-center py-4">
+                    <p className="text-red-500 dark:text-red-400 mb-4">{confessionsError}</p>
+                    <button
+                      onClick={() => {
+                        setConfessionsError(null);
+                        setConfessionsLoading(true);
+                        fetchUserConfessions(1, false);
+                      }}
+                      className="px-4 py-2 bg-primary-600 text-white rounded-xl font-medium hover:bg-primary-700 transition-colors"
+                    >
+                      重试
+                    </button>
+                  </div>
+                )}
                 
-                {hasMoreConfessions && (
-                  <div className="text-center mt-6">
+                {/* 加载更多按钮 */}
+                {!confessionsError && hasMoreConfessions && !confessionsLoading && (
+                  <div className="text-center mt-4 mb-6">
                     <button
                       onClick={loadMoreConfessions}
                       disabled={confessionsLoading}
@@ -620,7 +637,124 @@ const OtherUserProfilePage = () => {
                   </div>
                 )}
               </div>
-            )}
+              
+              {/* 右侧：表白详情 */}
+              <div className="lg:col-span-1">
+                <div className="glass-card p-6 rounded-2xl h-full">
+                  <h3 className="text-xl font-bold text-gray-900 dark:text-white mb-4 flex items-center gap-2">
+                    <span className="text-2xl">📖</span>
+                    表白详情
+                  </h3>
+                  
+                  {selectedConfession ? (
+                    <div className="space-y-4">
+                      <div>
+                        <h4 className="text-sm font-semibold text-gray-600 dark:text-gray-300 mb-1">发布时间</h4>
+                        <p className="text-gray-900 dark:text-white">
+                          {new Date(selectedConfession.created_at).toLocaleString('zh-CN', {
+                            year: 'numeric',
+                            month: '2-digit',
+                            day: '2-digit',
+                            hour: '2-digit',
+                            minute: '2-digit',
+                          })}
+                        </p>
+                      </div>
+                      
+                      <div>
+                        <h4 className="text-sm font-semibold text-gray-600 dark:text-gray-300 mb-1">点赞数</h4>
+                        <p className="text-gray-900 dark:text-white">{Math.max(0, Number(selectedConfession.likes_count) || 0)}</p>
+                      </div>
+                      
+                      <div className="pt-2 border-t border-gray-200 dark:border-gray-700">
+                        <h4 className="text-sm font-semibold text-gray-600 dark:text-gray-300 mb-2">表白内容</h4>
+                        <div className="space-y-3">
+                          <p className="text-gray-900 dark:text-white whitespace-pre-wrap">{selectedConfession.content}</p>
+                          
+                          {/* 媒体内容直接显示 */}
+                          {selectedConfession.images && selectedConfession.images.length > 0 && (
+                            <div className="mt-2 space-y-3">
+                              {selectedConfession.images.map((image) => (
+                                <div key={image.id}>
+                                  <p className="text-sm text-gray-600 dark:text-gray-400 mb-2">
+                                    {image.file_type === 'image' ? '图片:' : '视频:'}
+                                  </p>
+                                  {image.file_type === 'image' ? (
+                                    <Image
+                                      src={image.image_url}
+                                      alt="表白图片"
+                                      width={500}
+                                      height={300}
+                                      className="w-full h-auto object-cover max-h-64 rounded-lg cursor-pointer"
+                                      onClick={() => window.open(image.image_url, '_blank')}
+                                    />
+                                  ) : (
+                                    <div className="w-full rounded-lg overflow-hidden" style={{ maxHeight: '16rem' }}>
+                                      <CrossBrowserVideoPlayer
+                                        id={`video-${image.id}`}
+                                        videoUrl={image.image_url}
+                                        controls={true}
+                                        className="w-full h-full"
+                                        height="16rem"
+                                      />
+                                    </div>
+                                  )}
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                      
+                      {/* 评论列表 */}
+                      <div className="pt-2 border-t border-gray-200 dark:border-gray-700">
+                        <h4 className="text-sm font-semibold text-gray-600 dark:text-gray-300 mb-3">评论 ({selectedConfessionComments.length})</h4>
+                        {commentsLoading ? (
+                          <div className="animate-pulse">
+                            <div className="h-4 bg-gray-200 dark:bg-gray-700 rounded w-1/4 mb-2"></div>
+                            <div className="h-12 bg-gray-200 dark:bg-gray-700 rounded mb-3"></div>
+                            <div className="h-12 bg-gray-200 dark:bg-gray-700 rounded mb-3"></div>
+                          </div>
+                        ) : commentsError ? (
+                          <div className="text-red-500 dark:text-red-400">{commentsError}</div>
+                        ) : selectedConfessionComments.length > 0 ? (
+                          <div className="space-y-3 max-h-64 overflow-y-auto">
+                            {selectedConfessionComments.map((comment) => (
+                              <div key={comment.id} className="bg-white/60 dark:bg-gray-800/60 p-3 rounded-lg">
+                                <div className="flex items-center justify-between mb-1">
+                                  <span className="text-xs font-semibold text-gray-700 dark:text-gray-300">
+                                    {comment.is_anonymous ? '匿名用户' : comment.profile?.display_name || '未知用户'}
+                                  </span>
+                                  <span className="text-xs text-gray-500 dark:text-gray-400">
+                                    {new Date(comment.created_at).toLocaleString('zh-CN', {
+                                      year: 'numeric',
+                                      month: '2-digit',
+                                      day: '2-digit',
+                                      hour: '2-digit',
+                                      minute: '2-digit',
+                                    })}
+                                  </span>
+                                </div>
+                                <p className="text-sm text-gray-900 dark:text-gray-100 whitespace-pre-wrap">{comment.content}</p>
+                              </div>
+                            ))}
+                          </div>
+                        ) : (
+                          <div className="text-center py-4">
+                            <p className="text-gray-500 dark:text-gray-400">暂无评论</p>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="text-center py-10">
+                      <div className="text-6xl mb-4">📝</div>
+                      <p className="text-gray-600 dark:text-gray-400">点击左侧任意表白查看详情</p>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
           </div>
         </div>
       </main>

@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { motion } from 'framer-motion';
 import Navbar from '@/components/Navbar';
 import { useAuth } from '@/context/AuthContext';
@@ -17,26 +17,36 @@ import { useQuery, useInfiniteQuery, useQueryClient } from '@tanstack/react-quer
 import LoginPrompt from '@/components/LoginPrompt';
 import ConfessionCardSkeleton from '@/components/ConfessionCardSkeleton';
 import { FadeInStagger } from '@/components/Transitions';
+import Modal from '@/components/AnimatedModal';
+import toast from 'react-hot-toast';
 
 export default function Home() {
   const router = useRouter();
-  const { user } = useAuth();
+  const { user, loading: authLoading } = useAuth();
   const { showLoginPrompt } = useLike();
   const [searchKeyword, setSearchKeyword] = useState('');
   const [searchType, setSearchType] = useState<'content' | 'username'>('content');
   const queryClient = useQueryClient();
+  const [mounted, setMounted] = useState(false);
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [confessionToDelete, setConfessionToDelete] = useState<string | null>(null);
+
+  useEffect(() => {
+    setTimeout(() => setMounted(true), 0);
+  }, []);
 
 
 
   // 使用React Query的无限查询获取表白列表
-  const { 
-    data: infiniteData, 
-    fetchNextPage, 
-    hasNextPage, 
-    isFetchingNextPage, 
-    isLoading: isLoadingConfessions,
+  const {
+    data: infiniteData,
+    fetchNextPage,
+    hasNextPage,
+    isFetchingNextPage,
+    isLoading,
     isError: isErrorConfessions,
-    error: errorConfessions
+    error: errorConfessions,
+    refetch: refetchConfessions
   } = useInfiniteQuery<Confession[], Error>({
     queryKey: ['confessions'],
     queryFn: (context) => confessionService.getConfessions(context.pageParam as number),
@@ -46,7 +56,11 @@ export default function Home() {
     },
     initialPageParam: 1,
     staleTime: 5 * 60 * 1000, // 5分钟缓存有效期
-    // cacheTime已移到queryClient默认选项中，不再在单个查询中设置
+    refetchOnMount: true, // 组件挂载时重新获取数据
+    refetchOnWindowFocus: false, // 窗口获得焦点时不重新获取
+    retry: 3, // 失败时重试3次
+    retryDelay: (attemptIndex) => Math.min(1000 * 2 ** attemptIndex, 30000), // 指数退避
+    placeholderData: (previousData) => previousData, // 重新获取数据时保留之前的数据，避免空白
   });
 
   // 使用React Query管理搜索结果
@@ -98,24 +112,52 @@ export default function Home() {
     };
   }, [handleObserver]);
 
-  const handleDeleteConfession = async (confessionId: string) => {
+  const handleDeleteConfession = (confessionId: string) => {
     if (!user) {
       router.push('/auth/login');
       return;
     }
 
-    const isConfirmed = window.confirm('确定要删除这条表白吗？此操作不可恢复。');
-    if (!isConfirmed) {
-      return;
-    }
+    setConfessionToDelete(confessionId);
+    setShowDeleteModal(true);
+  };
+
+  const confirmDelete = async () => {
+    if (!confessionToDelete) return;
 
     try {
-      await confessionService.deleteConfession(confessionId);
+      await confessionService.deleteConfession(confessionToDelete);
       await queryClient.invalidateQueries({ queryKey: ['confessions'] });
+      setShowDeleteModal(false);
+      // 显示删除成功提示
+      toast.success('删除表白成功', {
+        position: 'top-right',
+        duration: 3000,
+        style: {
+          backgroundColor: '#10b981',
+          color: '#fff',
+          borderRadius: '0.5rem',
+        },
+      });
     } catch (err) {
       console.error('Delete error:', err);
-      window.alert('删除表白失败，请稍后重试。');
+      setShowDeleteModal(false);
+      // 显示删除失败提示
+      toast.error('删除表白失败，请稍后重试', {
+        position: 'top-right',
+        duration: 3000,
+        style: {
+          backgroundColor: '#ef4444',
+          color: '#fff',
+          borderRadius: '0.5rem',
+        },
+      });
     }
+  };
+
+  const cancelDelete = () => {
+    setShowDeleteModal(false);
+    setConfessionToDelete(null);
   };
 
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
@@ -129,13 +171,68 @@ export default function Home() {
   };
 
   // 合并所有表白数据
-  const confessions = infiniteData?.pages.flat() || [];
-  // 确定当前显示的数据（搜索结果或所有表白）
-  const displayConfessions = searchKeyword.trim() ? searchResults : confessions;
+  const confessions = useMemo(() => infiniteData?.pages.flat() || [], [infiniteData]);
+  // 添加useState来管理表白列表，确保新表白添加后页面会重新渲染
+  const [displayConfessions, setDisplayConfessions] = useState<Confession[]>([]);
+  // 添加一个强制重新渲染的key
+  const [forceRenderKey, setForceRenderKey] = useState(0);
+  
+  // 添加一个标志来跟踪是否刚刚添加了新表白
+  const [justAddedConfession, setJustAddedConfession] = useState(false);
+  
+  // 当confessions或searchResults变化时，更新displayConfessions
+  useEffect(() => {
+    console.log('useEffect triggered:', { searchKeyword: searchKeyword.trim(), confessionsLength: confessions.length, searchResultsLength: searchResults.length, justAddedConfession });
+    setTimeout(() => {
+      if (searchKeyword.trim()) {
+        setDisplayConfessions(searchResults as Confession[]);
+      } else if (!justAddedConfession) {
+        // 只有在没有刚刚添加表白时才更新
+        setDisplayConfessions(confessions as Confession[]);
+      }
+    }, 0);
+  }, [confessions, searchResults, searchKeyword, justAddedConfession]);
+  
+  // 初始化displayConfessions
+  useEffect(() => {
+    console.log('Initialization useEffect:', { displayConfessionsLength: displayConfessions.length, confessionsLength: confessions.length });
+    setTimeout(() => {
+      if (displayConfessions.length === 0 && confessions.length > 0 && !justAddedConfession) {
+        console.log('Setting initial displayConfessions');
+        setDisplayConfessions(confessions as Confession[]);
+      }
+    }, 0);
+  }, [confessions, displayConfessions.length, justAddedConfession]);
+  
+  // 添加调试信息
+  useEffect(() => {
+    console.log('displayConfessions updated:', displayConfessions);
+  }, [displayConfessions]);
+  
+  // 重置justAddedConfession标志
+  useEffect(() => {
+    if (justAddedConfession) {
+      const timer = setTimeout(() => {
+        setJustAddedConfession(false);
+      }, 1000); // 1秒后重置标志
+      return () => clearTimeout(timer);
+    }
+  }, [justAddedConfession]);
+  
   // 确定当前加载状态
-  const isLoading = searchKeyword.trim() ? isSearching : isLoadingConfessions;
+  // 使用isLoading而不是isInitialLoading，这样在重新获取数据时不会显示骨架屏
+  const currentLoading = searchKeyword.trim() ? isSearching : isLoading;
   const isError = searchKeyword.trim() ? false : isErrorConfessions;
   const error = searchKeyword.trim() ? null : errorConfessions;
+
+  // 等待组件挂载和认证完成后再渲染内容
+  if (!mounted || authLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="animate-spin rounded-full h-12 w-12 border-4 border-primary-600 border-t-transparent"></div>
+      </div>
+    );
+  }
 
   return (
     <motion.div 
@@ -146,6 +243,39 @@ export default function Home() {
       transition={{ duration: 0.4, ease: [0.25, 0.1, 0.25, 1] }}
     >
       <Navbar />
+      
+      {/* 删除确认模态框 */}
+      <Modal
+        isOpen={showDeleteModal}
+        onClose={cancelDelete}
+        title="确认删除"
+        size="sm"
+        closeOnOverlayClick={true}
+      >
+        <div className="space-y-4">
+          <p className="text-gray-700 dark:text-gray-300">
+            确定要删除这条表白吗？此操作不可恢复。
+          </p>
+          <div className="flex justify-end gap-3 pt-4 border-t border-gray-200 dark:border-gray-700">
+            <motion.button
+              onClick={cancelDelete}
+              className="px-4 py-2 bg-gray-200 dark:bg-gray-700 text-gray-800 dark:text-gray-200 rounded-lg hover:bg-gray-300 dark:hover:bg-gray-600 transition-colors"
+              whileHover={{ scale: 1.02 }}
+              whileTap={{ scale: 0.98 }}
+            >
+              取消
+            </motion.button>
+            <motion.button
+              onClick={confirmDelete}
+              className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors"
+              whileHover={{ scale: 1.02 }}
+              whileTap={{ scale: 0.98 }}
+            >
+              确认删除
+            </motion.button>
+          </div>
+        </div>
+      </Modal>
       
       {/* 登录提示组件 */}
       {showLoginPrompt && <LoginPrompt />}
@@ -188,7 +318,103 @@ export default function Home() {
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.5, delay: 0.3, ease: [0.25, 0.1, 0.25, 1] }}
         >
-          <CreateConfessionForm onSuccess={() => queryClient.invalidateQueries({ queryKey: ['confessions'] })} user={user} />
+          <CreateConfessionForm 
+            onSuccess={(newConfession) => {
+              console.log('onSuccess called with newConfession:', newConfession);
+              
+              if (!newConfession) {
+                // 如果没有新表白，直接重新获取数据
+                refetchConfessions();
+                return;
+              }
+              
+              // 直接更新displayConfessions状态，将新表白添加到列表开头
+              setDisplayConfessions((prev) => {
+                // 创建新的表白对象，确保格式正确
+                const confessionToAdd = {
+                  ...newConfession,
+                  likes_count: 0,
+                  liked_by_user: false,
+                  comments_count: 0,
+                  images: newConfession.images || [],
+                  hashtags: newConfession.hashtags || [],
+                  category: newConfession.category || undefined,
+                  profile: newConfession.profile || undefined
+                };
+                
+                // 检查新表白是否已经存在于列表中
+                const existingConfession = prev.find((c) => c.id === newConfession.id);
+                if (existingConfession) {
+                  // 如果已经存在，直接返回旧数据
+                  return prev;
+                }
+                
+                // 将新表白添加到列表开头
+                return [confessionToAdd, ...prev];
+              });
+              
+              // 设置刚刚添加了表白的标志
+              setJustAddedConfession(true);
+              
+              // 强制组件重新渲染
+              setForceRenderKey(prev => prev + 1);
+              
+              // 同时更新React Query缓存，确保数据一致性
+              queryClient.setQueryData(['confessions'], (oldData: { pages: Confession[][], pageParams: number[] } | undefined) => {
+                console.log('oldData before update:', oldData);
+                
+                // 如果没有旧数据，创建新的数据结构
+                if (!oldData || !oldData.pages || oldData.pages.length === 0) {
+                  console.log('No old data, creating new structure');
+                  return {
+                    pages: [[newConfession]],
+                    pageParams: [1]
+                  };
+                }
+                
+                // 创建新的表白对象，确保格式正确
+                const confessionToAdd = {
+                  ...newConfession,
+                  likes_count: 0,
+                  liked_by_user: false,
+                  comments_count: 0,
+                  images: newConfession.images || [],
+                  hashtags: newConfession.hashtags || [],
+                  category: newConfession.category || undefined,
+                  profile: newConfession.profile || undefined
+                };
+                
+                console.log('confessionToAdd:', confessionToAdd);
+                
+                // 检查新表白是否已经存在于列表中
+                const existingConfession = oldData.pages[0].find((c: Confession) => c.id === newConfession.id);
+                if (existingConfession) {
+                  // 如果已经存在，直接返回旧数据
+                  console.log('Confession already exists in list');
+                  return oldData;
+                }
+                
+                // 创建新的页面数组，将新表白添加到第一页的开头
+                const updatedPages = [...oldData.pages];
+                updatedPages[0] = [confessionToAdd, ...updatedPages[0]];
+                
+                console.log('updatedPages:', updatedPages);
+                
+                // 返回更新后的数据
+                const result = {
+                  ...oldData,
+                  pages: updatedPages
+                };
+                
+                console.log('final result:', result);
+                return result;
+              });
+              
+              // 使缓存失效，确保数据同步
+              queryClient.invalidateQueries({ queryKey: ['confessions'] });
+            }} 
+            user={user} 
+          />
         </motion.div>
         
         <motion.div 
@@ -254,7 +480,7 @@ export default function Home() {
                   whileHover={{ scale: 1.02 }}
                   whileTap={{ scale: 0.98 }}
                 >
-                  {isLoading ? (
+                  {currentLoading ? (
                     <motion.div 
                       initial={{ opacity: 0 }}
                       animate={{ opacity: 1 }}
@@ -323,7 +549,7 @@ export default function Home() {
               </motion.p>
             </motion.div>
           ) : (
-            <FadeInStagger className="grid gap-6">
+            <FadeInStagger key={forceRenderKey} className="grid gap-6">
               {displayConfessions.map((confession) => (
                 <ConfessionCard
                   key={confession.id}

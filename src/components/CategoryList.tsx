@@ -14,11 +14,19 @@ interface CategoryListProps {
 export function CategoryList({ showTitle = true, className = '' }: CategoryListProps) {
   const [categories, setCategories] = useState<ConfessionCategory[]>([]);
   const [loading, setLoading] = useState(true);
+  const [mounted, setMounted] = useState(false);
   const router = useRouter();
 
   useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  useEffect(() => {
+    if (!mounted) return;
+
     const fetchCategories = async () => {
       try {
+        setLoading(true);
         const data = await confessionService.getCategories();
         setCategories(data);
       } catch (error) {
@@ -29,7 +37,7 @@ export function CategoryList({ showTitle = true, className = '' }: CategoryListP
     };
 
     fetchCategories();
-  }, []);
+  }, [mounted]);
 
   const handleCategoryClick = (categoryId: string) => {
     // 导航到分类页面

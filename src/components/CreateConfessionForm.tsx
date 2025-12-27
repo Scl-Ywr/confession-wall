@@ -2,7 +2,7 @@
 
 import React, { useState } from 'react';
 import Image from 'next/image';
-import { ConfessionFormData } from '@/types/confession';
+import { ConfessionFormData, Confession } from '@/types/confession';
 import { confessionService } from '@/services/confessionService';
 import { PhotoIcon, PaperAirplaneIcon, XMarkIcon, FilmIcon, PencilIcon } from '@heroicons/react/24/outline';
 import VideoUploader from './VideoUploader';
@@ -14,7 +14,7 @@ import { MentionInput } from './MentionInput';
 import MarkdownEditor from './MarkdownEditor';
 
 interface CreateConfessionFormProps {
-  onSuccess: () => void;
+  onSuccess: (newConfession: Confession) => void;
   user: { id: string; email?: string } | null;
   groupId?: string;
 }
@@ -116,7 +116,8 @@ export default function CreateConfessionForm({ onSuccess, user, groupId }: Creat
     setSuccess(false);
 
     try {
-      await confessionService.createConfession(formData);
+      // 保存新创建的表白对象
+      const newConfession = await confessionService.createConfession(formData);
       // 重置表单数据，包括videoUrls
       setFormData({ 
         content: '', 
@@ -133,7 +134,7 @@ export default function CreateConfessionForm({ onSuccess, user, groupId }: Creat
       setVideoUrl(null);
       setShowVideoUploader(false);
       setSuccess(true);
-      onSuccess();
+      onSuccess(newConfession);
       setTimeout(() => setSuccess(false), 3000);
     } catch (err) {
       setError(err instanceof Error ? err.message : '发布表白失败');
@@ -150,7 +151,8 @@ export default function CreateConfessionForm({ onSuccess, user, groupId }: Creat
     setSuccess(false);
 
     try {
-      await confessionService.createConfession(formData);
+      // 保存新创建的表白对象
+      const newConfession = await confessionService.createConfession(formData);
       // 重置表单数据，包括videoUrls
       setFormData({ content: '', is_anonymous: false, images: [], videoUrls: [] });
       setSelectedImages([]);
@@ -160,7 +162,7 @@ export default function CreateConfessionForm({ onSuccess, user, groupId }: Creat
       setVideoUrl(null);
       setShowVideoUploader(false);
       setSuccess(true);
-      onSuccess();
+      onSuccess(newConfession);
       setTimeout(() => setSuccess(false), 3000);
     } catch (err) {
       setError(err instanceof Error ? err.message : '发布表白失败');
