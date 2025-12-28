@@ -826,6 +826,17 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         
         // 8. 异步更新在线状态，不阻塞主流程
         updateOnlineStatus(userId, 'online').catch(console.error);
+        
+        // 9. 检查是否为OAuth用户并设置相关元数据
+        const userMetadata = data.user?.user_metadata;
+        const isOAuthUser = userMetadata?.provider && userMetadata.provider !== 'email';
+        
+        if (isOAuthUser && completeUser) {
+          // 为OAuth用户设置额外信息
+          (completeUser as any).user_metadata = userMetadata;
+          (completeUser as any).is_oauth_user = true;
+          (completeUser as any).provider = userMetadata.provider;
+        }
       }
       
       // 9. 更新状态，完成登录
@@ -866,13 +877,18 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       }
       
       // 检查用户是否通过OAuth登录
-      const userMetadata = (state.user as unknown as { user_metadata?: { is_oauth_user?: boolean } }).user_metadata;
-      const isOAuthUser = userMetadata?.is_oauth_user;
+      const isOAuthUser = (state.user as any)?.user_metadata?.is_oauth_user || 
+                         (state.user as any)?.is_oauth_user ||
+                         false;
       
       if (isOAuthUser) {
-        // OAuth用户需要重定向到Logto登出路由
-        window.location.href = '/api/auth/logto/sign-out';
-        return; // 不继续执行后续代码，因为页面将重定向
+        // OAuth用户使用Supabase标准登出流程
+        // 注意：不需要重定向到外部OAuth提供商登出
+        const { error } = await supabase.auth.signOut();
+        if (error) {
+          throw error;
+        }
+        return;
       }
       
       // 普通邮箱用户使用标准登出流程
