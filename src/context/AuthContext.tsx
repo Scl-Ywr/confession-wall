@@ -865,6 +865,17 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         await updateOnlineStatus(userId, 'offline');
       }
       
+      // 检查用户是否通过OAuth登录
+      const userMetadata = (state.user as unknown as { user_metadata?: { is_oauth_user?: boolean } }).user_metadata;
+      const isOAuthUser = userMetadata?.is_oauth_user;
+      
+      if (isOAuthUser) {
+        // OAuth用户需要重定向到Logto登出路由
+        window.location.href = '/api/auth/logto/sign-out';
+        return; // 不继续执行后续代码，因为页面将重定向
+      }
+      
+      // 普通邮箱用户使用标准登出流程
       const { error } = await supabase.auth.signOut();
 
       if (error) {

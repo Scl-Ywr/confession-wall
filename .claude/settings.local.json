@@ -1,7 +1,15 @@
 {
   "permissions": {
     "allow": [
-      "Bash(npx tsc:*)"
+      "Bash(npx tsc:*)",
+      "Bash(dir \"c:\\\\Users\\\\PC\\\\Desktop\\\\confession-wall\" /b /a-d)",
+      "Bash(findstr:*)",
+      "Bash(npm run dev:*)",
+      "Bash(dir:*)",
+      "Bash(tasklist:*)",
+      "Bash(netstat:*)",
+      "Bash(taskkill:*)",
+      "Bash(git log:*)"
     ],
     "deny": [],
     "ask": []

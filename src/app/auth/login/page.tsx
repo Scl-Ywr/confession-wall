@@ -8,6 +8,7 @@ import Link from 'next/link';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
+import SocialLoginButtons from '@/components/SocialLoginButtons';
 
 // 创建登录表单的Zod schema
 const loginSchema = z.object({
@@ -230,6 +231,8 @@ const LoginPage: React.FC = () => {
             ) : '登录'}
           </button>
         </form>
+
+        <SocialLoginButtons disabled={loading} loading={loading} />
       </div>
     </div>
   );

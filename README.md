@@ -20,6 +20,51 @@ You can start editing the page by modifying `app/page.tsx`. The page auto-update
 
 This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
 
+## Authentication
+
+This application supports multiple authentication methods:
+
+### Email/Password Authentication
+- Traditional email and password registration
+- Email verification required before login
+- Password reset functionality
+- Login attempt rate limiting (5 attempts per 15 minutes)
+- Admin login with special privileges
+
+### OAuth Social Login (via Logto)
+- **Google** - Sign in with your Google account
+- **GitHub** - Sign in with your GitHub account
+- **WeChat (微信)** - Sign in with your WeChat account
+- **QQ** - Sign in with your QQ account
+
+OAuth accounts are automatically linked to existing email accounts when the email matches. All authentication is managed through a hybrid architecture:
+- **Supabase Auth**: Handles email/password registration and login
+- **Logto**: Handles third-party OAuth providers
+- **Unified Session**: All auth methods create a Supabase session for consistent user management
+
+### Security Features
+- HTTP-only cookies for session tokens (防止 XSS 攻击)
+- Row Level Security (RLS) on all database tables
+- No tokens exposed in URLs or browser history
+- Automatic session refresh every 5 minutes
+- Online status tracking with heartbeat mechanism
+
+### Setup OAuth Providers
+
+For detailed instructions on configuring Logto and OAuth providers (Google, GitHub, WeChat, QQ), see [docs/LOGTO_SETUP.md](docs/LOGTO_SETUP.md).
+
+Quick start:
+1. Copy `.env.local.example` to `.env.local`
+2. Fill in Logto credentials:
+   ```bash
+   NEXT_PUBLIC_LOGTO_ENDPOINT=https://your-tenant.logto.app
+   NEXT_PUBLIC_LOGTO_APP_ID=your-app-id
+   LOGTO_APP_SECRET=your-app-secret
+   LOGTO_COOKIE_SECRET=generate-a-secure-random-string
+   ```
+3. Configure OAuth connectors in Logto Console
+4. Run database migrations
+
 ## Learn More
 
 To learn more about Next.js, take a look at the following resources:

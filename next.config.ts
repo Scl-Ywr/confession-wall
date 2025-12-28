@@ -20,7 +20,7 @@ const nextConfig = {
       },
     ],
   },
-  serverExternalPackages: ['ioredis'],
+  serverExternalPackages: ['ioredis', '@supabase/supabase-js'],
   productionBrowserSourceMaps: false,
 };
 

@@ -4,6 +4,7 @@ const config = {
   testEnvironment: 'jsdom',
   moduleNameMapper: {
     '^@/(.*)$': '<rootDir>/src/$1',
+    '^@logto/next$': '<rootDir>/node_modules/@logto/next/dist/index.js',
   },
   transform: {
     '^.+\\.(ts|tsx)$': ['ts-jest', {
@@ -17,7 +18,13 @@ const config = {
     '!src/**/*.test.{ts,tsx}',
   ],
   coverageReporters: ['json', 'lcov', 'text', 'clover'],
-  setupFilesAfterEnv: [],
+  setupFilesAfterEnv: ['<rootDir>/jest.setup.js'],
+  testMatch: ['**/__tests__/**/*.{ts,tsx}', '**/?(*.)+(spec|test).{ts,tsx}'],
+  globals: {
+    'ts-jest': {
+      tsconfig: 'tsconfig.json',
+    },
+  },
 };
 
 module.exports = config;
