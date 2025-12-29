@@ -11,7 +11,18 @@ export const confessionService = {
     let userId = null;
     try {
       const userResult = await supabase.auth.getUser();
-      userId = userResult.data.user?.id;
+      
+      // 处理会话缺失错误
+      if (userResult.error) {
+        if (userResult.error.message === 'Auth session missing!' || userResult.error.name === 'AuthSessionMissingError') {
+          // 继续执行，返回空列表或默认内容
+        } else {
+          console.error('Error getting user:', userResult.error);
+          // 继续执行，不影响表白列表获取
+        }
+      } else {
+        userId = userResult.data.user?.id;
+      }
     } catch (error) {
       console.error('Error getting user:', error);
       // 继续执行，不影响表白列表获取
@@ -261,7 +272,18 @@ export const confessionService = {
   getConfession: async (id: string): Promise<Confession | null> => {
     // 6. 获取当前用户ID
     const user = await supabase.auth.getUser();
-    const userId = user.data.user?.id;
+    
+    // 处理会话缺失错误
+    if (user.error) {
+      if (user.error.message === 'Auth session missing!' || user.error.name === 'AuthSessionMissingError') {
+        // 继续执行，返回null或默认内容
+      } else {
+        console.error('Error getting user:', user.error);
+        // 继续执行，返回null
+      }
+    }
+    
+    const userId = user.data?.user?.id;
     
     // 生成缓存键，添加用户ID，确保每个用户有独立的缓存
     const cacheKey = cacheKeyManager.confession.detail(id, userId);
@@ -434,6 +456,15 @@ export const confessionService = {
   createConfession: async (formData: ConfessionFormData): Promise<Confession> => {
     // 获取当前用户
     const user = await supabase.auth.getUser();
+    
+    // 处理会话缺失错误
+    if (user.error) {
+      if (user.error.message === 'Auth session missing!' || user.error.name === 'AuthSessionMissingError') {
+        throw new Error('用户会话不存在，请重新登录');
+      }
+      throw new Error('User not authenticated');
+    }
+    
     const userId = user.data.user?.id;
     
     if (!userId) {
@@ -663,7 +694,18 @@ export const confessionService = {
 
     // 3. 检查当前用户是否点赞了该表白
     const user = await supabase.auth.getUser();
-    const userId = user.data.user?.id;
+    
+    // 处理会话缺失错误
+    if (user.error) {
+      if (user.error.message === 'Auth session missing!' || user.error.name === 'AuthSessionMissingError') {
+        // 继续执行，设置liked_by_user为false
+      } else {
+        console.error('Error getting user:', user.error);
+        // 继续执行，设置liked_by_user为false
+      }
+    }
+    
+    const userId = user.data?.user?.id;
     let liked_by_user = false;
     
     if (userId) {
@@ -722,6 +764,15 @@ export const confessionService = {
   // 点赞表白
   likeConfession: async (confessionId: string): Promise<void> => {
     const user = await supabase.auth.getUser();
+    
+    // 处理会话缺失错误
+    if (user.error) {
+      if (user.error.message === 'Auth session missing!' || user.error.name === 'AuthSessionMissingError') {
+        throw new Error('用户会话不存在，请重新登录');
+      }
+      throw new Error('User not authenticated');
+    }
+    
     const userId = user.data.user?.id;
     if (!userId) {
       throw new Error('User not authenticated');
@@ -751,6 +802,15 @@ export const confessionService = {
   // 取消点赞表白
   unlikeConfession: async (confessionId: string): Promise<void> => {
     const user = await supabase.auth.getUser();
+    
+    // 处理会话缺失错误
+    if (user.error) {
+      if (user.error.message === 'Auth session missing!' || user.error.name === 'AuthSessionMissingError') {
+        throw new Error('用户会话不存在，请重新登录');
+      }
+      throw new Error('User not authenticated');
+    }
+    
     const userId = user.data.user?.id;
     if (!userId) {
       throw new Error('User not authenticated');
@@ -778,6 +838,15 @@ export const confessionService = {
   // 检查用户是否点赞了表白
   checkIfLiked: async (confessionId: string): Promise<boolean> => {
     const user = await supabase.auth.getUser();
+    
+    // 处理会话缺失错误
+    if (user.error) {
+      if (user.error.message === 'Auth session missing!' || user.error.name === 'AuthSessionMissingError') {
+        return false; // 返回false，表示未点赞
+      }
+      throw new Error('User not authenticated');
+    }
+    
     const userId = user.data.user?.id;
     if (!userId) {
       throw new Error('User not authenticated');
@@ -1223,8 +1292,6 @@ export const confessionService = {
       
       const result = await response.json();
       const categories = result.categories || [];
-      
-      console.log('Categories fetched from API:', categories);
       
       return categories;
     } catch (error) {

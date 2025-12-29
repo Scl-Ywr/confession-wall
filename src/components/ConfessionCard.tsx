@@ -209,20 +209,10 @@ export default function ConfessionCard({
       // Get the current session token for authentication
       const { data: { session } } = await supabase.auth.getSession();
 
-      console.log('=== Download Debug Info ===');
-      console.log('handleDownload called with imageId:', imageId);
-      console.log('media object:', media);
-      console.log('media.is_locked:', media.is_locked, 'Type:', typeof media.is_locked);
-      console.log('media.lock_type:', media.lock_type, 'Type:', typeof media.lock_type);
-      console.log('session:', session ? 'User logged in' : 'No session');
-
       // Check if media is locked
       if (media.is_locked) {
-        console.log('✓ Media is locked, checking lock type...');
         // For locked media, check if user is logged in first
         if (!session) {
-          // Show login prompt
-          console.log('✗ No session, showing login prompt');
           toast.error('请先登录才能下载此媒体', {
             duration: 3000,
             position: 'top-right',
@@ -230,41 +220,25 @@ export default function ConfessionCard({
           return;
         }
 
-        // Password lock: show password modal if user is not the owner
+        // Password lock: show password modal
         if (media.lock_type === 'password') {
-          console.log('✓ Media is password locked');
-          // Check if current user is the owner
-          const isOwner = currentUserId && confession.user_id && currentUserId === confession.user_id;
-          console.log('isOwner:', isOwner, 'currentUserId:', currentUserId, 'confession.user_id:', confession.user_id);
-
-          // Always show password modal for password-locked media, even for owners
-          // This ensures consistent behavior and allows owners to also use password if needed
-          console.log('✓ Showing password modal');
           setDownloadImageId(imageId);
           setPasswordForDownload('');
-          setPasswordError(''); // Clear any previous error
-          setShowPassword(false); // Reset password visibility
+          setShowPassword(false);
           setShowPasswordModal(true);
-          console.log('showPasswordModal state set to true');
-          console.log('=== End Download Debug Info ===');
           return;
         }
-        // User lock: check if user is logged in (redundant check, but kept for safety)
-        else if (media.lock_type === 'user' && !session) {
-          // Show login prompt
-          console.log('✗ User lock but no session');
+        // User lock: check if user is logged in
+        else if (media.lock_type === 'user') {
           toast.error('请先登录才能下载此媒体', {
             duration: 3000,
             position: 'top-right',
           });
           return;
         }
-        console.log('Lock type:', media.lock_type, '- Proceeding with download');
       } else {
-        console.log('✓ Media is not locked, proceeding with download');
+        // Media is not locked, proceed with download
       }
-
-      console.log('Calling download API...');
       // Use the download API endpoint with proper authorization
       // Let the API handle all other validation (user lock, ownership, etc.)
       const response = await fetch(`/api/download-media?imageId=${imageId}`, {
@@ -295,10 +269,8 @@ export default function ConfessionCard({
           duration: 3000,
           position: 'top-right',
         });
-        console.log('✓ Download successful');
       } else {
         const error = await response.json();
-        console.log('✗ Download failed:', error);
         // 根据lock_type显示不同的错误信息
         let errorMessage = error.error || '下载失败';
         
@@ -313,7 +285,6 @@ export default function ConfessionCard({
           position: 'top-right',
         });
       }
-      console.log('=== End Download Debug Info ===');
     } catch (error) {
       console.error('Error downloading media:', error);
       toast.error('下载失败，请重试', {

@@ -1,6 +1,5 @@
 'use client';
 
-// 移动端侧边栏组件
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -69,14 +68,13 @@ export function MobileSidebar({ isOpen, onClose }: MobileSidebarProps) {
   const pathname = usePathname();
 
   const isActive = (href: string) => {
-    return pathname === href || pathname.startsWith(`${href}/`);
+    return pathname ? pathname === href || pathname.startsWith(`${href}/`) : false;
   };
 
   return (
     <AnimatePresence>
       {isOpen && (
         <div className="fixed inset-0 z-50">
-          {/* 背景遮罩 */}
           <motion.div
             className="absolute inset-0 bg-black bg-opacity-50"
             initial={{ opacity: 0 }}
@@ -84,8 +82,6 @@ export function MobileSidebar({ isOpen, onClose }: MobileSidebarProps) {
             exit={{ opacity: 0 }}
             onClick={onClose}
           />
-
-          {/* 侧边栏 */}
           <motion.div
             className="absolute left-0 top-0 h-full w-64 bg-white dark:bg-gray-800 border-r border-gray-200 dark:border-gray-700 shadow-lg"
             initial={{ x: '-100%' }}
@@ -93,13 +89,10 @@ export function MobileSidebar({ isOpen, onClose }: MobileSidebarProps) {
             exit={{ x: '-100%' }}
             transition={{ type: 'spring', damping: 25, stiffness: 300 }}
           >
-            {/* Logo和标题 */}
             <div className="p-4 border-b border-gray-200 dark:border-gray-700">
               <h1 className="text-xl font-bold bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent">后台管理</h1>
               <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">表白墙项目</p>
             </div>
-
-            {/* 关闭按钮 */}
             <div className="p-4 border-b border-gray-200 dark:border-gray-700 flex justify-end">
               <button
                 onClick={onClose}
@@ -108,8 +101,6 @@ export function MobileSidebar({ isOpen, onClose }: MobileSidebarProps) {
                 ✕
               </button>
             </div>
-
-            {/* 导航菜单 */}
             <nav className="flex-1 overflow-y-auto p-4">
               <ul className="space-y-2">
                 {navItems.map((item, index) => (
@@ -131,8 +122,6 @@ export function MobileSidebar({ isOpen, onClose }: MobileSidebarProps) {
                 ))}
               </ul>
             </nav>
-
-            {/* 底部信息 */}
             <div className="p-4 border-t border-gray-200 dark:border-gray-700 text-center">
               <div className="flex items-center justify-center mb-2">
                 <div className="w-3 h-3 bg-green-500 rounded-full animate-pulse mr-2"></div>

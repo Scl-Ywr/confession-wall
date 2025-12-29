@@ -42,7 +42,8 @@ interface GroupMember {
 }
 
 const InterestGroupDetail: React.FC = () => {
-  const { groupId } = useParams();
+  const params = useParams();
+  const groupId = params?.groupId as string | undefined;
   const router = useRouter();
   const [group, setGroup] = useState<InterestGroup | null>(null);
   const [confessions, setConfessions] = useState<Confession[]>([]);

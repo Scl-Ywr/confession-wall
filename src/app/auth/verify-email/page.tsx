@@ -38,6 +38,11 @@ const VerifyEmailPage: React.FC = () => {
   const [resendLoading, setResendLoading] = useState(false);
 
   useEffect(() => {
+    // 防止重复执行验证
+    if (verificationStatus !== 'idle') {
+      return;
+    }
+
     const verifyEmail = async () => {
       setVerificationStatus('verifying');
       setErrorMessage(null);
@@ -46,7 +51,9 @@ const VerifyEmailPage: React.FC = () => {
         // 1. 添加详细的调试日志
         console.log('=== Email Verification Debug ===');
         console.log('Current URL:', typeof window !== 'undefined' ? window.location.href : 'Server-side');
-        console.log('Search params:', Object.fromEntries(searchParams.entries()));
+        console.log('Search params:', searchParams ? Object.fromEntries(searchParams.entries()) : 'No search params');
+        console.log('Verification status:', verificationStatus);
+        console.log('Current timestamp:', new Date().toISOString());
         
         // 2. 检查URL fragment中的参数（用于PKCE流程）
         let fragmentParams = new URLSearchParams();
@@ -59,16 +66,30 @@ const VerifyEmailPage: React.FC = () => {
         let user = null;
         let getUserError: Error | null = null;
         
+        // 首先尝试获取会话，触发Supabase自动处理fragment中的令牌
         try {
-          const { data: userData, error } = await supabase.auth.getUser();
-          user = userData.user;
-          if (error) {
-            getUserError = new Error(error.message);
+          const { data: sessionData } = await supabase.auth.getSession();
+          if (sessionData.session) {
+            user = sessionData.session.user;
+            console.log('Found existing session:', user.id);
           }
-        } catch (getUserCatchError) {
-          // 捕获getUser抛出的错误
-          getUserError = getUserCatchError instanceof Error ? getUserCatchError : new Error('Unknown error');
-          console.error('getUser error:', getUserError);
+        } catch {
+          console.log('No existing session found');
+        }
+        
+        // 如果没有会话，尝试获取用户信息
+        if (!user) {
+          try {
+            const { data: userData, error } = await supabase.auth.getUser();
+            user = userData.user;
+            if (error) {
+              getUserError = new Error(error.message);
+            }
+          } catch (getUserCatchError) {
+            // 捕获getUser抛出的错误
+            getUserError = getUserCatchError instanceof Error ? getUserCatchError : new Error('Unknown error');
+            console.error('getUser error:', getUserError);
+          }
         }
         
         if (user) {
@@ -106,37 +127,11 @@ const VerifyEmailPage: React.FC = () => {
           return;
         }
         
-        // 4. 处理特殊情况：Auth session missing，但可能已经验证成功
-        if (getUserError && (getUserError.message.includes('Auth session missing') || getUserError.message.includes('Session not found'))) {
-          console.log('Auth session missing, but checking if verification was actually successful...');
-          
-          // 检查URL中是否有验证成功的痕迹
-          const token = searchParams.get('token');
-          const token_hash = searchParams.get('token_hash');
-          const type = searchParams.get('type');
-          const fragmentToken = fragmentParams.get('token');
-          const fragmentTokenHash = fragmentParams.get('token_hash');
-          const fragmentType = fragmentParams.get('type');
-          
-          const finalToken = token || token_hash || fragmentToken || fragmentTokenHash;
-          const finalType = type || fragmentType;
-          
-          // 如果有token和type，说明这是一个验证链接，可能已经在Supabase端验证成功
-          if (finalToken && finalType) {
-            // 尝试直接获取验证状态
-            console.log('Found verification parameters, checking verification status...');
-            
-            // 显示验证成功，因为Supabase很可能已经处理了验证
-            setVerificationStatus('success');
-            return;
-          }
-        }
-        
-        // 5. 如果没有自动登录，尝试处理传统的token验证（非PKCE流程）
+        // 4. 如果没有自动登录，尝试处理传统的token验证（非PKCE流程）
         // 从URL中获取token_hash和type参数
-        const token = searchParams.get('token');
-        const token_hash = searchParams.get('token_hash');
-        const type = searchParams.get('type');
+        const token = searchParams?.get('token');
+        const token_hash = searchParams?.get('token_hash');
+        const type = searchParams?.get('type');
         
         // 检查fragment中的token参数
         const fragmentToken = fragmentParams.get('token');
@@ -150,9 +145,23 @@ const VerifyEmailPage: React.FC = () => {
         console.log('Final token:', finalToken);
         console.log('Final type:', finalType);
 
-        // 6. 如果有token和type，尝试手动验证
+        // 5. 如果有token和type，尝试手动验证
         if (finalToken && finalType) {
           console.log('Attempting manual token verification');
+          
+          // 首先检查是否已经通过PKCE流程自动验证（用户已存在会话）
+          try {
+            const { data: currentUserData } = await supabase.auth.getUser();
+            if (currentUserData.user) {
+              console.log('User already verified through PKCE, skipping manual verification');
+              setVerificationStatus('success');
+              return;
+            }
+          } catch {
+            console.log('No current user found, proceeding with manual verification');
+          }
+          
+          // 如果没有当前用户，尝试手动验证OTP
           const { data, error } = await supabase.auth.verifyOtp({
             token_hash: finalToken,
             type: finalType as EmailOtpType,
@@ -198,15 +207,30 @@ const VerifyEmailPage: React.FC = () => {
         
         // 7. 检查是否有访问令牌在fragment中（PKCE流程）
         const accessToken = fragmentParams.get('access_token');
-        if (accessToken) {
-          console.log('Found access_token in fragment, but user not authenticated. Checking session...');
-          // 尝试获取会话，触发Supabase自动处理fragment中的令牌
-          const { data: sessionData } = await supabase.auth.getSession();
-          if (sessionData.session) {
-            // 会话已创建，验证成功
-            console.log('Session created from fragment tokens');
-            setVerificationStatus('success');
-            return;
+        const refreshToken = fragmentParams.get('refresh_token');
+        if (accessToken || refreshToken) {
+          console.log('Found tokens in fragment, but user not authenticated. Setting session...');
+          
+          // 如果找到访问令牌，尝试设置会话
+          if (accessToken) {
+            try {
+              // 手动设置访问令牌到本地存储，让Supabase处理
+              localStorage.setItem('sb-access-token', accessToken);
+              if (refreshToken) {
+                localStorage.setItem('sb-refresh-token', refreshToken);
+              }
+              
+              // 尝试获取会话，触发Supabase自动处理fragment中的令牌
+              const { data: sessionData } = await supabase.auth.getSession();
+              if (sessionData.session) {
+                // 会话已创建，验证成功
+                console.log('Session created from fragment tokens');
+                setVerificationStatus('success');
+                return;
+              }
+            } catch (tokenError) {
+              console.error('Error setting session from tokens:', tokenError);
+            }
           }
         }
         
@@ -216,8 +240,23 @@ const VerifyEmailPage: React.FC = () => {
           throw getUserError;
         }
         
-        // 9. 如果没有任何token，抛出无效链接错误
+        // 9. 如果没有任何token，可能是Supabase已经自动验证了，尝试获取当前用户
+        console.log('No verification tokens found, checking if user is already verified...');
+        
+        try {
+          const { data: finalUserCheck } = await supabase.auth.getUser();
+          if (finalUserCheck.user && finalUserCheck.user.email_confirmed_at) {
+            console.log('User already verified and email confirmed');
+            setVerificationStatus('success');
+            return;
+          }
+        } catch (finalCheckError) {
+          console.log('Final user check failed:', finalCheckError);
+        }
+        
+        // 如果所有方法都失败，抛出无效链接错误
         throw new Error('无效的验证链接');
+        
       } catch (error) {
         console.error('Verification failed:', error);
         // 验证失败
@@ -227,8 +266,17 @@ const VerifyEmailPage: React.FC = () => {
       }
     };
 
-    verifyEmail();
-  }, [searchParams]);
+    // 设置超时机制，防止无限等待
+    const timeoutId = setTimeout(() => {
+      console.log('Verification timeout reached, showing error');
+      setVerificationStatus('error');
+      setErrorMessage('验证超时，请检查链接是否有效或重新注册');
+    }, 10000); // 10秒超时
+
+    verifyEmail().finally(() => {
+      clearTimeout(timeoutId);
+    });
+  }, [searchParams, verificationStatus]); // 添加所有必要的依赖
 
   // 验证成功后自动跳转到登录页面
   useEffect(() => {
@@ -267,7 +315,7 @@ const VerifyEmailPage: React.FC = () => {
       // 根据环境设置不同的redirect URL
       const redirectUrl = process.env.NODE_ENV === 'production' 
         ? 'https://vercel.suchuanli.me/auth/verify-email' 
-        : (typeof window !== 'undefined' ? `${window.location.origin}/auth/verify-email` : '');
+        : 'http://localhost:3000/auth/verify-email';
       
       const { error } = await supabase.auth.resend({
         type: 'signup',

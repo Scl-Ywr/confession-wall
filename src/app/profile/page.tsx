@@ -42,7 +42,20 @@ const ProfilePage: React.FC = () => {
     setLoading(true);
     setError(null);
     try {
-      const data = await profileService.getCurrentProfile();
+      let data = await profileService.getCurrentProfile();
+      
+      // 如果是OAuth用户，使用user对象中的OAuth信息覆盖profile对象中的对应字段
+      if (user.oauth_provider && user.oauth_avatar_url) {
+        data = {
+          ...data,
+          oauth_provider: user.oauth_provider,
+          oauth_avatar_url: user.oauth_avatar_url,
+          oauth_username: user.oauth_username,
+          // 当通过OAuth登录时，优先使用OAuth头像
+          avatar_url: user.avatar_url
+        };
+      }
+      
       setProfile(data);
       if (data) {
         setFormData({
@@ -536,6 +549,23 @@ const ProfilePage: React.FC = () => {
                       src={avatarPreview}
                       alt="Avatar"
                       fill
+                      sizes="(max-width: 768px) 8rem, 12rem"
+                      className="object-cover transition-transform duration-500 group-hover:scale-110"
+                    />
+                  ) : profile?.oauth_avatar_url ? (
+                    <Image
+                      src={profile.oauth_avatar_url}
+                      alt="OAuth Avatar"
+                      fill
+                      sizes="(max-width: 768px) 8rem, 12rem"
+                      className="object-cover transition-transform duration-500 group-hover:scale-110"
+                    />
+                  ) : profile?.avatar_url ? (
+                    <Image
+                      src={profile.avatar_url}
+                      alt="Avatar"
+                      fill
+                      sizes="(max-width: 768px) 8rem, 12rem"
                       className="object-cover transition-transform duration-500 group-hover:scale-110"
                     />
                   ) : (
@@ -556,7 +586,7 @@ const ProfilePage: React.FC = () => {
                   />
                 </label>
               </div>
-              <h2 className="text-xl font-bold text-gray-900 dark:text-white mb-1">{profile?.display_name || '未设置'}</h2>
+              <h2 className="text-xl font-bold text-gray-900 dark:text-white mb-1">{profile?.oauth_username || profile?.display_name || '未设置'}</h2>
               <p className="text-sm text-gray-600 dark:text-gray-300 mb-4 font-medium">@{profile?.username || '未设置'}</p>
               
               <div className="pt-4 border-t border-gray-200 dark:border-gray-700/50">
@@ -566,26 +596,49 @@ const ProfilePage: React.FC = () => {
                 </div>
                 <div className="flex justify-between text-sm mb-2">
                   <span className="text-gray-600 dark:text-gray-300 font-medium">邮箱</span>
-                  <span className="font-bold text-gray-800 dark:text-gray-100 truncate max-w-[150px]" title={user.email || ''}>{user.email}</span>
+                  <span className="font-bold text-gray-800 dark:text-gray-100">{user.email}</span>
                 </div>
                 <div className="flex justify-between text-sm mb-2">
                   <span className="text-gray-600 dark:text-gray-300 font-medium">当前IP地址</span>
-                  <span className="font-bold text-gray-800 dark:text-gray-100 truncate max-w-[150px]">
+                  <span className="font-bold text-gray-800 dark:text-gray-100" title={userIp || '未知'}>
                     {ipLoading ? '获取中...' : userIp}
                   </span>
                 </div>
                 <div className="flex justify-between text-sm mb-2">
                   <span className="text-gray-600 dark:text-gray-300 font-medium">所在省份</span>
-                  <span className="font-bold text-gray-800 dark:text-gray-100 truncate max-w-[150px]">
+                  <span className="font-bold text-gray-800 dark:text-gray-100" title={userProvince || '未知'}>
                     {ipLoading ? '获取中...' : userProvince}
                   </span>
                 </div>
-                <div className="flex justify-between text-sm">
+                <div className="flex justify-between text-sm mb-2">
                   <span className="text-gray-600 dark:text-gray-300 font-medium">所在城市</span>
-                  <span className="font-bold text-gray-800 dark:text-gray-100 truncate max-w-[150px]">
-                    {ipLoading ? '获取中...' : `${userCity}, ${userCountry}`}
+                  <span className="font-bold text-gray-800 dark:text-gray-100" title={`${userCity || ''}, ${userCountry || ''}`}>
+                    {ipLoading ? '获取中...' : `${userCity || ''}, ${userCountry || ''}`}
                   </span>
                 </div>
+                {/* OAuth信息 */}
+                {profile?.oauth_provider && (
+                  <div className="mt-3 pt-3 border-t border-gray-200 dark:border-gray-700/50">
+                    <div className="flex justify-between text-sm mb-1">
+                      <span className="text-gray-600 dark:text-gray-300 font-medium">登录方式</span>
+                      <span className="font-bold text-gray-800 dark:text-gray-100 flex items-center gap-1">
+                        {profile.oauth_provider === 'github' && '🐙'}
+                        {profile.oauth_provider === 'google' && '🔍'}
+                        {profile.oauth_provider === 'apple' && '🍎'}
+                        {profile.oauth_provider === 'facebook' && '📘'}
+                        {profile.oauth_provider.charAt(0).toUpperCase() + profile.oauth_provider.slice(1)}
+                      </span>
+                    </div>
+                    {profile.oauth_username && (
+                      <div className="flex justify-between text-sm">
+                        <span className="text-gray-600 dark:text-gray-300 font-medium">第三方用户名</span>
+                        <span className="font-bold text-gray-800 dark:text-gray-100 truncate max-w-[150px]">
+                          {profile.oauth_username}
+                        </span>
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
             </div>
 

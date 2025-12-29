@@ -8,9 +8,10 @@ import Link from 'next/link';
 import Image from 'next/image';
 import Navbar from '@/components/Navbar';
 import { showToast } from '@/utils/toast';
-import LoadingSpinner from '@/components/LoadingSpinner';
+import PageLoader from '@/components/PageLoader';
 import { MessageCircleIcon, UserSearchIcon, UsersIcon, TrashIcon, PlusIcon, UsersRoundIcon } from 'lucide-react';
 import { supabase } from '@/lib/supabase/client';
+import { usePageRefresh } from '@/hooks/usePageRefresh';
 
 const ChatListPage = () => {
   const { user } = useAuth();
@@ -22,13 +23,6 @@ const ChatListPage = () => {
   const [showCreateGroupModal, setShowCreateGroupModal] = useState(false);
   const [groupName, setGroupName] = useState('');
   const [creatingGroup, setCreatingGroup] = useState(false);
-  // 用于解决 hydration mismatch 的状态
-  const [isHydrated, setIsHydrated] = useState(false);
-
-  // 组件挂载后设置为客户端已加载，避免 hydration 不匹配
-  useEffect(() => {
-    setIsHydrated(true);
-  }, []);
 
   // 确保未登录时不自动重定向，只显示登录提示
   useEffect(() => {
@@ -153,6 +147,15 @@ const ChatListPage = () => {
       console.error('Error refreshing unread counts:', error);
     }
   }, [user]);
+
+  // 页面刷新机制 - 当页面重新获得焦点时刷新数据
+  usePageRefresh(
+    async () => {
+      await fetchFriendsAndGroups();
+      await refreshUnreadCounts();
+    },
+    [fetchFriendsAndGroups, refreshUnreadCounts]
+  );
 
   // 监听未读消息变化的事件和实时订阅
   useEffect(() => {
@@ -409,17 +412,12 @@ const ChatListPage = () => {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
-        <Navbar />
-        <div className="flex justify-center items-center h-[calc(100vh-80px)]">
-          {isHydrated ? (
-            <LoadingSpinner type="grid" size={20} color="#f97316" />
-          ) : (
-            // Use a simple server-safe loading indicator
-            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary-500"></div>
-          )}
-        </div>
-      </div>
+      <PageLoader 
+        type="spinner" 
+        message="正在加载聊天列表..." 
+        showNavbar={true}
+        fullscreen={true}
+      />
     );
   }
 

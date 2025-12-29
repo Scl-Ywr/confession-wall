@@ -12,10 +12,13 @@ import Navbar from '@/components/Navbar';
 import Image from 'next/image';
 import { UserCircleIcon, MessageCircleIcon, UserPlusIcon, CheckIcon } from 'lucide-react';
 import HorizontalConfessionHistory from '@/components/HorizontalConfessionHistory';
-import CrossBrowserVideoPlayer from '@/components/CrossBrowserVideoPlayer';
+import ProfileVideoPlayer from '@/components/ProfileVideoPlayer';
+import { usePageRefresh } from '@/hooks/usePageRefresh';
+import PageLoader from '@/components/PageLoader';
 
 const OtherUserProfilePage = () => {
-  const { userId } = useParams<{ userId: string }>();
+  const params = useParams<{ userId: string }>();
+  const userId = params?.userId;
   const { user } = useAuth();
   const [profile, setProfile] = useState<UserSearchResult | null>(null);
   const [loading, setLoading] = useState(true);
@@ -39,7 +42,11 @@ const OtherUserProfilePage = () => {
 
   useEffect(() => {
     const fetchProfileAndFriendship = async () => {
-      // URL 解码 userId，处理中文用户名
+      if (!userId) {
+        setLoading(false);
+        return;
+      }
+      
       const decodedUserId = decodeURIComponent(userId);
       
       if (user && user.id === decodedUserId) {
@@ -337,6 +344,35 @@ const OtherUserProfilePage = () => {
     }
   }, [profile, fetchUserConfessions]);
 
+  // 页面刷新机制 - 当页面重新获得焦点时刷新数据
+  usePageRefresh(
+    async () => {
+      // 重新获取用户资料和好友关系
+      if (userId && user) {
+        const decodedUserId = decodeURIComponent(userId);
+        try {
+          const profileData = await chatService?.getUserProfile(decodedUserId);
+          if (profileData) {
+            setProfile(profileData);
+            // 只有登录用户才检查好友关系
+            if (user) {
+              const status = await chatService?.checkFriendshipStatus(profileData.id);
+              setFriendshipStatus(status);
+            }
+          }
+        } catch (err) {
+          console.error('Error refreshing profile:', err);
+        }
+      }
+      // 重新获取表白列表
+      if (profile) {
+        setConfessionsPage(1);
+        fetchUserConfessions(1, false);
+      }
+    },
+    [userId, user, profile, fetchUserConfessions]
+  );
+
   // 当选中表白变化时，获取评论
   useEffect(() => {
     if (selectedConfession) {
@@ -368,12 +404,11 @@ const OtherUserProfilePage = () => {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
-        <Navbar />
-        <div className="flex justify-center items-center h-[calc(100vh-80px)]">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary-500"></div>
-        </div>
-      </div>
+      <PageLoader 
+        type="profile" 
+        fullscreen={false}
+        className="pt-16"
+      />
     );
   }
 
@@ -455,7 +490,7 @@ const OtherUserProfilePage = () => {
                 {user && user.id === profile.id && (
                   <div className="flex justify-between text-sm mb-2">
                     <span className="text-gray-600 dark:text-gray-300 font-medium">当前IP地址</span>
-                    <span className="font-bold text-gray-800 dark:text-gray-100 truncate max-w-[150px]">
+                    <span className="font-bold text-gray-800 dark:text-gray-100" title={userIp || '未知'}>
                       {ipLoading ? '获取中...' : userIp}
                     </span>
                   </div>
@@ -464,7 +499,7 @@ const OtherUserProfilePage = () => {
                 {/* 省份信息始终公开显示 */}
                 <div className="flex justify-between text-sm mb-2">
                   <span className="text-gray-600 dark:text-gray-300 font-medium">所在省份</span>
-                  <span className="font-bold text-gray-800 dark:text-gray-100 truncate max-w-[150px]">
+                  <span className="font-bold text-gray-800 dark:text-gray-100" title={userProvince || '未知'}>
                     {ipLoading ? '获取中...' : userProvince}
                   </span>
                 </div>
@@ -472,8 +507,8 @@ const OtherUserProfilePage = () => {
                 {/* 城市信息始终公开显示 */}
                 <div className="flex justify-between text-sm mb-2">
                   <span className="text-gray-600 dark:text-gray-300 font-medium">所在城市</span>
-                  <span className="font-bold text-gray-800 dark:text-gray-100 truncate max-w-[150px]">
-                    {ipLoading ? '获取中...' : `${userCity}, ${userCountry}`}
+                  <span className="font-bold text-gray-800 dark:text-gray-100" title={`${userCity || ''}, ${userCountry || ''}`}>
+                    {ipLoading ? '获取中...' : `${userCity || ''}, ${userCountry || ''}`}
                   </span>
                 </div>
                 {profile.bio && (
@@ -689,13 +724,16 @@ const OtherUserProfilePage = () => {
                                       onClick={() => window.open(image.image_url, '_blank')}
                                     />
                                   ) : (
-                                    <div className="w-full rounded-lg overflow-hidden" style={{ maxHeight: '16rem' }}>
-                                      <CrossBrowserVideoPlayer
+                                    <div className="w-full bg-black rounded-lg overflow-hidden" style={{ 
+                                      aspectRatio: '16/9',
+                                      maxHeight: '24rem',
+                                      minHeight: '12rem',
+                                      height: 'auto'
+                                    }}>
+                                      <ProfileVideoPlayer
                                         id={`video-${image.id}`}
                                         videoUrl={image.image_url}
-                                        controls={true}
                                         className="w-full h-full"
-                                        height="16rem"
                                       />
                                     </div>
                                   )}

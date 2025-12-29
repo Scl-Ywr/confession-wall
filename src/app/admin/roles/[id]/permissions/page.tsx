@@ -10,9 +10,8 @@ import { Role, Permission } from '@/services/admin/adminService';
 
 export default function RolePermissionsPage() {
   const params = useParams();
-  const roleId = params.id as string;
+  const roleId = params?.id as string | undefined;
 
-  // 状态管理
   const [role, setRole] = useState<Role | null>(null);
   const [permissions, setPermissions] = useState<Permission[]>([]);
   const [selectedPermissions, setSelectedPermissions] = useState<string[]>([]);
@@ -23,26 +22,24 @@ export default function RolePermissionsPage() {
   const [permissionConflicts, setPermissionConflicts] = useState<Array<{ permission_id: string; conflict_type: string; message: string }>>([]);
   const [showConflictWarning, setShowConflictWarning] = useState(false);
 
-  // 加载数据
   useEffect(() => {
     const loadData = async () => {
+      if (!roleId) {
+        setError('无效的角色ID');
+        setIsLoading(false);
+        return;
+      }
       setIsLoading(true);
       try {
-        // 并行加载角色信息和权限列表
-        const [roleData, permissionsData, rolePermissionsData] = await Promise.all([
+        const [roleData, permissionsData, rolePermsData] = await Promise.all([
           getRoleById(roleId),
           getPermissions(),
           getRolePermissions(roleId)
         ]);
 
-        if (roleData) {
-          setRole(roleData);
-        } else {
-          setError('角色不存在或已被删除');
-        }
-
+        setRole(roleData);
         setPermissions(permissionsData);
-        setSelectedPermissions(rolePermissionsData);
+        setSelectedPermissions(rolePermsData.map(p => p.id));
       } catch (err) {
         setError('加载数据失败');
         console.error('加载数据失败:', err);
@@ -51,248 +48,186 @@ export default function RolePermissionsPage() {
       }
     };
 
-    if (roleId) {
-      loadData();
+    loadData();
+  }, [roleId]);
+
+  const loadUserPermissions = useCallback(async () => {
+    if (!roleId) return;
+    try {
+      const userPermissions = await getRolePermissions(roleId);
+      setSelectedPermissions(userPermissions.map(p => p.id));
+    } catch (err) {
+      console.error('加载权限失败:', err);
     }
   }, [roleId]);
 
-  // 处理权限选择变化
-  const handlePermissionChange = (permissionId: string, checked: boolean) => {
-    setSelectedPermissions(prev => {
-      if (checked) {
-        return [...prev, permissionId];
-      } else {
-        return prev.filter(id => id !== permissionId);
-      }
-    });
-    setIsDirty(true);
-  };
+  useEffect(() => {
+    loadUserPermissions();
+  }, [loadUserPermissions]);
 
-  // 处理全选/取消全选
-  const handleToggleAll = () => {
-    if (selectedPermissions.length === permissions.length) {
-      // 取消全选
-      setSelectedPermissions([]);
-    } else {
-      // 全选
-      setSelectedPermissions(permissions.map(p => p.id));
-    }
-    setIsDirty(true);
-  };
+  const handlePermissionToggle = async (permissionId: string) => {
+    if (!roleId) return;
 
-  // 检测权限冲突
-  const checkPermissions = useCallback(async () => {
-    if (selectedPermissions.length === 0) {
-      setPermissionConflicts([]);
-      setShowConflictWarning(false);
-      return;
-    }
+    const newSelected = selectedPermissions.includes(permissionId)
+      ? selectedPermissions.filter(id => id !== permissionId)
+      : [...selectedPermissions, permissionId];
+
+    setSelectedPermissions(newSelected);
+    setIsDirty(true);
 
     try {
-      const conflicts = await detectPermissionConflicts(roleId, selectedPermissions);
+      const conflicts = await detectPermissionConflicts(roleId, newSelected);
       setPermissionConflicts(conflicts);
       setShowConflictWarning(conflicts.length > 0);
-      
-      if (conflicts.length > 0) {
-        showWarning(`检测到 ${conflicts.length} 个权限冲突`);
-      }
     } catch (err) {
       console.error('检测权限冲突失败:', err);
-      setPermissionConflicts([]);
-      setShowConflictWarning(false);
     }
-  }, [roleId, selectedPermissions]);
+  };
 
-  // 当选中的权限变化时，检测冲突
-  useEffect(() => {
-    if (isDirty) {
-      checkPermissions();
-    }
-  }, [selectedPermissions, isDirty, checkPermissions]);
-
-  // 保存权限分配
   const handleSave = async () => {
-    setIsSaving(true);
-    try {
-      // 先检测权限冲突
-      const conflicts = await detectPermissionConflicts(roleId, selectedPermissions);
-      
-      if (conflicts.length > 0) {
-        // 显示冲突警告，但仍允许保存
-        setPermissionConflicts(conflicts);
-        setShowConflictWarning(true);
-        showWarning(`检测到 ${conflicts.length} 个权限冲突，但仍将继续保存`);
-      }
+    if (!roleId || !isDirty) return;
 
-      // 保存权限分配
+    setIsSaving(true);
+    setError(null);
+
+    try {
       const result = await assignPermissionsToRole(roleId, selectedPermissions);
+      
       if (result.success) {
-        showSuccess('权限分配保存成功');
+        showSuccess('权限更新成功');
         setIsDirty(false);
         setShowConflictWarning(false);
       } else {
+        setError(result.error || '保存失败');
         showError(result.error || '保存失败');
       }
     } catch (err) {
-      showError('保存失败，请重试');
+      setError('保存权限时发生错误');
       console.error('保存权限失败:', err);
     } finally {
       setIsSaving(false);
     }
   };
 
+  const handleCancel = () => {
+    loadUserPermissions();
+    setIsDirty(false);
+    setShowConflictWarning(false);
+  };
+
   if (isLoading) {
     return (
-      <div className="flex justify-center items-center h-64">
-        <div className="text-gray-500">加载中...</div>
+      <div className="flex justify-center items-center h-screen">
+        <div className="animate-spin rounded-full h-10 w-10 border-4 border-blue-500 border-t-transparent"></div>
       </div>
     );
   }
 
-  if (error || !role) {
+  if (error && !role) {
     return (
-      <div className="flex justify-center items-center h-64">
-        <div className="text-red-500">{error || '角色不存在'}</div>
+      <div className="flex justify-center items-center h-screen">
+        <div className="text-center">
+          <p className="text-red-500 mb-4">{error}</p>
+          <button
+            onClick={() => window.location.href = '/admin/roles'}
+            className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700"
+          >
+            返回角色列表
+          </button>
+        </div>
       </div>
     );
   }
 
   return (
     <div className="space-y-6">
-      {/* 页面标题 */}
-      <div>
-        <h1 className="text-3xl font-bold text-gray-900">角色权限管理</h1>
-        <p className="text-gray-600 mt-1">为角色分配和管理权限</p>
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-3xl font-bold text-gray-900">角色权限</h1>
+          <p className="text-gray-600 mt-1">管理「{role?.name}」角色的权限</p>
+        </div>
+        <button
+          onClick={() => window.location.href = '/admin/roles'}
+          className="px-4 py-2 bg-gray-600 text-white rounded-md hover:bg-gray-700 transition-colors"
+        >
+          返回角色列表
+        </button>
       </div>
 
-      {/* 角色基本信息 */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-xl">角色信息</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div>
-              <strong>角色名称:</strong> {role.name}
-            </div>
-            <div>
-              <strong>角色描述:</strong> {role.description || '-'}
-            </div>
-          </div>
-        </CardContent>
-      </Card>
-
-      {/* 权限冲突警告 */}
-      {showConflictWarning && permissionConflicts.length > 0 && (
-        <Card className="bg-yellow-50 dark:bg-yellow-900/20 border-yellow-200 dark:border-yellow-800">
-          <CardHeader>
-            <CardTitle className="text-xl text-yellow-800 dark:text-yellow-300">权限冲突警告</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <ul className="space-y-2 text-yellow-700 dark:text-yellow-300">
-              {permissionConflicts.map((conflict, index) => {
-                const conflictPermission = permissions.find(p => p.id === conflict.permission_id);
-                return (
-                  <li key={index} className="flex items-start">
-                    <span className="font-medium mr-2">⚠️</span>
-                    <span>
-                      <strong>{conflictPermission?.name || conflict.permission_id}</strong>: {conflict.message}
-                    </span>
-                  </li>
-                );
-              })}
-            </ul>
-            <div className="mt-4 text-sm text-yellow-600 dark:text-yellow-400">
-              提示：这些冲突不会阻止保存，但建议您检查并调整权限分配。
-            </div>
-          </CardContent>
-        </Card>
+      {error && (
+        <div className="px-4 py-3 bg-red-100 text-red-800 rounded-md">
+          {error}
+        </div>
       )}
 
-      {/* 权限分配 */}
+      {showConflictWarning && permissionConflicts.length > 0 && (
+        <div className="px-4 py-3 bg-yellow-100 text-yellow-800 rounded-md">
+          <p className="font-medium mb-2">检测到权限冲突：</p>
+          <ul className="list-disc list-inside text-sm">
+            {permissionConflicts.map((conflict, index) => (
+              <li key={index}>{conflict.message}</li>
+            ))}
+          </ul>
+        </div>
+      )}
+
       <Card>
-        <CardHeader className="flex items-center justify-between">
-          <CardTitle className="text-xl">权限分配</CardTitle>
-          <button
-            onClick={handleSave}
-            disabled={!isDirty || isSaving}
-            className={`px-6 py-3 font-black rounded-xl transition-all duration-300 focus:outline-none focus:ring-2 focus:ring-primary-400 focus:ring-offset-2 text-base ${(
-              (!isDirty || isSaving)
-                ? 'bg-primary-500 text-black dark:text-white cursor-not-allowed opacity-90 shadow-sm'
-                : 'bg-primary-600 hover:bg-primary-700 text-black dark:text-white shadow-lg hover:shadow-xl hover:-translate-y-0.5 transform hover:scale-105'
-            )}`}
-          >
-            {isSaving ? '保存中...' : '保存权限'}
-          </button>
+        <CardHeader>
+          <CardTitle>权限列表</CardTitle>
         </CardHeader>
         <CardContent>
-          {permissions.length === 0 ? (
-            <div className="text-gray-500">暂无可用权限</div>
-          ) : (
-            <div className="space-y-4">
-              {/* 全选/取消全选 */}
-              <div className="flex items-center space-x-2">
-                <input
-                  type="checkbox"
-                  id="select-all"
-                  checked={selectedPermissions.length === permissions.length}
-                  onChange={() => handleToggleAll()}
-                  disabled={isSaving}
-                  className="h-4 w-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500 transition-colors cursor-pointer"
-                />
-                <label
-                  htmlFor="select-all"
-                  className="text-sm font-medium text-gray-700 dark:text-gray-300 cursor-pointer"
-                >
-                  全选/取消全选
-                </label>
-              </div>
-
-              {/* 权限列表 */}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
-                {permissions.map((permission) => {
-                  // 检查该权限是否有冲突
-                  const hasConflict = permissionConflicts.some(
-                    conflict => conflict.permission_id === permission.id
-                  );
-                  
-                  return (
-                    <div 
-                      key={permission.id} 
-                      className={`flex items-center space-x-2 ${
-                        hasConflict ? 'bg-yellow-50 dark:bg-yellow-900/20 p-2 rounded-md' : ''
-                      }`}
-                    >
-                      <input
-                        type="checkbox"
-                        id={`permission-${permission.id}`}
-                        checked={selectedPermissions.includes(permission.id)}
-                        onChange={(e) => handlePermissionChange(permission.id, e.target.checked)}
-                        disabled={isSaving}
-                        className="h-4 w-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500 transition-colors cursor-pointer"
-                      />
-                      <label
-                        htmlFor={`permission-${permission.id}`}
-                        className="text-sm font-medium text-gray-700 dark:text-gray-300 cursor-pointer"
-                      >
-                        {permission.name}
-                      </label>
-                      {permission.description && (
-                        <span className="text-xs text-gray-500 dark:text-gray-400 ml-2">
-                          ({permission.description})
-                        </span>
-                      )}
-                      {hasConflict && (
-                        <span className="ml-2 text-xs text-yellow-600 dark:text-yellow-400">
-                          ⚠️ 冲突
-                        </span>
-                      )}
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {permissions.map(permission => (
+              <div
+                key={permission.id}
+                className={`p-4 border rounded-lg cursor-pointer transition-all ${
+                  selectedPermissions.includes(permission.id)
+                    ? 'border-blue-500 bg-blue-50 dark:bg-blue-900/20'
+                    : 'border-gray-200 dark:border-gray-700 hover:border-blue-300'
+                }`}
+                onClick={() => handlePermissionToggle(permission.id)}
+              >
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center space-x-3">
+                    <input
+                      type="checkbox"
+                      checked={selectedPermissions.includes(permission.id)}
+                      onChange={() => handlePermissionToggle(permission.id)}
+                      className="h-4 w-4 text-blue-600 rounded border-gray-300 focus:ring-blue-500"
+                    />
+                    <div>
+                      <p className="font-medium text-gray-900 dark:text-white">{permission.name}</p>
+                      <p className="text-sm text-gray-500">{permission.description}</p>
                     </div>
-                  );
-                })}
+                  </div>
+                </div>
               </div>
-            </div>
-          )}
+            ))}
+          </div>
+
+          <div className="mt-6 flex justify-end space-x-4">
+            <button
+              onClick={handleCancel}
+              disabled={!isDirty || isSaving}
+              className="px-4 py-2 bg-gray-200 text-gray-700 rounded-md hover:bg-gray-300 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              取消
+            </button>
+            <button
+              onClick={handleSave}
+              disabled={!isDirty || isSaving}
+              className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {isSaving ? (
+                <div className="flex items-center">
+                  <div className="animate-spin -ml-1 mr-2 h-4 w-4 border-2 border-white border-t-transparent rounded-full"></div>
+                  保存中...
+                </div>
+              ) : (
+                '保存更改'
+              )}
+            </button>
+          </div>
         </CardContent>
       </Card>
     </div>

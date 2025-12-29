@@ -8,23 +8,22 @@ import Navbar from '@/components/Navbar';
 import Link from 'next/link';
 import { useAuth } from '@/context/AuthContext';
 import { chatService } from '@/services/chatService';
+import PageLoader from '@/components/PageLoader';
 
 const ChatPage = () => {
-  const { userId } = useParams<{ userId: string }>();
+  const params = useParams<{ userId: string }>();
+  const userId = params?.userId;
   const router = useRouter();
   const { user, loading: authLoading } = useAuth();
   const [otherUserProfile, setOtherUserProfile] = useState<Profile | null>(null);
   const [loading, setLoading] = useState(true);
   const [showUnfriendedModal, setShowUnfriendedModal] = useState(false);
 
-  // 确保未登录时不自动重定向，只显示登录提示
   useEffect(() => {
-    // 空的useEffect，确保没有自动重定向逻辑
   }, [user]);
 
   useEffect(() => {
     const fetchUserProfileAndFriendship = async () => {
-      // 等待authLoading完成
       if (authLoading) {
         return;
       }
@@ -34,13 +33,15 @@ const ChatPage = () => {
         return;
       }
       
+      if (!userId) {
+        setLoading(false);
+        return;
+      }
+      
       try {
-        // 获取用户资料
         const profile = await chatService.getUserProfile(userId);
         
-        // 如果第一次获取失败，尝试再次获取
         if (!profile) {
-          // 短暂延迟后重试
           await new Promise(resolve => setTimeout(resolve, 500));
           const retryProfile = await chatService.getUserProfile(userId);
           setOtherUserProfile(retryProfile);
@@ -48,10 +49,8 @@ const ChatPage = () => {
           setOtherUserProfile(profile);
         }
         
-        // 检查好友关系状态，无论profile是否存在都执行
         const status = await chatService.checkFriendshipStatus(userId);
         
-        // 如果不是好友关系，显示提示弹窗
         if (status === 'none') {
           setShowUnfriendedModal(true);
         }
@@ -67,22 +66,20 @@ const ChatPage = () => {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
-        <Navbar />
-        <div className="flex justify-center items-center h-[calc(100vh-80px)]">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary-500"></div>
-        </div>
-      </div>
+      <PageLoader 
+        type="spinner" 
+        message="正在加载聊天记录..." 
+        showNavbar={true}
+        fullscreen={true}
+      />
     );
   }
 
-  // 未登录用户显示登录提示
   if (!user) {
     return (
       <div className="min-h-screen">
         <Navbar />
         <main className="w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-[calc(100vh-120px)] flex items-center justify-center">
-          {/* 登录提示框 */}
           <div className="bg-yellow-50 dark:bg-yellow-900/20 border-l-4 border-yellow-400 p-6 rounded-lg max-w-md w-full shadow-lg">
             <div className="flex items-center gap-3">
               <div className="text-yellow-500">
@@ -111,7 +108,7 @@ const ChatPage = () => {
     );
   }
 
-  if (!otherUserProfile) {
+  if (!otherUserProfile || !userId) {
     return (
       <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
         <Navbar />
@@ -125,10 +122,9 @@ const ChatPage = () => {
     );
   }
 
-  // 处理弹窗确定按钮点击
   const handleModalConfirm = () => {
     setShowUnfriendedModal(false);
-    router.push('/chat'); // 返回聊天列表页
+    router.push('/chat');
   };
 
   return (
@@ -143,7 +139,6 @@ const ChatPage = () => {
         <ChatInterface otherUserId={userId} otherUserProfile={otherUserProfile} />
       </main>
       
-      {/* 好友关系解除提示弹窗 */}
       {showUnfriendedModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
           <div className="bg-white dark:bg-gray-800 rounded-2xl p-8 max-w-md w-full mx-4 shadow-xl border border-gray-200 dark:border-gray-700">

@@ -1,6 +1,5 @@
 'use client';
 
-// 用户编辑页面
 import { useState, useEffect } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/Card';
@@ -18,6 +17,7 @@ interface FormErrors {
 
 export default function EditUserPage() {
   const params = useParams<{ id: string }>();
+  const userId = params?.id;
   const router = useRouter();
   const [user, setUser] = useState<Profile | null>(null);
   const [loading, setLoading] = useState(true);
@@ -25,7 +25,6 @@ export default function EditUserPage() {
   const [error, setError] = useState('');
   const [formErrors, setFormErrors] = useState<FormErrors>({});
 
-  // 表单数据
   const [formData, setFormData] = useState({
     username: '',
     display_name: '',
@@ -34,21 +33,23 @@ export default function EditUserPage() {
     is_admin: false
   });
 
-  // 在线状态选项
   const onlineStatusOptions = [
     { value: 'online', label: '在线' },
     { value: 'away', label: '离开' },
     { value: 'offline', label: '离线' }
   ];
 
-  // 获取用户数据
   useEffect(() => {
     async function fetchUser() {
+      if (!userId) {
+        setError('无效的用户ID');
+        setLoading(false);
+        return;
+      }
       try {
         setLoading(true);
-        const userData = await getUserById(params.id);
+        const userData = await getUserById(userId);
         if (userData) {
-          // Convert UserInfo to Profile type
           const profileData: Profile = {
             id: userData.id,
             display_name: userData.display_name,
@@ -80,19 +81,16 @@ export default function EditUserPage() {
     }
 
     fetchUser();
-  }, [params.id]);
+  }, [userId]);
 
-  // 验证表单
   const validateForm = (): boolean => {
     const errors: FormErrors = {};
     
-    // 验证用户名
     const usernameValidation = validateUsername(formData.username);
     if (!usernameValidation.isValid) {
       errors.username = usernameValidation.message;
     }
     
-    // 验证显示名称
     const displayNameValidation = validateDisplayName(formData.display_name);
     if (!displayNameValidation.isValid) {
       errors.display_name = displayNameValidation.message;
@@ -102,12 +100,10 @@ export default function EditUserPage() {
     return Object.keys(errors).length === 0;
   };
 
-  // 处理表单提交
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
-    // 验证表单
-    if (!validateForm()) {
+    if (!userId || !validateForm()) {
       return;
     }
     
@@ -115,15 +111,12 @@ export default function EditUserPage() {
       setSubmitting(true);
       setError('');
 
-      // 更新用户信息
-      const result = await updateUser(params.id, formData);
+      const result = await updateUser(userId, formData);
       
       if (result.success) {
-        // 显示成功通知
         showSuccess('用户信息更新成功');
-        // 3秒后跳转到用户详情页
         setTimeout(() => {
-          router.push(`/admin/users/${params.id}`);
+          router.push(`/admin/users/${userId}`);
         }, 3000);
       } else {
         throw new Error(result.error || '更新失败');
@@ -137,14 +130,12 @@ export default function EditUserPage() {
     }
   };
 
-  // 处理表单输入变化
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
     const target = e.target;
     const { name, value, type } = target;
     
     let fieldValue: string | boolean = value;
     
-    // 使用类型守卫安全访问checked属性
     if (target instanceof HTMLInputElement && type === 'checkbox') {
       fieldValue = target.checked;
     }
@@ -154,7 +145,6 @@ export default function EditUserPage() {
       [name]: fieldValue
     }));
     
-    // 实时验证（只验证文本字段）
     if (!(target instanceof HTMLInputElement && type === 'checkbox')) {
       if (name === 'username') {
         const validation = validateUsername(value);
@@ -186,20 +176,17 @@ export default function EditUserPage() {
 
   return (
     <div className="space-y-6">
-      {/* 页面标题 */}
       <div>
         <h1 className="text-3xl font-bold text-gray-900">编辑用户</h1>
         <p className="text-gray-600 mt-1">修改用户的基本信息</p>
       </div>
 
-      {/* 全局错误信息 */}
       {error && (
         <div className="px-4 py-3 bg-red-100 text-red-800 rounded-md">
           {error}
         </div>
       )}
 
-      {/* 编辑表单 */}
       <Card>
         <CardHeader>
           <CardTitle>用户信息</CardTitle>
@@ -207,7 +194,6 @@ export default function EditUserPage() {
         <CardContent>
           <form onSubmit={handleSubmit} className="space-y-6">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              {/* 用户名 */}
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">用户名 <span className="text-red-500">*</span></label>
                 <input
@@ -223,7 +209,6 @@ export default function EditUserPage() {
                 )}
               </div>
 
-              {/* 显示名称 */}
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">显示名称</label>
                 <input
@@ -239,7 +224,6 @@ export default function EditUserPage() {
                 )}
               </div>
 
-              {/* 在线状态 */}
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">在线状态</label>
                 <CustomSelect
@@ -251,7 +235,6 @@ export default function EditUserPage() {
                 />
               </div>
 
-              {/* 管理员权限 */}
               <div className="flex items-center">
                 <input
                   type="checkbox"
@@ -264,7 +247,6 @@ export default function EditUserPage() {
               </div>
             </div>
 
-            {/* 个人简介 */}
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">个人简介</label>
               <textarea
@@ -280,11 +262,10 @@ export default function EditUserPage() {
               )}
             </div>
 
-            {/* 操作按钮 */}
             <div className="flex justify-end space-x-4">
               <button
                 type="button"
-                onClick={() => router.push(`/admin/users/${params.id}`)}
+                onClick={() => router.push(userId ? `/admin/users/${userId}` : '/admin/users')}
                 className="px-4 py-2 bg-gray-200 text-gray-700 rounded-md hover:bg-gray-300 transition-colors"
               >
                 取消

@@ -10,7 +10,7 @@ import Image from 'next/image';
 import Navbar from '@/components/Navbar';
 import MultimediaMessage from '@/components/MultimediaMessage';
 import { showToast } from '@/utils/toast';
-import LoadingSpinner from '@/components/LoadingSpinner';
+import PageLoader from '@/components/PageLoader';
 import { MessageCircleIcon, UsersIcon, PlusIcon, XIcon, TrashIcon, SendIcon, Image as ImageIcon, Smile } from 'lucide-react';
 import { supabase } from '@/lib/supabase/client';
 import VoiceRecorder from '@/components/VoiceRecorder';
@@ -71,17 +71,9 @@ const GroupChatPage = ({ params }: { params: Promise<{ groupId: string }> }) => 
   const [showNotMemberPrompt, setShowNotMemberPrompt] = useState<boolean>(false);
   const [keepChatHistory, setKeepChatHistory] = useState<boolean>(false);
   
-  // 用于解决 hydration mismatch 的状态
-  const [isHydrated, setIsHydrated] = useState(false);
-  
   const messagesEndRef = useRef<HTMLDivElement>(null);
   // 实时通道引用，与私聊实现一致
   const channelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
-  
-  // 组件挂载后设置为客户端已加载，避免 hydration 不匹配
-  useEffect(() => {
-    setIsHydrated(true);
-  }, []);
   
   // 确保未登录时不自动重定向，只显示登录提示
   useEffect(() => {
@@ -1024,17 +1016,12 @@ const GroupChatPage = ({ params }: { params: Promise<{ groupId: string }> }) => 
 
   if (loading) {
     return (
-      <div className="min-h-screen">
-        <Navbar />
-        <div className="flex justify-center items-center h-[calc(100vh-80px)]">
-          {isHydrated ? (
-            <LoadingSpinner type="grid" size={20} color="#f97316" />
-          ) : (
-            // Use a simple server-safe loading indicator
-            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary-500"></div>
-          )}
-        </div>
-      </div>
+      <PageLoader 
+        type="spinner" 
+        message="正在加载群聊信息..." 
+        showNavbar={true}
+        fullscreen={true}
+      />
     );
   }
 

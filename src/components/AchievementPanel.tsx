@@ -33,7 +33,8 @@ interface UserLevel {
 }
 
 const AchievementPanel: React.FC = () => {
-  const { userId } = useParams();
+  const params = useParams();
+  const userId = params?.userId as string | undefined;
   const [userAchievements, setUserAchievements] = useState<UserAchievement[]>([]);
   const [level, setLevel] = useState<UserLevel | null>(null);
   const [loading, setLoading] = useState(true);

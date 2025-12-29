@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React from 'react';
 import { supabase } from '@/lib/supabase/client';
 
 type OAuthProvider = 'github' | 'google' | 'apple' | 'facebook';
@@ -21,40 +21,42 @@ const SocialLoginButton: React.FC<SocialLoginButtonProps> = ({
   loading = false,
 }) => {
   const handleClick = async () => {
-    if (disabled || loading) return;
+    if (disabled || loading) {
+      return;
+    }
     
     try {
+      // 动态获取当前 origin，确保回调 URL 正确
+      const currentOrigin = typeof window !== 'undefined' ? window.location.origin : 'http://localhost:3000';
+      
+      // 检查当前会话状态
+      await supabase.auth.getSession();
+      
       // 使用 Supabase 的原生 OAuth 功能
-      const { data, error } = await supabase.auth.signInWithOAuth({
+      const { error: oauthError } = await supabase.auth.signInWithOAuth({
         provider: provider,
         options: {
-          redirectTo: `${window.location.origin}/auth/callback`,
-          // 根据不同提供商设置额外参数
+          redirectTo: `${currentOrigin}/auth/callback`,
           queryParams: provider === 'google' 
             ? { access_type: 'offline', prompt: 'consent' }
             : undefined,
         }
       });
 
-      if (error) {
-        console.error(`Failed to sign in with ${provider}:`, error);
-        
-        // 处理特定的错误类型
+      if (oauthError) {
         let errorMessage = '登录失败，请重试';
         
-        if (error.message.includes('access_denied')) {
+        if (oauthError.message.includes('access_denied')) {
           errorMessage = '您取消了授权登录';
-        } else if (error.message.includes('server_error')) {
+        } else if (oauthError.message.includes('server_error')) {
           errorMessage = '服务器错误，请稍后重试';
-        } else if (error.message.includes('temporarily_unavailable')) {
+        } else if (oauthError.message.includes('temporarily_unavailable')) {
           errorMessage = '服务暂时不可用，请稍后重试';
         }
         
-        // 显示错误信息
         alert(errorMessage);
       }
-    } catch (error) {
-      console.error(`Unexpected error with ${provider}:`, error);
+    } catch {
       alert('登录过程中发生未知错误，请重试');
     }
   };

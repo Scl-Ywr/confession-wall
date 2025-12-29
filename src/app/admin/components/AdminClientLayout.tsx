@@ -5,6 +5,7 @@ import { ReactNode, useState } from 'react';
 import { AdminSidebar } from './Sidebar';
 import { AdminHeader } from './Header';
 import { MobileSidebar } from './MobileSidebar';
+import { usePageRefresh } from '@/hooks/usePageRefresh';
 
 interface AdminClientLayoutProps {
   children: ReactNode;
@@ -12,6 +13,16 @@ interface AdminClientLayoutProps {
 
 export function AdminClientLayout({ children }: AdminClientLayoutProps) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
+
+  // 页面刷新机制 - 当页面重新获得焦点时刷新数据
+  // 这里提供一个全局的刷新触发器，子页面可以根据需要监听这个事件
+  usePageRefresh(
+    () => {
+        // 触发自定义事件，让子页面监听并刷新数据
+        window.dispatchEvent(new CustomEvent('adminPageRefresh'));
+    },
+    []
+  );
 
   return (
     <div className="flex h-screen bg-gray-50 dark:bg-gray-900">

@@ -95,9 +95,8 @@ const LoginPage: React.FC = () => {
   const onSubmit = async (data: LoginFormData) => {
     try {
       await login(data.email, data.password);
-      // 登录成功后跳转到首页
       router.push('/');
-    } catch {
+    } catch{
       // 错误已在AuthContext中处理
       // 登录失败后，重新获取登录尝试信息
       const ipResponse = await fetch('/api/get-ip');

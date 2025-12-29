@@ -34,6 +34,9 @@ export function UserSearch({ currentUserId }: UserSearchProps) {
       setShowResults(true);
     } catch (error) {
       console.error('Search error:', error);
+      // 设置空结果，避免显示之前的搜索结果
+      setResults([]);
+      setShowResults(true);
     } finally {
       setLoading(false);
     }

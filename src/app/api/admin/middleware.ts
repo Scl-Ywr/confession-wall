@@ -49,20 +49,16 @@ export async function middleware(request: Request) {
   const url = new URL(request.url);
   const path = url.pathname;
   
-  console.log('权限检查中间件 - 路径:', path);
-  
   // 检查是否需要权限验证
   const requiredPermissions = Object.keys(API_PERMISSIONS_MAP).find(
     route => path.startsWith(route) || path === route
   );
   
   if (!requiredPermissions) {
-    console.log('无需权限验证的路径:', path);
     return NextResponse.next();
   }
   
   const permissions = API_PERMISSIONS_MAP[requiredPermissions];
-  console.log('所需权限:', permissions);
   
   try {
     // 创建Supabase服务器客户端来处理会话
@@ -79,7 +75,6 @@ export async function middleware(request: Request) {
     }
     
     const userId = user.id;
-    console.log('用户ID:', userId);
     
     // 检查用户是否拥有所需权限
     const permissionCheck = await checkUserPermissionsServer(userId, permissions);
@@ -96,7 +91,6 @@ export async function middleware(request: Request) {
     }
     
     // 权限验证通过，继续请求
-    console.log('权限验证通过');
     return NextResponse.next();
     
   } catch (error) {

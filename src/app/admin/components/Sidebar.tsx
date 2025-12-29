@@ -1,6 +1,5 @@
 'use client';
 
-// 后台管理系统侧边栏组件
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { motion } from 'framer-motion';
@@ -79,7 +78,6 @@ export function AdminSidebar() {
   const [userPermissions, setUserPermissions] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
 
-  // 获取用户权限
   useEffect(() => {
     const fetchPermissions = async () => {
       if (user?.id) {
@@ -93,37 +91,30 @@ export function AdminSidebar() {
   }, [user?.id]);
 
   const isActive = (href: string) => {
-    return pathname === href || pathname.startsWith(`${href}/`);
+    return pathname ? pathname === href || pathname.startsWith(`${href}/`) : false;
   };
 
-  // 检查用户是否有访问菜单项的权限
   const hasPermission = (item: NavItem) => {
-    // 如果菜单项没有定义权限，默认允许访问
     if (!item.permission) {
       return true;
     }
     
-    // 检查用户是否为管理员或拥有超级管理员权限
     const isSuperAdmin = user?.is_admin || 
                         userPermissions.includes('super_admin') || 
                         userPermissions.includes('admin') ||
                         userPermissions.includes('moderator');
     
-    // 超级管理员拥有所有权限
     if (isSuperAdmin) {
       return true;
     }
     
-    // 检查用户是否拥有所需权限
     return userPermissions.includes(item.permission);
   };
 
-  // 过滤有权限访问的菜单项
   const filteredNavItems = navItems.filter(hasPermission);
 
   return (
     <aside className="w-64 bg-white dark:bg-gray-800 border-r border-gray-200 dark:border-gray-700 shadow-sm flex-shrink-0">
-      {/* Logo和标题 */}
       <div className="p-4 border-b border-gray-200 dark:border-gray-700">
         <motion.div
           initial={{ opacity: 0, y: -20 }}
@@ -135,7 +126,6 @@ export function AdminSidebar() {
         </motion.div>
       </div>
 
-      {/* 导航菜单 */}
       <nav className="flex-1 overflow-y-auto p-4">
         {loading ? (
           <div className="flex justify-center items-center h-20">
@@ -168,7 +158,6 @@ export function AdminSidebar() {
                   )}
                 </Link>
                 
-                {/* 子菜单 */}
                 {item.children && item.children.length > 0 && (
                   <ul className="ml-8 mt-1 space-y-1">
                     {item.children
@@ -197,7 +186,6 @@ export function AdminSidebar() {
         )}
       </nav>
 
-      {/* 底部信息 */}
       <div className="p-4 border-t border-gray-200 dark:border-gray-700 text-center">
         <motion.div
           initial={{ opacity: 0 }}

@@ -9,6 +9,9 @@ export interface User {
   avatar_url?: string;
   is_admin?: boolean;
   auth_provider?: 'supabase' | 'google' | 'github' | 'wechat' | 'qq' | 'logto';
+  oauth_provider?: string;
+  oauth_avatar_url?: string;
+  oauth_username?: string;
 }
 
 export interface AuthState {

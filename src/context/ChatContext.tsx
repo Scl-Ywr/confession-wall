@@ -67,9 +67,7 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
   useEffect(() => {
     if (!user) return;
 
-    console.log(`[ChatContext] Setting up real-time channels for user ${user.id}`);
-
-    // 监听私聊消息变化 - 只监听INSERT和UPDATE事件，因为只有这两个事件会影响未读计数
+    // 监听私聊消息变化
     const privateMessagesChannel = supabase
       .channel(`private-messages-total-${user.id}`)
       .on(
@@ -80,14 +78,11 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
           table: 'chat_messages',
           filter: `receiver_id.eq.${user.id}`
         },
-        (payload) => {
-          console.log(`[ChatContext] Private message change detected for user ${user.id}`, payload.new);
+        () => {
           calculateTotalUnreadCount();
         }
       )
-      .subscribe((status) => {
-        console.log(`[ChatContext] Private messages channel status: ${status}`);
-      });
+      .subscribe();
 
     // 监听群聊消息状态变化
     const groupMessagesChannel = supabase
@@ -100,16 +95,13 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
           table: 'group_message_read_status',
           filter: `user_id.eq.${user.id}`
         },
-        (payload) => {
-          console.log(`[ChatContext] Group message read status change detected`, payload.new);
+        () => {
           calculateTotalUnreadCount();
         }
       )
-      .subscribe((status) => {
-        console.log(`[ChatContext] Group messages channel status: ${status}`);
-      });
+      .subscribe();
 
-    // 优化：合并群聊消息创建监听，使用更精确的过滤条件
+    // 监听群聊消息创建
     const groupMessageCreateChannel = supabase
       .channel(`group-message-create-${user.id}`)
       .on(
@@ -121,8 +113,6 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
           filter: `group_id=not.is.null`
         },
         async (payload) => {
-          console.log(`[ChatContext] New group message detected: ${payload.new.group_id}`, payload.new);
-          
           try {
             // 检查用户是否是该群成员
             const { data: isMember, error: memberError } = await supabase
@@ -133,28 +123,22 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
               .maybeSingle();
             
             if (memberError) {
-              console.error(`[ChatContext] Error checking group membership: ${memberError.message}`);
+              console.error(`Error checking group membership: ${memberError.message}`);
               return;
             }
 
             if (isMember) {
-              console.log(`[ChatContext] User ${user.id} is member of group ${payload.new.group_id}, updating unread count`);
               calculateTotalUnreadCount();
-            } else {
-              console.log(`[ChatContext] User ${user.id} is not member of group ${payload.new.group_id}, skipping`);
             }
           } catch (error) {
-            console.error(`[ChatContext] Error processing group message: ${(error as Error).message}`);
+            console.error(`Error processing group message: ${(error as Error).message}`);
           }
         }
       )
-      .subscribe((status) => {
-        console.log(`[ChatContext] Group message create channel status: ${status}`);
-      });
+      .subscribe();
 
     return () => {
-      console.log(`[ChatContext] Removing real-time channels for user ${user.id}`);
-      // 使用removeChannel方法安全移除通道
+      // 安全移除通道
       supabase.removeChannel(privateMessagesChannel);
       supabase.removeChannel(groupMessagesChannel);
       supabase.removeChannel(groupMessageCreateChannel);

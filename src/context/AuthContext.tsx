@@ -276,7 +276,15 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         
         if (getUserError) {
           console.error('Error getting user:', getUserError);
-          // 会话无效，设置用户为未登录
+          // 处理会话缺失错误，这是正常情况，可能是用户切换了账户
+          if (getUserError.message === 'Auth session missing!' || getUserError.name === 'AuthSessionMissingError') {
+            isAuthChecked = true;
+            setState(prev => ({ ...prev, user: null, loading: false }));
+            // 取消消息订阅
+            globalMessageService.unsubscribe();
+            return;
+          }
+          // 其他错误同样设置为未登录状态
           isAuthChecked = true;
           setState(prev => ({ ...prev, user: null, loading: false }));
           // 取消消息订阅
@@ -320,8 +328,18 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         }));
       } catch (error) {
         console.error('Error checking user:', error);
-        isAuthChecked = true;
-        setState(prev => ({ ...prev, user: null, loading: false, error: 'Failed to check user' }));
+        // 处理会话相关的异常，这不是致命错误
+        if (error instanceof Error && (
+          error.message === 'Auth session missing!' ||
+          error.name === 'AuthSessionMissingError' ||
+          error.message.includes('Session not found')
+        )) {
+          isAuthChecked = true;
+          setState(prev => ({ ...prev, user: null, loading: false }));
+        } else {
+          isAuthChecked = true;
+          setState(prev => ({ ...prev, user: null, loading: false, error: 'Failed to check user' }));
+        }
         // 取消消息订阅
         globalMessageService.unsubscribe();
       }
@@ -441,9 +459,23 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         const userResult = await supabase.auth.getUser();
         
         if (userResult.error) {
-          // 会话可能已过期，尝试登出
+          // 会话可能已过期，检查是否是正常的会话缺失错误
+          if (userResult.error.message === 'Auth session missing!' || userResult.error.name === 'AuthSessionMissingError') {
+            if (currentUserId) {
+              // 尝试更新离线状态，但不处理错误
+              await updateOnlineStatus(currentUserId, 'offline').catch(() => {
+                // 忽略更新错误
+              });
+              currentUserId = null;
+            }
+            if (sessionRefreshInterval) {
+              clearInterval(sessionRefreshInterval);
+              sessionRefreshInterval = null;
+            }
+            return;
+          }
+          // 其他错误也按同样的方式处理
           if (currentUserId) {
-            // 尝试更新离线状态，但不处理错误
             await updateOnlineStatus(currentUserId, 'offline').catch(() => {
               // 忽略更新错误
             });
@@ -660,22 +692,19 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   };
 
   const login = async (email: string, password: string, isAdminLogin = false) => {
-    console.log('Login attempt started:', { email, isAdminLogin });
     setState(prev => ({ ...prev, loading: true, error: null }));
     
     try {
-      // 1. 检查登录尝试限制，不依赖真实IP地址
+      // 1. 检查登录尝试限制
       const { data: attemptCheck, error: checkError } = await supabase
         .rpc('check_login_attempts', { 
           p_email: email, 
-          p_ip_address: 'unknown' // 使用默认值，登录成功后再获取真实IP
+          p_ip_address: 'unknown'
         });
       
       if (checkError) {
         console.error('Error checking login attempts:', checkError);
-        // 继续执行登录，但记录错误
       } else if (attemptCheck && attemptCheck.is_locked) {
-        // 计算剩余锁定时间（秒）
         const lockTimeSeconds = Math.ceil(attemptCheck.lock_time_remaining.seconds || 0);
         const minutes = Math.floor(lockTimeSeconds / 60);
         const seconds = lockTimeSeconds % 60;
@@ -685,19 +714,14 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       }
       
       // 2. 尝试登录
-      console.log('Calling signInWithPassword with:', { email });
       const { data, error: signInError } = await supabase.auth.signInWithPassword({
         email,
         password,
       });
 
       if (signInError) {
-        console.error('signInWithPassword error:', signInError);
-        // 登录失败，不需要获取IP地址，直接抛出错误
         throw signInError;
       }
-      
-      console.log('signInWithPassword successful:', { user: data.user?.id, session: !!data.session });
 
       // 3. 登录成功后，获取IP地址
       let ipAddress = 'unknown';
@@ -708,17 +732,13 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       }
 
       // 4. 检查用户邮箱是否已验证
-      console.log('Checking email verification status:', { userId: data.user?.id, emailConfirmed: !!data.user?.email_confirmed_at });
       if (data.user && !data.user.email_confirmed_at) {
-        // 邮箱未验证，登出用户并返回错误
-        console.log('Email not confirmed, signing out');
         await supabase.auth.signOut();
-        // 记录失败的登录尝试
         logLoginAttempt(email, ipAddress, false, 'Email not verified').catch(console.error);
         throw new Error('请先验证您的邮箱，然后再登录');
       }
       
-      // 5. 合并profile查询：一次获取完整profile信息，避免重复查询
+      // 5. 获取完整用户Profile信息
       let completeUser: User | null = null;
       if (data.user) {
         const userId = data.user.id;
@@ -726,7 +746,6 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         let isAdmin = false;
         
         if (userEmail) {
-          // 一次查询获取完整profile信息
           const { data: profileData, error: profileError } = await supabase
             .from('profiles')
             .select('*')
@@ -736,10 +755,8 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
           if (profileError) {
             console.error('Error checking profile:', profileError?.message || 'Unknown error');
           } else if (profileData) {
-            // 如果获取到profile，使用其信息
             isAdmin = profileData.is_admin || false;
             
-            // 直接使用完整profile信息创建完整用户对象
             completeUser = {
               id: data.user.id,
               email: data.user.email || '',
@@ -752,7 +769,6 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
               avatar_url: profileData.avatar_url || null
             } as User;
           } else {
-            // 没有profile，创建默认profile
             const username = userEmail.split('@')[0];
             
             const { error: createError } = await supabase
@@ -762,25 +778,23 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
                 email: userEmail,
                 username,
                 display_name: username,
-                is_admin: false // 默认非管理员，由管理员API单独设置
+                is_admin: false
               });
             
             if (createError) {
               console.error('Error creating profile:', createError.message);
             } else {
-              // 为新用户分配默认角色
               try {
                 await supabase
                   .from('user_roles')
                   .insert({
                     user_id: userId,
-                    role_id: 'role_user' // 默认普通用户角色
+                    role_id: 'role_user'
                   });
               } catch (error) {
                 console.error('Error assigning default role:', (error as Error).message);
               }
               
-              // 创建完整用户对象
               completeUser = {
                 id: data.user.id,
                 email: data.user.email || '',
@@ -795,51 +809,34 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
             }
           }
           
-          // 6. 如果是管理员登录，检查用户是否为管理员
+          // 6. 管理员权限检查
           if (isAdminLogin && !isAdmin) {
-            // 非管理员用户尝试管理员登录，登出并返回错误
             await supabase.auth.signOut();
-            // 异步记录失败的登录尝试
             logLoginAttempt(email, ipAddress, false, 'Not an admin user').catch(console.error);
             throw new Error('您不是管理员，无法登录管理员后台');
           }
-        } else if (isAdminLogin) {
-          // 没有邮箱的用户不可能是管理员
-          await supabase.auth.signOut();
-          // 异步记录失败的登录尝试
-          logLoginAttempt(email, ipAddress, false, 'No email for admin login').catch(console.error);
-          throw new Error('您不是管理员，无法登录管理员后台');
         } else {
-          // 创建基本用户对象
-          completeUser = {
-            id: data.user.id,
-            email: data.user.email || '',
-            email_confirmed_at: data.user.email_confirmed_at,
-            created_at: data.user.created_at,
-            updated_at: data.user.updated_at,
-            is_admin: false
-          } as User;
+          if (isAdminLogin) {
+            await supabase.auth.signOut();
+            logLoginAttempt(email, ipAddress, false, 'No email for admin login').catch(console.error);
+            throw new Error('您不是管理员，无法登录管理员后台');
+          } else {
+            completeUser = {
+              id: data.user.id,
+              email: data.user.email || '',
+              email_confirmed_at: data.user.email_confirmed_at,
+              created_at: data.user.created_at,
+              updated_at: data.user.updated_at,
+              is_admin: false
+            } as User;
+          }
         }
         
-        // 7. 异步记录成功的登录尝试，不阻塞主流程
         logLoginAttempt(email, ipAddress, true).catch(console.error);
-        
-        // 8. 异步更新在线状态，不阻塞主流程
         updateOnlineStatus(userId, 'online').catch(console.error);
-        
-        // 9. 检查是否为OAuth用户并设置相关元数据
-        const userMetadata = data.user?.user_metadata;
-        const isOAuthUser = userMetadata?.provider && userMetadata.provider !== 'email';
-        
-        if (isOAuthUser && completeUser) {
-          // 为OAuth用户设置额外信息
-          (completeUser as any).user_metadata = userMetadata;
-          (completeUser as any).is_oauth_user = true;
-          (completeUser as any).provider = userMetadata.provider;
-        }
       }
       
-      // 9. 更新状态，完成登录
+      // 7. 更新状态，完成登录
       setState(prev => ({
         ...prev,
         user: completeUser,
@@ -848,13 +845,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       
     } catch (error) {
       const errorObj = error instanceof Error ? error : new Error('An unknown error occurred');
-      console.error('Login failed with error:', {
-        error: errorObj.message,
-        email,
-        isAdminLogin
-      });
       
-      // 登录失败，不需要记录IP地址，直接处理错误
       const errorMessage = translateError(errorObj);
       setState(prev => ({
         ...prev,
@@ -862,7 +853,6 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         error: errorMessage 
       }));
       
-      // 确保返回的是标准Error对象，便于调用者处理
       throw new Error(errorMessage);
     }
   };
@@ -876,22 +866,6 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         await updateOnlineStatus(userId, 'offline');
       }
       
-      // 检查用户是否通过OAuth登录
-      const isOAuthUser = (state.user as any)?.user_metadata?.is_oauth_user || 
-                         (state.user as any)?.is_oauth_user ||
-                         false;
-      
-      if (isOAuthUser) {
-        // OAuth用户使用Supabase标准登出流程
-        // 注意：不需要重定向到外部OAuth提供商登出
-        const { error } = await supabase.auth.signOut();
-        if (error) {
-          throw error;
-        }
-        return;
-      }
-      
-      // 普通邮箱用户使用标准登出流程
       const { error } = await supabase.auth.signOut();
 
       if (error) {

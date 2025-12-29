@@ -9,7 +9,9 @@
       "Bash(tasklist:*)",
       "Bash(netstat:*)",
       "Bash(taskkill:*)",
-      "Bash(git log:*)"
+      "Bash(git log:*)",
+      "Bash(start oauth-debug.html)",
+      "Bash(del \"c:\\\\Users\\\\PC\\\\Desktop\\\\confession-wall\\\\src\\\\app\\\\auth\\\\callback\\\\route.ts\")"
     ],
     "deny": [],
     "ask": []

@@ -29,6 +29,10 @@ export interface Profile {
   user_country?: string;
   ip_updated_at?: string;
   is_admin?: boolean;
+  // OAuth 相关字段
+  oauth_provider?: string;
+  oauth_avatar_url?: string;
+  oauth_username?: string;
 }
 
 // 话题标签

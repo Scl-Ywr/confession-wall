@@ -15,10 +15,11 @@ import { HashtagList } from '@/components/HashtagList';
 import { CategoryList } from '@/components/CategoryList';
 import { useQuery, useInfiniteQuery, useQueryClient } from '@tanstack/react-query';
 import LoginPrompt from '@/components/LoginPrompt';
-import ConfessionCardSkeleton from '@/components/ConfessionCardSkeleton';
 import { FadeInStagger } from '@/components/Transitions';
 import Modal from '@/components/AnimatedModal';
 import toast from 'react-hot-toast';
+import { usePageRefresh } from '@/hooks/usePageRefresh';
+import PageLoader from '@/components/PageLoader';
 
 export default function Home() {
   const router = useRouter();
@@ -34,8 +35,6 @@ export default function Home() {
   useEffect(() => {
     setTimeout(() => setMounted(true), 0);
   }, []);
-
-
 
   // 使用React Query的无限查询获取表白列表
   const {
@@ -112,6 +111,16 @@ export default function Home() {
     };
   }, [handleObserver]);
 
+  // 页面刷新机制 - 当页面重新获得焦点时刷新数据
+  usePageRefresh(
+    async () => {
+      await refetchConfessions();
+      // 如果有搜索关键词，也刷新搜索结果
+      await refetchSearch();
+    },
+    [refetchConfessions, refetchSearch]
+  );
+
   const handleDeleteConfession = (confessionId: string) => {
     if (!user) {
       router.push('/auth/login');
@@ -182,7 +191,7 @@ export default function Home() {
   
   // 当confessions或searchResults变化时，更新displayConfessions
   useEffect(() => {
-    console.log('useEffect triggered:', { searchKeyword: searchKeyword.trim(), confessionsLength: confessions.length, searchResultsLength: searchResults.length, justAddedConfession });
+    // useEffect triggered for displayConfessions update
     setTimeout(() => {
       if (searchKeyword.trim()) {
         setDisplayConfessions(searchResults as Confession[]);
@@ -228,9 +237,11 @@ export default function Home() {
   // 等待组件挂载和认证完成后再渲染内容
   if (!mounted || authLoading) {
     return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="animate-spin rounded-full h-12 w-12 border-4 border-primary-600 border-t-transparent"></div>
-      </div>
+      <PageLoader 
+        type="spinner" 
+        message="正在加载表白墙..." 
+        fullscreen={true}
+      />
     );
   }
 
@@ -508,14 +519,11 @@ export default function Home() {
           </motion.div>
           
           {isLoading ? (
-            <motion.div 
-              className="space-y-6"
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              transition={{ duration: 0.3 }}
-            >
-              <ConfessionCardSkeleton count={3} />
-            </motion.div>
+            <PageLoader 
+              type="skeleton" 
+              fullscreen={false}
+              className="p-6"
+            />
           ) : isError ? (
             <motion.div 
               className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-xl p-6 text-center"

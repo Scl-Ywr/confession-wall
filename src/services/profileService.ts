@@ -22,6 +22,15 @@ export const profileService = {
   getCurrentProfile: async (): Promise<Profile> => {
     // Get current user first
     const userResult = await supabase.auth.getUser();
+    
+    // 处理会话缺失错误
+    if (userResult.error) {
+      if (userResult.error.message === 'Auth session missing!' || userResult.error.name === 'AuthSessionMissingError') {
+        throw new Error('用户会话不存在，请重新登录');
+      }
+      throw new Error('User not authenticated');
+    }
+    
     const user = userResult.data.user;
     const userId = user?.id;
     
@@ -138,6 +147,15 @@ export const profileService = {
   updateProfile: async (data: ProfileUpdateData): Promise<Profile> => {
     // Get current user first
     const userResult = await supabase.auth.getUser();
+    
+    // 处理会话缺失错误
+    if (userResult.error) {
+      if (userResult.error.message === 'Auth session missing!' || userResult.error.name === 'AuthSessionMissingError') {
+        throw new Error('用户会话不存在，请重新登录');
+      }
+      throw new Error('User not authenticated');
+    }
+    
     const userId = userResult.data.user?.id;
     
     if (!userId) {
@@ -225,6 +243,15 @@ export const profileService = {
   // Upload avatar image
   uploadAvatar: async (file: File): Promise<string> => {
     const user = await supabase.auth.getUser();
+    
+    // 处理会话缺失错误
+    if (user.error) {
+      if (user.error.message === 'Auth session missing!' || user.error.name === 'AuthSessionMissingError') {
+        throw new Error('用户会话不存在，请重新登录');
+      }
+      throw new Error('User not authenticated');
+    }
+    
     const userId = user.data.user?.id;
     if (!userId) {
       throw new Error('User not authenticated');
@@ -272,6 +299,15 @@ export const profileService = {
   updateIpLocation: async (data: IpLocationUpdateData): Promise<void> => {
     // Get current user first
     const userResult = await supabase.auth.getUser();
+    
+    // 处理会话缺失错误
+    if (userResult.error) {
+      if (userResult.error.message === 'Auth session missing!' || userResult.error.name === 'AuthSessionMissingError') {
+        throw new Error('用户会话不存在，请重新登录');
+      }
+      throw new Error('User not authenticated');
+    }
+    
     const userId = userResult.data.user?.id;
     
     if (!userId) {

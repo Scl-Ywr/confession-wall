@@ -50,14 +50,13 @@ export async function POST(request: Request) {
     const userId = authUser.id;
     
     // 更新用户为管理员 - 先检查是否存在 profiles 记录
-    console.log('Checking existing profile for user:', userId);
-    const { data: existingProfile, error: profileCheckError } = await supabase
+     const { data: existingProfile } = await supabase
       .from('profiles')
       .select('*') // 选择所有字段，包括现有的is_admin值
       .eq('id', userId)
       .single();
     
-    console.log('Profile check result:', { existingProfile: existingProfile, error: profileCheckError?.message });
+      // Profile check result: { existingProfile: existingProfile, error: profileCheckError?.message });
     
     // 获取用户邮箱
     const userEmail = authUser.email || '';
@@ -67,7 +66,6 @@ export async function POST(request: Request) {
     let updateError;
     if (existingProfile) {
       // 如果存在 profiles 记录，更新 is_admin 和 email 字段
-      console.log('Updating existing profile, current is_admin:', existingProfile.is_admin);
       ({ error: updateError } = await supabase
         .from('profiles')
         .update({ 
@@ -76,10 +74,9 @@ export async function POST(request: Request) {
         })
         .eq('id', userId));
       
-      console.log('Profile update result:', { error: updateError?.message });
+      // Profile update result: { error: updateError?.message });
     } else {
       // 如果不存在 profiles 记录，插入一条完整的新记录
-      console.log('Creating new profile with is_admin=true');
       ({ error: updateError } = await supabase
         .from('profiles')
         .insert([{

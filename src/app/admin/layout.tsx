@@ -4,6 +4,8 @@ import { redirect } from 'next/navigation';
 import { createSupabaseServerClient, createSupabaseAdminClient } from '@/lib/supabase/server';
 import { AdminClientLayout } from './components/AdminClientLayout';
 
+export const dynamic = 'force-dynamic';
+
 // 服务器端布局组件 - 处理认证和授权
 export default async function AdminLayout({ children }: { children: ReactNode }) {
   try {

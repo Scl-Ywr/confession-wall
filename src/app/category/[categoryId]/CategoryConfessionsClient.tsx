@@ -8,9 +8,10 @@ import { useAuth } from '@/context/AuthContext';
 import { useRouter } from 'next/navigation';
 import { ArrowLeftIcon } from '@heroicons/react/24/outline';
 import { motion } from 'framer-motion';
-import ConfessionCardSkeleton from '@/components/ConfessionCardSkeleton';
 import Modal from '@/components/AnimatedModal';
 import toast from 'react-hot-toast';
+import { usePageRefresh } from '@/hooks/usePageRefresh';
+import PageLoader from '@/components/PageLoader';
 
 interface CategoryConfessionsClientProps {
   categoryId: string;
@@ -27,8 +28,6 @@ export default function CategoryConfessionsClient({ categoryId }: CategoryConfes
   const [confessionToDelete, setConfessionToDelete] = useState<string | null>(null);
   const { user } = useAuth();
   const router = useRouter();
-
-  console.log('CategoryConfessionsClient received categoryId:', categoryId, 'Type:', typeof categoryId);
 
   // 获取分类信息
   useEffect(() => {
@@ -70,6 +69,15 @@ export default function CategoryConfessionsClient({ categoryId }: CategoryConfes
     setPage(1);
     loadConfessions(1, false);
   }, [categoryId, loadConfessions]);
+
+  // 页面刷新机制 - 当页面重新获得焦点时刷新数据
+  usePageRefresh(
+    async () => {
+      setPage(1);
+      await loadConfessions(1, false);
+    },
+    [loadConfessions]
+  );
 
   const handleLoadMore = () => {
     if (!loading && hasMore) {
@@ -209,9 +217,11 @@ export default function CategoryConfessionsClient({ categoryId }: CategoryConfes
 
       <main className="w-full mx-auto px-4 sm:px-6 lg:px-8 py-6">
         {loading && confessions.length === 0 ? (
-          <div className="space-y-6">
-            <ConfessionCardSkeleton count={3} />
-          </div>
+          <PageLoader 
+            type="content" 
+            fullscreen={false}
+            className="py-8"
+          />
         ) : error ? (
           <motion.div 
             className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-xl p-6 text-center"

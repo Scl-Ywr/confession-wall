@@ -7,9 +7,9 @@ import ConfessionCard from '@/components/ConfessionCard';
 import { useAuth } from '@/context/AuthContext';
 import { useRouter } from 'next/navigation';
 import { ArrowLeftIcon, HashtagIcon } from '@heroicons/react/24/outline';
-import LoadingSpinner from '@/components/LoadingSpinner';
 import Modal from '@/components/AnimatedModal';
 import toast from 'react-hot-toast';
+import PageLoader from '@/components/PageLoader';
 
 interface HashtagConfessionsClientProps {
   tag: string;
@@ -161,17 +161,11 @@ export default function HashtagConfessionsClient({ tag }: HashtagConfessionsClie
 
       <main className="w-full mx-auto px-4 sm:px-6 lg:px-8 py-6">
         {loading && confessions.length === 0 ? (
-          <div className="text-center py-20">
-            <LoadingSpinner 
-              type="climbingBox" 
-              size={40} 
-              color="#3b82f6" 
-              className="mx-auto"
-              message={`加载话题 #${tag} 的表白中...`}
-              showMessage={true}
-              gradient={true}
-            />
-          </div>
+          <PageLoader 
+            type="content" 
+            fullscreen={false}
+            className="py-20"
+          />
         ) : error ? (
           <div className="bg-red-50 border border-red-200 rounded-xl p-6 text-center">
             <p className="text-red-600 mb-4">{error}</p>

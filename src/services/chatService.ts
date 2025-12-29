@@ -34,12 +34,33 @@ const createNotification = async (
 ): Promise<Notification> => {
   // 获取当前认证用户和会话
   const user = await supabase.auth.getUser();
-  const session = await supabase.auth.getSession();
-  const accessToken = session.data.session?.access_token || '';
   
-  if (user.error || !user.data.user?.id) {
+  // 处理会话缺失错误，这是正常情况，不抛出异常
+  if (user.error) {
+    if (user.error.message === 'Auth session missing!' || user.error.name === 'AuthSessionMissingError') {
+      // 返回空通知对象，不抛出错误
+      return {
+        id: crypto.randomUUID(),
+        recipient_id: recipientId,
+        sender_id: '',
+        content,
+        type,
+        friend_request_id: friendRequestId,
+        group_id: groupId,
+        read_status: false,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
+      } as Notification;
+    }
     throw new Error('User not authenticated');
   }
+  
+  if (!user.data.user?.id) {
+    throw new Error('User not authenticated');
+  }
+  
+  const session = await supabase.auth.getSession();
+  const accessToken = session.data.session?.access_token || '';
   
   const senderId = user.data.user.id;
 
@@ -141,7 +162,16 @@ export const chatService = {
   uploadFile: async (file: File, folder: string = 'chat_files'): Promise<string> => {
     try {
       const user = await supabase.auth.getUser();
-      if (user.error || !user.data.user?.id) {
+      
+      // 处理会话缺失错误
+      if (user.error) {
+        if (user.error.message === 'Auth session missing!' || user.error.name === 'AuthSessionMissingError') {
+          throw new Error('用户会话不存在，请重新登录');
+        }
+        throw new Error('User not authenticated');
+      }
+      
+      if (!user.data.user?.id) {
         throw new Error('User not authenticated');
       }
 
@@ -266,35 +296,53 @@ export const chatService = {
   },
   // 用户搜索功能
   searchUsers: async (keyword: string): Promise<UserSearchResult[]> => {
-    const { data, error } = await supabase
-      .from('profiles')
-      .select('id, username, display_name, email, avatar_url, created_at')
-      .or(`ilike(username, '%${keyword}%'),ilike(display_name, '%${keyword}%')`)
-      .limit(20);
+    try {
+      // 验证关键词长度，避免空字符串或过长字符串
+      if (!keyword || keyword.trim().length === 0) {
+        return [];
+      }
+      
+      const trimmedKeyword = keyword.trim();
+      
+      // 使用参数化查询避免SQL注入
+      const { data, error } = await supabase
+        .from('profiles')
+        .select('id, username, display_name, email, avatar_url, created_at')
+        .or(`username.ilike.%${trimmedKeyword}%,display_name.ilike.%${trimmedKeyword}%`)
+        .limit(20);
 
-    if (error) {
-      throw error;
+      if (error) {
+        console.error('SearchUsers error:', error);
+        // 返回空数组而不是抛出错误，避免影响用户体验
+        return [];
+      }
+
+      return data as UserSearchResult[] || [];
+    } catch (error) {
+      console.error('SearchUsers catch error:', error);
+      // 返回空数组而不是抛出错误
+      return [];
     }
-
-    return data as UserSearchResult[];
   },
 
   // 发送好友申请
   sendFriendRequest: async (receiverId: string, message?: string): Promise<FriendRequest> => {
     const user = await supabase.auth.getUser();
     
-    // 检查是否有错误获取用户信息
+    // 处理会话缺失错误
     if (user.error) {
+      if (user.error.message === 'Auth session missing!' || user.error.name === 'AuthSessionMissingError') {
+        throw new Error('用户会话不存在，请重新登录');
+      }
       throw new Error('User not authenticated');
     }
     
-    const senderId = user.data?.user?.id;
-    const session = await supabase.auth.getSession();
-    const accessToken = session.data.session?.access_token || '';
-
-    if (!senderId) {
+    if (!user.data.user?.id) {
       throw new Error('User not authenticated');
     }
+    const senderId = user.data.user.id;
+    const session = await supabase.auth.getSession();
+    const accessToken = session.data.session?.access_token || '';
     
     try {
       // 先根据 receiverId 获取用户的实际 UUID
@@ -479,6 +527,15 @@ export const chatService = {
   // 获取好友申请列表
   getFriendRequests: async (): Promise<FriendRequest[]> => {
     const user = await supabase.auth.getUser();
+    
+    // 处理会话缺失错误
+    if (user.error) {
+      if (user.error.message === 'Auth session missing!' || user.error.name === 'AuthSessionMissingError') {
+        return []; // 返回空数组而不是抛出错误
+      }
+      throw new Error('User not authenticated');
+    }
+    
     const userId = user.data.user?.id;
     const session = await supabase.auth.getSession();
     const accessToken = session.data.session?.access_token || '';
@@ -515,16 +572,19 @@ export const chatService = {
   // 处理好友申请
   handleFriendRequest: async (requestId: string, status: 'accepted' | 'rejected'): Promise<FriendRequest> => {
     const user = await supabase.auth.getUser();
-    const session = await supabase.auth.getSession();
-    const accessToken = session.data.session?.access_token || '';
     
-    // 检查是否有错误获取用户信息
+    // 处理会话缺失错误
     if (user.error) {
+      if (user.error.message === 'Auth session missing!' || user.error.name === 'AuthSessionMissingError') {
+        throw new Error('用户会话不存在，请重新登录');
+      }
       throw new Error('User not authenticated');
     }
     
-    const userId = user.data?.user?.id;
-
+    const session = await supabase.auth.getSession();
+    const accessToken = session.data.session?.access_token || '';
+    
+    const userId = user.data.user?.id;
     if (!userId) {
       throw new Error('User not authenticated');
     }
@@ -569,7 +629,7 @@ export const chatService = {
 
       // 获取接收者的资料，用于通知内容
       const receiverProfileResponse = await fetch(
-        `${process.env.NEXT_PUBLIC_SUPABASE_URL}/rest/v1/profiles?select=display_name&id=eq.${userId}`,
+        `${process.env.NEXT_PUBLIC_SUPABASE_URL}/rest/v1/profiles?select=display_name&id=eq.${updatedRequest.receiver_id}`,
         {
           headers: {
             'Content-Type': 'application/json',
@@ -679,7 +739,15 @@ export const chatService = {
       // 获取当前认证用户
       const user = await supabase.auth.getUser();
       
-      if (user.error || !user.data.user?.id) {
+      // 处理会话缺失错误
+      if (user.error) {
+        if (user.error.message === 'Auth session missing!' || user.error.name === 'AuthSessionMissingError') {
+          return []; // 返回空数组而不是抛出错误
+        }
+        throw new Error('User not authenticated');
+      }
+      
+      if (!user.data.user?.id) {
         throw new Error('User not authenticated');
       }
       
@@ -772,8 +840,16 @@ export const chatService = {
       // 获取当前认证用户，检查是否有错误
       const user = await supabase.auth.getUser();
       
-      // 检查认证错误
+      // 处理会话缺失错误
       if (user.error) {
+        if (user.error.message === 'Auth session missing!' || user.error.name === 'AuthSessionMissingError') {
+          throw new Error('用户会话不存在，请重新登录');
+        }
+        throw new Error('User not authenticated');
+      }
+      
+      // 检查认证错误
+      if (!user.data.user?.id) {
         throw new Error('User not authenticated');
       }
       
@@ -1998,7 +2074,7 @@ export const chatService = {
 
     let query = supabase
       .from('profiles')
-      .select('id, username, display_name, email, avatar_url, created_at, bio, online_status, last_seen');
+      .select('id, username, display_name, email, avatar_url, created_at, bio, online_status, last_seen, user_city, user_province, user_country');
 
     // 根据格式判断是 UUID 还是用户名
     if (identifier.length === 36 && identifier.includes('-')) {

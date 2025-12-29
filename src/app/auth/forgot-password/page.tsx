@@ -59,7 +59,7 @@ const ForgotPasswordPage: React.FC = () => {
       // 根据环境设置不同的redirect URL
       const redirectUrl = process.env.NODE_ENV === 'production' 
         ? `https://vercel.suchuanli.me/auth/reset-password?token=${resetToken}` 
-        : `${window.location.origin}/auth/reset-password?token=${resetToken}`;
+        : `http://localhost:3000/auth/reset-password?token=${resetToken}`;
       const { error } = await supabase.auth.resetPasswordForEmail(data.email, {
         redirectTo: redirectUrl
       });

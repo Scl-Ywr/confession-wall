@@ -22,6 +22,7 @@ interface FormErrors {
 export default function EditConfessionPage() {
   const router = useRouter();
   const params = useParams<{ id: string }>();
+  const confessionId = params?.id;
   const [formData, setFormData] = useState<ConfessionFormData>({
     content: '',
     is_anonymous: true,
@@ -32,12 +33,16 @@ export default function EditConfessionPage() {
   const [error, setError] = useState<string | null>(null);
   const [formErrors, setFormErrors] = useState<FormErrors>({});
 
-  // 获取表白详情数据
   useEffect(() => {
     const fetchConfession = async () => {
+      if (!confessionId) {
+        setError('无效的表白ID');
+        setLoading(false);
+        return;
+      }
       try {
         setLoading(true);
-        const confession = await getConfessionById(params.id);
+        const confession = await getConfessionById(confessionId);
         if (confession) {
           setFormData({
             content: confession.content || '',
@@ -54,13 +59,11 @@ export default function EditConfessionPage() {
     };
 
     fetchConfession();
-  }, [params.id]);
+  }, [confessionId]);
 
-  // 验证表单
   const validateForm = (): boolean => {
     const errors: FormErrors = {};
     
-    // 验证表白内容
     const contentValidation = validateConfessionContent(formData.content);
     if (!contentValidation.isValid) {
       errors.content = contentValidation.message;
@@ -70,11 +73,9 @@ export default function EditConfessionPage() {
     return Object.keys(errors).length === 0;
   };
 
-  // 处理表单变化
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
     const { name, type } = e.target;
     
-    // 使用类型守卫安全访问checked属性
     let fieldValue: string | boolean;
     if (e.target instanceof HTMLInputElement && type === 'checkbox') {
       fieldValue = e.target.checked;
@@ -87,7 +88,6 @@ export default function EditConfessionPage() {
       [name]: fieldValue
     }));
     
-    // 实时验证
     if (name === 'content') {
       const validation = validateConfessionContent(fieldValue as string);
       setFormErrors(prev => ({
@@ -97,12 +97,10 @@ export default function EditConfessionPage() {
     }
   };
 
-  // 处理表单提交
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
-    // 表单验证
-    if (!validateForm()) {
+    if (!confessionId || !validateForm()) {
       return;
     }
 
@@ -110,15 +108,12 @@ export default function EditConfessionPage() {
       setSubmitting(true);
       setError(null);
       
-      // 更新表白
-      await updateConfession(params.id, formData);
+      await updateConfession(confessionId, formData);
       
-      // 显示成功通知
       showSuccess('表白更新成功');
       
-      // 3秒后跳转到详情页面
       setTimeout(() => {
-        router.push(`/admin/confessions/${params.id}`);
+        router.push(`/admin/confessions/${confessionId}`);
       }, 3000);
     } catch (err) {
       const errorMessage = '更新表白失败，请重试';
@@ -143,12 +138,11 @@ export default function EditConfessionPage() {
 
   return (
     <div className="space-y-6">
-      {/* 页面标题 */}
       <div>
         <div className="flex items-center justify-between">
           <h1 className="text-3xl font-bold text-gray-900">编辑表白</h1>
           <Link
-            href={`/admin/confessions/${params.id}`}
+            href={confessionId ? `/admin/confessions/${confessionId}` : '/admin/confessions'}
             className="px-4 py-2 bg-gray-600 text-white rounded-md hover:bg-gray-700 transition-colors"
           >
             返回详情
@@ -157,21 +151,18 @@ export default function EditConfessionPage() {
         <p className="text-gray-600 mt-1">修改表白的信息</p>
       </div>
 
-      {/* 错误消息 */}
       {error && (
         <div className="bg-red-100 text-red-800 px-4 py-3 rounded-md">
           {error}
         </div>
       )}
 
-      {/* 编辑表单 */}
       <Card>
         <CardHeader>
           <CardTitle>表白信息</CardTitle>
         </CardHeader>
         <CardContent>
           <form onSubmit={handleSubmit} className="space-y-6">
-            {/* 表白内容 */}
             <div>
               <label htmlFor="content" className="block text-sm font-medium text-gray-700 mb-1">
                 表白内容 <span className="text-red-500">*</span>
@@ -190,7 +181,6 @@ export default function EditConfessionPage() {
               )}
             </div>
 
-            {/* 匿名状态 */}
             <div className="flex items-center">
               <input
                 type="checkbox"
@@ -205,7 +195,6 @@ export default function EditConfessionPage() {
               </label>
             </div>
 
-            {/* 发布状态 */}
             <div className="flex items-center">
               <input
                 type="checkbox"
@@ -220,7 +209,6 @@ export default function EditConfessionPage() {
               </label>
             </div>
 
-            {/* 操作按钮 */}
             <div className="flex space-x-4 pt-4">
               <button
                 type="submit"
@@ -237,7 +225,7 @@ export default function EditConfessionPage() {
                 )}
               </button>
               <Link
-                href={`/admin/confessions/${params.id}`}
+                href={confessionId ? `/admin/confessions/${confessionId}` : '/admin/confessions'}
                 className="px-6 py-3 bg-gray-600 text-white font-medium rounded-md hover:bg-gray-700 transition-colors"
               >
                 取消
