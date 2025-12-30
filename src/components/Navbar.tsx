@@ -8,7 +8,7 @@ import { useAuth } from '@/context/AuthContext';
 import { useTheme } from '@/theme/ThemeContext';
 import { useChat } from '@/context/ChatContext';
 import { useDeviceDetection } from '@/hooks/useDeviceDetection';
-import { HomeIcon, UserIcon, ArrowLeftOnRectangleIcon, UserPlusIcon, UsersIcon, MoonIcon, SunIcon, BellIcon, VideoCameraIcon, MusicalNoteIcon, Bars3Icon, XMarkIcon, PaintBrushIcon, HeartIcon } from '@heroicons/react/20/solid';
+import { HomeIcon, UserIcon, ArrowLeftOnRectangleIcon, UserPlusIcon, UsersIcon, MoonIcon, SunIcon, BellIcon, VideoCameraIcon, MusicalNoteIcon, XMarkIcon, PaintBrushIcon, HeartIcon } from '@heroicons/react/20/solid';
 import { MessageCircleIcon } from 'lucide-react';
 import { chatService } from '@/services/chatService';
 import { Notification } from '@/types/chat';
@@ -288,7 +288,7 @@ const Navbar = () => {
                   {showMobileMenu ? (
                     <XMarkIcon className="w-5.5 h-5.5" />
                   ) : (
-                    <Bars3Icon className="w-5.5 h-5.5" />
+                    <span className="text-lg">🍔</span>
                   )}
                 </motion.button>
               )}
@@ -405,7 +405,7 @@ const Navbar = () => {
                   >
                     <MessageCircleIcon className="w-5.5 h-5.5 text-warm-600 dark:text-warm-400" />
                     {totalUnreadCount > 0 && (
-                      <span className="absolute -top-1 -right-1 w-4.5 h-4.5 bg-accent-500 text-white text-xs font-bold rounded-full flex items-center justify-center border-2 border-white dark:border-gray-700 shadow-md">
+                      <span className="absolute -top-1 -right-1 w-4.5 h-4.5 bg-red-500 text-white text-xs font-bold rounded-full flex items-center justify-center border-2 border-white dark:border-gray-700 shadow-md">
                         {totalUnreadCount > 9 ? '9+' : totalUnreadCount}
                       </span>
                     )}

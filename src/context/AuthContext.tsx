@@ -7,8 +7,8 @@ import { useRouter } from 'next/navigation';
 import { globalMessageService } from '@/services/globalMessageService';
 
 interface AuthContextType extends AuthState {
-  register: (email: string, password: string) => Promise<void>;
-  login: (email: string, password: string, isAdminLogin?: boolean) => Promise<void>;
+  register: (email: string, password: string, captchaToken?: string) => Promise<void>;
+  login: (email: string, password: string, captchaToken?: string, isAdminLogin?: boolean) => Promise<void>;
   logout: (options?: { redirect?: boolean; redirectUrl?: string }) => Promise<void>;
   updateUser: (user: User | null) => void;
   resendVerificationEmail: (email: string) => Promise<void>;
@@ -573,7 +573,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     };
   }, []);
 
-  const register = async (email: string, password: string) => {
+  const register = async (email: string, password: string, captchaToken?: string) => {
     setState(prev => ({ ...prev, loading: true, error: null }));
     try {
       // 1. 检查邮箱是否存在及验证状态
@@ -624,7 +624,8 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
           emailRedirectTo: redirectUrl,
           data: {
             signup_timestamp: new Date().toISOString()
-          }
+          },
+          captchaToken
         },
       });
 
@@ -691,7 +692,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     }
   };
 
-  const login = async (email: string, password: string, isAdminLogin = false) => {
+  const login = async (email: string, password: string, captchaToken?: string, isAdminLogin = false) => {
     setState(prev => ({ ...prev, loading: true, error: null }));
     
     try {
@@ -717,6 +718,9 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       const { data, error: signInError } = await supabase.auth.signInWithPassword({
         email,
         password,
+        options: {
+          captchaToken
+        }
       });
 
       if (signInError) {

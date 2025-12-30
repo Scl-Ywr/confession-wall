@@ -1,6 +1,6 @@
 'use client';
 
-import React from 'react';
+import React, { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/context/AuthContext';
 import MeteorShower from '@/components/MeteorShower';
@@ -9,6 +9,8 @@ import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import SocialLoginButtons from '@/components/SocialLoginButtons';
+import Turnstile from '@/components/Turnstile';
+
 
 // 创建登录表单的Zod schema
 const loginSchema = z.object({
@@ -30,6 +32,8 @@ const LoginPage: React.FC = () => {
     isLocked: false 
   });
   const [emailInput, setEmailInput] = React.useState<string>('');
+  const [captchaToken, setCaptchaToken] = useState<string | null>(null);
+  const [captchaError, setCaptchaError] = useState<string | null>(null);
 
   // 组件挂载时清除错误信息
   React.useEffect(() => {
@@ -92,9 +96,38 @@ const LoginPage: React.FC = () => {
     },
   });
 
+  // 添加事件监听器处理Turnstile回调
+  React.useEffect(() => {
+    // 监听Turnstile成功事件
+    const handleTurnstileSuccess = (event: CustomEvent) => {
+      setCaptchaToken(event.detail.token);
+      setCaptchaError(null);
+    };
+    
+    // 监听Turnstile错误事件
+    const handleTurnstileError = () => {
+      setCaptchaError('验证失败，请重试');
+    };
+    
+    window.addEventListener('login-turnstile-success', handleTurnstileSuccess as EventListener);
+    window.addEventListener('login-turnstile-error', handleTurnstileError as EventListener);
+    
+    return () => {
+      // 清理事件监听器
+      window.removeEventListener('login-turnstile-success', handleTurnstileSuccess as EventListener);
+      window.removeEventListener('login-turnstile-error', handleTurnstileError as EventListener);
+    };
+  }, []);
+
   const onSubmit = async (data: LoginFormData) => {
+    // 验证captchaToken
+    if (!captchaToken) {
+      setCaptchaError('请完成验证');
+      return;
+    }
+    
     try {
-      await login(data.email, data.password);
+      await login(data.email, data.password, captchaToken);
       router.push('/');
     } catch{
       // 错误已在AuthContext中处理
@@ -205,6 +238,24 @@ const LoginPage: React.FC = () => {
               )}
             </div>
           )}
+
+          {/* Cloudflare Turnstile 验证 */}
+          <div className="mt-4">
+            {/* Cloudflare Turnstile 验证 */}
+            <Turnstile
+              siteKey="0x4AAAAAACJs5Xb_A9aqqv_u"
+              onSuccess={(token) => {
+                setCaptchaToken(token);
+                setCaptchaError(null);
+              }}
+              onError={() => {
+                setCaptchaError('验证失败，请重试');
+              }}
+            />
+            {captchaError && (
+              <p className="mt-1 text-sm text-red-500 pl-1 animate-slide-up">{captchaError}</p>
+            )}
+          </div>
 
           {error && (
             <div className="p-4 bg-red-50/80 border border-red-200 rounded-xl backdrop-blur-sm animate-fade-in dark:bg-red-900/30 dark:border-red-800">

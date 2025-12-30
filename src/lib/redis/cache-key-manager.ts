@@ -191,20 +191,47 @@ export class CacheKeyManager {
       const id = `${confessionId}:${page}:${limit}:${status}`;
       return this.generateCacheKey(CacheModule.COMMENT, CacheResource.LIST, id, version);
     },
-    
+
     /**
      * 评论详情缓存键
      */
     detail: (commentId: string, version?: string): string => {
       return this.generateCacheKey(CacheModule.COMMENT, CacheResource.DETAIL, commentId, version);
     },
-    
+
     /**
      * 评论统计缓存键
      */
     count: (confessionId: string, version?: string): string => {
       const id = `count:${confessionId}`;
       return this.generateCacheKey(CacheModule.COMMENT, CacheResource.MAIN, id, version);
+    }
+  };
+
+  /**
+   * 生成搜索相关缓存键
+   */
+  public search = {
+    /**
+     * 搜索结果缓存键
+     */
+    result: (keyword: string, searchType: 'content' | 'username', page: number = 1, limit: number = 10, version?: string): string => {
+      const normalizedKeyword = keyword.toLowerCase().trim().replace(/\s+/g, '_');
+      return this.generateCacheKey(CacheModule.SEARCH, CacheResource.RESULT, `${searchType}:${normalizedKeyword}:${page}:${limit}`, version);
+    },
+
+    /**
+     * 热门搜索词缓存键
+     */
+    trending: (limit: number = 10, version?: string): string =>
+      this.generateCacheKey(CacheModule.SEARCH, CacheResource.LIST, `trending:${limit}`, version),
+
+    /**
+     * 搜索建议缓存键
+     */
+    suggestion: (prefix: string, limit: number = 5, version?: string): string => {
+      const normalizedPrefix = prefix.toLowerCase().trim();
+      return this.generateCacheKey(CacheModule.SEARCH, CacheResource.SUGGESTION, `${normalizedPrefix}:${limit}`, version);
     }
   };
 
@@ -354,6 +381,7 @@ export const {
   confession,
   chat,
   comment,
+  search,
   statistics,
   lock,
   getNullCacheKey,

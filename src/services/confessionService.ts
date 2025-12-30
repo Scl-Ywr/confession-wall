@@ -4,6 +4,7 @@ import { Confession, ConfessionFormData, Comment, CommentFormData, ConfessionIma
 import { profileService } from './profileService';
 import { cacheKeyManager } from '@/lib/redis/cache-key-manager';
 import { cacheManager } from '@/lib/redis/cache-manager';
+import { MODULE_EXPIRY } from '@/lib/redis/cache.config';
 export const confessionService = {
   // 获取表白列表
   getConfessions: async (page: number = 1, limit: number = 10): Promise<Confession[]> => {
@@ -988,45 +989,62 @@ export const confessionService = {
   // 获取表白的评论
   getComments: async (confessionId: string, page: number = 1, limit: number = 20): Promise<Comment[]> => {
     const offset = (page - 1) * limit;
-    
-    const { data: comments, error: commentsError } = await supabase
-      .from('comments')
-      .select('*')
-      .eq('confession_id', confessionId)
-      .order('created_at', { ascending: true })
-      .range(offset, offset + limit - 1);
+    const cacheKey = cacheKeyManager.comment.list(confessionId, page, limit);
 
-    if (commentsError) {
-      throw commentsError;
-    }
+    // 使用缓存管理器的 getOrSetCache 方法（参考 getConfessions 的实现）
+    const comments = await cacheManager.getOrSetCache<Comment[]>(
+      cacheKey,
+      async () => {
+        // 数据源函数：仅在缓存失效时执行
+        const { data: commentsData, error: commentsError } = await supabase
+          .from('comments')
+          .select('*')
+          .eq('confession_id', confessionId)
+          .order('created_at', { ascending: true })
+          .range(offset, offset + limit - 1);
 
-    const userIds = comments
-      .filter(comment => comment.user_id)
-      .map(comment => comment.user_id)
-      .filter((id): id is string => !!id);
-    
-    const profilesMap: Record<string, Profile> = {};
-    if (userIds.length > 0) {
-      const { data: profiles, error: profilesError } = await supabase
-        .from('profiles')
-        .select('*')
-        .in('id', userIds);
-      
-      if (profilesError) {
-        throw profilesError;
-      }
-      
-      profiles?.forEach(profile => {
-        profilesMap[profile.id] = profile;
-      });
-    }
+        if (commentsError) {
+          throw commentsError;
+        }
 
-    const commentsWithProfiles = comments.map(comment => ({
-      ...comment,
-      profile: comment.user_id ? profilesMap[comment.user_id] : undefined
-    })) as Comment[];
+        if (!commentsData || commentsData.length === 0) {
+          return [];
+        }
 
-    return commentsWithProfiles;
+        // 批量获取用户资料（消除 N+1 查询）
+        const uniqueUserIds = [...new Set(
+          commentsData
+            .map(c => c.user_id)
+            .filter((id): id is string => !!id)
+        )];
+
+        if (uniqueUserIds.length === 0) {
+          return commentsData as Comment[];
+        }
+
+        const { data: profiles, error: profilesError } = await supabase
+          .from('profiles')
+          .select('id, username, display_name, avatar_url')
+          .in('id', uniqueUserIds);
+
+        if (profilesError) {
+          throw profilesError;
+        }
+
+        // 构建映射并组装数据
+        const profilesMap: Record<string, Profile> = Object.fromEntries(
+          (profiles || []).map(p => [p.id, p])
+        );
+
+        return commentsData.map(comment => ({
+          ...comment,
+          profile: comment.user_id ? profilesMap[comment.user_id] : undefined
+        })) as Comment[];
+      },
+      MODULE_EXPIRY.COMMENT_LIST  // 5分钟缓存
+    );
+
+    return comments || [];
   },
 
   // 创建评论
@@ -1073,7 +1091,7 @@ export const confessionService = {
         .select('*')
         .eq('id', comment.user_id)
         .maybeSingle();
-      
+
       if (profileError) {
         // 如果找不到profile，不抛出错误，继续执行
         console.error('Error getting profile:', profileError);
@@ -1081,6 +1099,18 @@ export const confessionService = {
         profile = profileData;
       }
     }
+
+    // 4. 失效相关缓存
+    await Promise.all([
+      // 失效该表白的所有评论列表缓存（所有分页）
+      cacheManager.deleteCacheByPattern(`comment:list:${confessionId}:*`),
+      // 失效评论数量统计
+      cacheManager.deleteCache(cacheKeyManager.comment.count(confessionId)),
+      // 失效表白详情缓存（包含评论统计）
+      cacheManager.deleteCacheByPattern(`confession:detail:${confessionId}:*`),
+      // 失效表白列表缓存（评论数变化影响列表显示）
+      cacheManager.deleteCacheByPattern(`confession:list:*`)
+    ]).catch(err => console.error('Error invalidating cache:', err));
 
     return {
       ...comment,
@@ -1090,6 +1120,14 @@ export const confessionService = {
 
   // 删除评论
   deleteComment: async (id: string): Promise<void> => {
+    // 先获取评论信息（用于失效缓存）
+    const { data: comment } = await supabase
+      .from('comments')
+      .select('confession_id')
+      .eq('id', id)
+      .single();
+
+    // 执行删除
     const { error } = await supabase
       .from('comments')
       .delete()
@@ -1097,6 +1135,22 @@ export const confessionService = {
 
     if (error) {
       throw error;
+    }
+
+    // 失效相关缓存
+    if (comment?.confession_id) {
+      await Promise.all([
+        // 失效评论详情缓存
+        cacheManager.deleteCache(cacheKeyManager.comment.detail(id)),
+        // 失效该表白的所有评论列表缓存
+        cacheManager.deleteCacheByPattern(`comment:list:${comment.confession_id}:*`),
+        // 失效评论数量统计
+        cacheManager.deleteCache(cacheKeyManager.comment.count(comment.confession_id)),
+        // 失效表白详情缓存
+        cacheManager.deleteCacheByPattern(`confession:detail:${comment.confession_id}:*`),
+        // 失效表白列表缓存
+        cacheManager.deleteCacheByPattern(`confession:list:*`)
+      ]).catch(err => console.error('Error invalidating cache:', err));
     }
   },
 

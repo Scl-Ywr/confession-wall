@@ -110,8 +110,9 @@ const AdminLoginPage: React.FC = () => {
     setIsLoggingIn(true);
     console.log('Admin login attempt:', { email: data.email });
     try {
-      // 管理员登录，传递isAdminLogin参数
-      await login(data.email, data.password, true);
+      // 管理员登录，传递captchaToken和isAdminLogin参数
+      // 由于目前还未在admin-login页面添加captcha，所以captchaToken为undefined
+      await login(data.email, data.password, undefined, true);
       
       console.log('Admin login successful:', { email: data.email });
       // 登录成功后跳转到管理员页面

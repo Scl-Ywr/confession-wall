@@ -8,6 +8,8 @@ import { useRouter } from 'next/navigation';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
+import Turnstile from '@/components/Turnstile';
+
 
 // 创建注册表单的Zod schema
 const registerSchema = z.object({
@@ -43,6 +45,8 @@ const RegisterPage: React.FC = () => {
   const [resendError, setResendError] = useState<string | null>(null);
   const [resendLoading, setResendLoading] = useState(false);
   const [registerSuccess, setRegisterSuccess] = useState(false);
+  const [captchaToken, setCaptchaToken] = useState<string | null>(null);
+  const [captchaError, setCaptchaError] = useState<string | null>(null);
 
   // 使用react-hook-form管理注册表单
   const {
@@ -72,14 +76,23 @@ const RegisterPage: React.FC = () => {
     },
   });
 
+
   // 处理注册表单提交
   const onRegisterSubmit = async (data: RegisterFormData) => {
+    // 验证captchaToken
+    if (!captchaToken) {
+      setCaptchaError('请完成验证');
+      return;
+    }
+    
     try {
-      await registerUser(data.email, data.password);
+      await registerUser(data.email, data.password, captchaToken);
       // 注册成功后显示页面内提示，不直接跳转
       setRegisterSuccess(true);
       // 清空表单
       reset();
+      // 重置captchaToken
+      setCaptchaToken(null);
       // 3秒后隐藏成功提示
       setTimeout(() => setRegisterSuccess(false), 3000);
     } catch (err) {
@@ -194,6 +207,24 @@ const RegisterPage: React.FC = () => {
                 <p className="mt-1 text-sm text-red-500 pl-1 animate-slide-up">{registerErrors.confirmPassword.message}</p>
               )}
             </div>
+          </div>
+
+          {/* Cloudflare Turnstile 验证 */}
+          <div className="mt-4">
+            {/* Cloudflare Turnstile 验证 */}
+            <Turnstile
+              siteKey="0x4AAAAAACJs5Xb_A9aqqv_u"
+              onSuccess={(token) => {
+                setCaptchaToken(token);
+                setCaptchaError(null);
+              }}
+              onError={() => {
+                setCaptchaError('验证失败，请重试');
+              }}
+            />
+            {captchaError && (
+              <p className="mt-1 text-sm text-red-500 pl-1 animate-slide-up">{captchaError}</p>
+            )}
           </div>
 
           {/* 注册错误提示 */}

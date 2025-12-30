@@ -33,6 +33,12 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="zh-CN">
+      <head>
+        {/* Cloudflare Turnstile Script */}
+        <script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer></script>
+        {/* Resource hint for better performance */}
+        <link rel="preconnect" href="https://challenges.cloudflare.com" />
+      </head>
       <body
         className={`${geistSans.variable} ${geistMono.variable} antialiased`}
       >

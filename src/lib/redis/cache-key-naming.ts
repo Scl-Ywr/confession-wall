@@ -18,6 +18,7 @@ export enum CacheModule {
   COMMENT = 'comment',
   NOTIFICATION = 'notification',
   STATISTICS = 'statistics',
+  SEARCH = 'search',  // 新增搜索模块
   LOCK = 'lock',
   SYSTEM = 'system'
 }
@@ -35,6 +36,8 @@ export enum CacheResource {
   HIT = 'hit',
   MISS = 'miss',
   REQUEST = 'request',
+  RESULT = 'result',      // 新增：搜索结果
+  SUGGESTION = 'suggestion', // 新增：搜索建议
   MAIN = 'main'
 }
 
