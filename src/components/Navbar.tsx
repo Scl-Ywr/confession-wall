@@ -28,7 +28,6 @@ const Navbar = () => {
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [showAlert, setShowAlert] = useState(false);
   const [showMobileMenu, setShowMobileMenu] = useState(false);
-  const [showConfirmModal, setShowConfirmModal] = useState(false);
   const [showMobileNotifications, setShowMobileNotifications] = useState(false);
   const [targetUrl, setTargetUrl] = useState('');
   const [showBrowserModal, setShowBrowserModal] = useState(false);
@@ -166,22 +165,10 @@ const Navbar = () => {
     setShowAlert(false);
   };
 
-  // 处理视频/音乐按钮点击，显示确认弹窗
+  // 处理视频/音乐按钮点击，直接打开浏览器模态框
   const handleMediaButtonClick = (url: string) => {
     setTargetUrl(url);
-    setShowConfirmModal(true);
-  };
-
-  // 处理确认跳转
-  const handleConfirmRedirect = () => {
-    setShowConfirmModal(false);
     setShowBrowserModal(true);
-  };
-
-  // 处理取消跳转
-  const handleCancelRedirect = () => {
-    setShowConfirmModal(false);
-    setTargetUrl('');
   };
 
   // 处理关闭浏览器模态窗口
@@ -374,7 +361,7 @@ const Navbar = () => {
                     className="flex items-center justify-center w-11 h-11 sm:w-13 sm:h-13 rounded-full transition-all duration-300 transform hover:scale-110 backdrop-blur-sm shadow-sm hover:shadow-md"
                     style={{ backgroundColor: 'var(--color-background)', color: 'var(--color-text)' }}
                     aria-label="视频"
-                    onClick={() => handleMediaButtonClick('https://alist.suchuanli.me:1234')}
+                    onClick={() => handleMediaButtonClick('https://alist.suchuanli.dpdns.org')}
                   >
                     <VideoCameraIcon className="w-5.5 h-5.5 sm:w-6.5 sm:h-6.5" />
                   </button>
@@ -383,7 +370,7 @@ const Navbar = () => {
                     className="flex items-center justify-center w-11 h-11 sm:w-13 sm:h-13 rounded-full transition-all duration-300 transform hover:scale-110 backdrop-blur-sm shadow-sm hover:shadow-md"
                     style={{ backgroundColor: 'var(--color-background)', color: 'var(--color-text)' }}
                     aria-label="音乐"
-                    onClick={() => handleMediaButtonClick('https://solara.suchuanli.me:2340')}
+                    onClick={() => handleMediaButtonClick('https://solara.christmas.qzz.io')}
                   >
                     <MusicalNoteIcon className="w-5.5 h-5.5 sm:w-6.5 sm:h-6.5" />
                   </button>
@@ -467,26 +454,28 @@ const Navbar = () => {
               animate={{ x: 0 }}
               exit={{ x: '100%' }}
               transition={{ type: 'spring', damping: 25, stiffness: 200 }}
-              className="fixed top-0 right-0 h-full w-80 max-w-[85vw] bg-white dark:bg-gray-800 shadow-2xl z-50 overflow-y-auto"
+              className="fixed top-0 right-0 h-full w-80 max-w-[85vw] bg-gradient-to-br from-white via-gray-50 to-gray-100 dark:from-gray-900 dark:via-gray-800 dark:to-gray-700 shadow-2xl z-50 overflow-y-auto"
             >
               <div className="p-6">
                 <div className="flex items-center justify-between mb-8">
-                  <h2 className="text-2xl font-bold gradient-text">菜单</h2>
+                  <h2 className="text-2xl font-bold bg-gradient-to-r from-orange-500 to-red-500 bg-clip-text text-transparent">菜单</h2>
                   <button
                     onClick={() => setShowMobileMenu(false)}
-                    className="p-2 rounded-full hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+                    className="p-2 rounded-full bg-white/80 hover:bg-gray-100 dark:bg-gray-700/80 dark:hover:bg-gray-600 transition-all duration-300 shadow-sm hover:shadow-md"
                   >
                     <XMarkIcon className="w-6 h-6 text-gray-600 dark:text-gray-300" />
                   </button>
                 </div>
                 
-                <div className="space-y-4">
+                <div className="space-y-2">
                   <Link
                     href="/"
                     onClick={() => setShowMobileMenu(false)}
-                    className="flex items-center gap-4 p-4 rounded-xl hover:bg-warm-50 dark:hover:bg-warm-900/20 transition-all duration-300"
+                    className="flex items-center gap-4 p-4 rounded-2xl hover:bg-gradient-to-r from-orange-50 to-red-50 dark:hover:bg-gradient-to-r from-orange-900/20 to-red-900/20 transition-all duration-300 transform hover:-translate-x-1 shadow-sm hover:shadow-md"
                   >
-                    <HomeIcon className="w-6 h-6 text-warm-600 dark:text-warm-400" />
+                    <div className="w-10 h-10 rounded-full bg-gradient-to-r from-orange-500 to-red-500 flex items-center justify-center text-white shadow-md">
+                      <HomeIcon className="w-5 h-5" />
+                    </div>
                     <span className="text-lg font-medium text-gray-800 dark:text-white">首页</span>
                   </Link>
                   
@@ -495,14 +484,16 @@ const Navbar = () => {
                       toggleNotifications();
                       setShowMobileMenu(false);
                     }}
-                    className="flex items-center justify-between w-full p-4 rounded-xl hover:bg-warm-50 dark:hover:bg-warm-900/20 transition-all duration-300"
+                    className="flex items-center justify-between w-full p-4 rounded-2xl hover:bg-gradient-to-r from-orange-50 to-red-50 dark:hover:bg-gradient-to-r from-orange-900/20 to-red-900/20 transition-all duration-300 transform hover:-translate-x-1 shadow-sm hover:shadow-md"
                   >
                     <div className="flex items-center gap-4">
-                      <BellIcon className="w-6 h-6 text-warm-600 dark:text-warm-400" />
+                      <div className="w-10 h-10 rounded-full bg-gradient-to-r from-orange-500 to-red-500 flex items-center justify-center text-white shadow-md">
+                        <BellIcon className="w-5 h-5" />
+                      </div>
                       <span className="text-lg font-medium text-gray-800 dark:text-white">通知</span>
                     </div>
                     {unreadCount > 0 && (
-                      <span className="bg-red-500 text-white text-xs px-2 py-0.5 rounded-full">
+                      <span className="bg-red-500 text-white text-xs px-3 py-1 rounded-full font-bold shadow-md">
                         {unreadCount}
                       </span>
                     )}
@@ -513,33 +504,39 @@ const Navbar = () => {
                       setShowThemeSwitcher(!showThemeSwitcher);
                       setShowMobileMenu(false);
                     }}
-                    className="flex items-center justify-between w-full p-4 rounded-xl hover:bg-warm-50 dark:hover:bg-warm-900/20 transition-all duration-300"
+                    className="flex items-center justify-between w-full p-4 rounded-2xl hover:bg-gradient-to-r from-orange-50 to-red-50 dark:hover:bg-gradient-to-r from-orange-900/20 to-red-900/20 transition-all duration-300 transform hover:-translate-x-1 shadow-sm hover:shadow-md"
                   >
                     <div className="flex items-center gap-4">
-                      <PaintBrushIcon className="w-6 h-6 text-warm-600 dark:text-warm-400" />
+                      <div className="w-10 h-10 rounded-full bg-gradient-to-r from-orange-500 to-red-500 flex items-center justify-center text-white shadow-md">
+                        <PaintBrushIcon className="w-5 h-5" />
+                      </div>
                       <span className="text-lg font-medium text-gray-800 dark:text-white">主题设置</span>
                     </div>
                   </button>
                   
                   <button
                     onClick={() => {
-                      handleMediaButtonClick('https://alist.suchuanli.me:1234');
+                      handleMediaButtonClick('https://alist.suchuanli.dpdns.org');
                       setShowMobileMenu(false);
                     }}
-                    className="flex items-center gap-4 p-4 rounded-xl hover:bg-warm-50 dark:hover:bg-warm-900/20 transition-all duration-300"
+                    className="flex items-center gap-4 p-4 rounded-2xl hover:bg-gradient-to-r from-orange-50 to-red-50 dark:hover:bg-gradient-to-r from-orange-900/20 to-red-900/20 transition-all duration-300 transform hover:-translate-x-1 shadow-sm hover:shadow-md"
                   >
-                    <VideoCameraIcon className="w-6 h-6 text-warm-600 dark:text-warm-400" />
+                    <div className="w-10 h-10 rounded-full bg-gradient-to-r from-orange-500 to-red-500 flex items-center justify-center text-white shadow-md">
+                      <VideoCameraIcon className="w-5 h-5" />
+                    </div>
                     <span className="text-lg font-medium text-gray-800 dark:text-white">视频</span>
                   </button>
                   
                   <button
                     onClick={() => {
-                      handleMediaButtonClick('https://solara.suchuanli.me:2340');
+                      handleMediaButtonClick('https://solara.christmas.qzz.io');
                       setShowMobileMenu(false);
                     }}
-                    className="flex items-center gap-4 p-4 rounded-xl hover:bg-warm-50 dark:hover:bg-warm-900/20 transition-all duration-300"
+                    className="flex items-center gap-4 p-4 rounded-2xl hover:bg-gradient-to-r from-orange-50 to-red-50 dark:hover:bg-gradient-to-r from-orange-900/20 to-red-900/20 transition-all duration-300 transform hover:-translate-x-1 shadow-sm hover:shadow-md"
                   >
-                    <MusicalNoteIcon className="w-6 h-6 text-warm-600 dark:text-warm-400" />
+                    <div className="w-10 h-10 rounded-full bg-gradient-to-r from-orange-500 to-red-500 flex items-center justify-center text-white shadow-md">
+                      <MusicalNoteIcon className="w-5 h-5" />
+                    </div>
                     <span className="text-lg font-medium text-gray-800 dark:text-white">音乐</span>
                   </button>
                   
@@ -548,15 +545,17 @@ const Navbar = () => {
                       <Link
                         href="/chat"
                         onClick={() => setShowMobileMenu(false)}
-                        className="flex items-center justify-between w-full p-4 rounded-xl transition-all duration-300"
+                        className="flex items-center justify-between w-full p-4 rounded-2xl transition-all duration-300 hover:bg-gradient-to-r from-orange-50 to-red-50 dark:hover:bg-gradient-to-r from-orange-900/20 to-red-900/20 transform hover:-translate-x-1 shadow-sm hover:shadow-md"
                         style={{ color: 'var(--color-text)' }}
                       >
                         <div className="flex items-center gap-4">
-                          <MessageCircleIcon className="w-6 h-6" />
+                          <div className="w-10 h-10 rounded-full bg-gradient-to-r from-orange-500 to-red-500 flex items-center justify-center text-white shadow-md">
+                            <MessageCircleIcon className="w-5 h-5" />
+                          </div>
                           <span className="text-lg font-medium">聊天</span>
                         </div>
                         {totalUnreadCount > 0 && (
-                          <span className="w-6 h-6 text-white text-xs font-bold rounded-full flex items-center justify-center" style={{ backgroundColor: 'var(--color-accent)' }}>
+                          <span className="w-7 h-7 text-white text-xs font-bold rounded-full flex items-center justify-center shadow-md" style={{ backgroundColor: 'var(--color-accent)' }}>
                             {totalUnreadCount > 9 ? '9+' : totalUnreadCount}
                           </span>
                         )}
@@ -565,10 +564,12 @@ const Navbar = () => {
                       <Link
                         href="/profile"
                         onClick={() => setShowMobileMenu(false)}
-                        className="flex items-center gap-4 p-4 rounded-xl transition-all duration-300"
+                        className="flex items-center gap-4 p-4 rounded-2xl transition-all duration-300 hover:bg-gradient-to-r from-orange-50 to-red-50 dark:hover:bg-gradient-to-r from-orange-900/20 to-red-900/20 transform hover:-translate-x-1 shadow-sm hover:shadow-md"
                         style={{ color: 'var(--color-text)' }}
                       >
-                        <UserIcon className="w-6 h-6" />
+                        <div className="w-10 h-10 rounded-full bg-gradient-to-r from-orange-500 to-red-500 flex items-center justify-center text-white shadow-md">
+                          <UserIcon className="w-5 h-5" />
+                        </div>
                         <span className="text-lg font-medium">个人资料</span>
                       </Link>
                       
@@ -577,34 +578,39 @@ const Navbar = () => {
                           handleLogout();
                           setShowMobileMenu(false);
                         }}
-                        className="flex items-center gap-4 p-4 rounded-xl transition-all duration-300 w-full"
+                        className="flex items-center gap-4 p-4 rounded-2xl transition-all duration-300 w-full hover:bg-gradient-to-r from-orange-50 to-red-50 dark:hover:bg-gradient-to-r from-orange-900/20 to-red-900/20 transform hover:-translate-x-1 shadow-sm hover:shadow-md"
                         style={{ color: 'var(--color-text)' }}
                       >
-                        <ArrowLeftOnRectangleIcon className="w-6 h-6" />
+                        <div className="w-10 h-10 rounded-full bg-gradient-to-r from-orange-500 to-red-500 flex items-center justify-center text-white shadow-md">
+                          <ArrowLeftOnRectangleIcon className="w-5 h-5" />
+                        </div>
                         <span className="text-lg font-medium">退出登录</span>
                       </button>
                     </>
                   ) : (
-                    <>
+                    <div className="pt-4 space-y-3">
                       <Link
                         href="/auth/login"
                         onClick={() => setShowMobileMenu(false)}
-                        className="flex items-center gap-4 p-4 rounded-xl transition-all duration-300"
+                        className="flex items-center gap-4 p-4 rounded-2xl transition-all duration-300 hover:bg-gradient-to-r from-orange-50 to-red-50 dark:hover:bg-gradient-to-r from-orange-900/20 to-red-900/20 transform hover:-translate-x-1 shadow-sm hover:shadow-md"
                         style={{ color: 'var(--color-text)' }}
                       >
+                        <div className="w-10 h-10 rounded-full bg-gradient-to-r from-orange-500 to-red-500 flex items-center justify-center text-white shadow-md">
+                          <UserIcon className="w-5 h-5" />
+                        </div>
                         <span className="text-lg font-medium">登录</span>
                       </Link>
                       
                       <Link
                         href="/auth/register"
                         onClick={() => setShowMobileMenu(false)}
-                        className="flex items-center justify-center w-full p-4 rounded-xl text-white font-medium transition-all duration-300 shadow-lg"
+                        className="flex items-center justify-center w-full p-4 rounded-2xl text-white font-medium transition-all duration-300 shadow-xl shadow-orange-500/60 hover:shadow-2xl hover:shadow-orange-500/80 transform hover:scale-105"
                         style={{ background: 'var(--gradient-primary)' }}
                       >
                         <UserPlusIcon className="w-6 h-6 mr-2" />
-                        注册
+                        <span className="text-lg font-bold">注册</span>
                       </Link>
-                    </>
+                    </div>
                   )}
                 </div>
               </div>
@@ -703,29 +709,7 @@ const Navbar = () => {
         cancelText="取消"
       />
       
-      {/* IPv6支持提示弹窗 */}
-      {showConfirmModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-          <div className="bg-white dark:bg-gray-800 rounded-xl shadow-lg p-6 max-w-sm w-full">
-            <h3 className="text-xl font-semibold text-gray-900 dark:text-white mb-4">提示</h3>
-            <p className="text-gray-600 dark:text-gray-300 mb-6">当前网站只支持IPv6，您确定要继续访问吗？</p>
-            <div className="flex gap-3">
-              <button
-                onClick={handleCancelRedirect}
-                className="flex-1 py-2 px-4 bg-gray-200 hover:bg-gray-300 text-gray-800 font-medium rounded-lg transition-colors duration-200 dark:bg-gray-700 dark:hover:bg-gray-600 dark:text-gray-200"
-              >
-                取消
-              </button>
-              <button
-                onClick={handleConfirmRedirect}
-                className="flex-1 py-2 px-4 bg-gradient-to-r from-pink-400 to-pink-500 hover:from-pink-500 hover:to-pink-600 text-white font-medium rounded-lg transition-all duration-200 shadow-md hover:shadow-lg transform hover:scale-105"
-              >
-                确认
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+
       
       {/* 浏览器窗口模态框 */}
       {showBrowserModal && (
@@ -859,14 +843,7 @@ const Navbar = () => {
               className={`bg-white dark:bg-gray-800 rounded-3xl shadow-2xl overflow-hidden transition-all duration-300 ease-in-out transform ${browserModalMaximized ? 'w-full h-full' : 'w-[375px] max-w-full h-[812px]'}`}
               style={{ aspectRatio: '9/19.5' }}
             >
-              {/* 手机顶部状态栏 */}
-              <div className="bg-gray-900 text-white h-6 flex items-center justify-between px-4 text-xs">
-                <span>9:41</span>
-                <div className="flex items-center gap-1">
-                  <span>📶</span>
-                  <span>🔋</span>
-                </div>
-              </div>
+
               
               {/* 浏览器窗口标题栏 */}
               <div className="flex flex-col bg-gray-100 dark:bg-gray-700 border-b border-gray-200 dark:border-gray-600">

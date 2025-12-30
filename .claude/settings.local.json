@@ -11,7 +11,8 @@
       "Bash(taskkill:*)",
       "Bash(git log:*)",
       "Bash(start oauth-debug.html)",
-      "Bash(del \"c:\\\\Users\\\\PC\\\\Desktop\\\\confession-wall\\\\src\\\\app\\\\auth\\\\callback\\\\route.ts\")"
+      "Bash(del \"c:\\\\Users\\\\PC\\\\Desktop\\\\confession-wall\\\\src\\\\app\\\\auth\\\\callback\\\\route.ts\")",
+      "Bash(npx kill-port:*)"
     ],
     "deny": [],
     "ask": []

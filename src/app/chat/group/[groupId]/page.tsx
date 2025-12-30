@@ -3,6 +3,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useAuth } from '@/context/AuthContext';
 import { chatService } from '@/services/chatService';
+import { chatBackgroundService } from '@/services/chatBackgroundService';
 import { ChatMessage, Group, GroupMember, UserSearchResult, Profile } from '@/types/chat';
 import { getOnlineStatusInfo, isUserOnline } from '@/utils/onlineStatus';
 import Link from 'next/link';
@@ -11,7 +12,7 @@ import Navbar from '@/components/Navbar';
 import MultimediaMessage from '@/components/MultimediaMessage';
 import { showToast } from '@/utils/toast';
 import PageLoader from '@/components/PageLoader';
-import { MessageCircleIcon, UsersIcon, PlusIcon, XIcon, TrashIcon, SendIcon, Image as ImageIcon, Smile } from 'lucide-react';
+import { MessageCircleIcon, UsersIcon, PlusIcon, XIcon, TrashIcon, SendIcon, Image as ImageIcon, Smile, Palette, Upload, Clock } from 'lucide-react';
 import { supabase } from '@/lib/supabase/client';
 import VoiceRecorder from '@/components/VoiceRecorder';
 
@@ -48,6 +49,13 @@ const GroupChatPage = ({ params }: { params: Promise<{ groupId: string }> }) => 
   const [showGroupSettingsModal, setShowGroupSettingsModal] = useState(false);
   const [newGroupName, setNewGroupName] = useState<string>('');
   const [groupAvatarFile, setGroupAvatarFile] = useState<File | null>(null);
+  // 背景图片相关状态
+  const [backgroundImageUrl, setBackgroundImageUrl] = useState<string | null>(null);
+  const [showBackgroundSettings, setShowBackgroundSettings] = useState(false);
+  const [uploadingBackground, setUploadingBackground] = useState(false);
+  const [backgroundHistory, setBackgroundHistory] = useState<Array<{ id: string; image_url: string; image_name?: string; used_at: string }>>([]);
+  const [loadingHistory, setLoadingHistory] = useState(false);
+  const [showHistorySection, setShowHistorySection] = useState(false);
   const [groupAvatarPreview, setGroupAvatarPreview] = useState<string | undefined>(undefined);
   const groupAvatarInputRef = useRef<HTMLInputElement>(null);
   // 头像上传相关
@@ -74,6 +82,25 @@ const GroupChatPage = ({ params }: { params: Promise<{ groupId: string }> }) => 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   // 实时通道引用，与私聊实现一致
   const channelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
+
+  // 自动滚动到最新消息
+  const scrollToBottom = useCallback(() => {
+    if (messagesEndRef.current) {
+      messagesEndRef.current.scrollIntoView({ behavior: 'smooth', block: 'end' });
+    }
+  }, []);
+
+  // 当消息列表变化或首次加载时，自动滚动到最新消息
+  useEffect(() => {
+    if (messages.length > 0 && !loadingMessages) {
+      scrollToBottom();
+    }
+  }, [messages, loadingMessages, scrollToBottom]);
+
+  // 当组件挂载时，自动滚动到最新消息
+  useEffect(() => {
+    scrollToBottom();
+  }, [scrollToBottom]);
   
   // 确保未登录时不自动重定向，只显示登录提示
   useEffect(() => {
@@ -745,7 +772,124 @@ const GroupChatPage = ({ params }: { params: Promise<{ groupId: string }> }) => 
 
 
 
-  // 退出群聊
+  // 加载聊天背景图片
+  const loadChatBackground = useCallback(async () => {
+    if (!user?.id || !groupId) return;
+    
+    try {
+      const backgroundSetting = await chatBackgroundService.getChatBackground(
+        user.id,
+        groupId,
+        'group'
+      );
+      
+      if (backgroundSetting?.background_image_url) {
+        setBackgroundImageUrl(backgroundSetting.background_image_url);
+      }
+    } catch (error) {
+      console.error('Error loading chat background:', error);
+    }
+  }, [user?.id, groupId]);
+
+  // 获取背景图片历史记录
+  const loadBackgroundHistory = useCallback(async () => {
+    if (!user?.id) return;
+    
+    setLoadingHistory(true);
+    try {
+      const history = await chatBackgroundService.getBackgroundHistory(user.id, 10);
+      setBackgroundHistory(history);
+    } catch (error) {
+      console.error('Error loading background history:', error);
+      showToast.error('加载历史图片失败');
+    } finally {
+      setLoadingHistory(false);
+    }
+  }, [user?.id]);
+
+  // 上传并设置聊天背景图片
+  const handleBackgroundImageUpload = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (!user?.id || !groupId || uploadingBackground) return;
+    
+    const file = e.target.files?.[0];
+    if (!file) return;
+    
+    setUploadingBackground(true);
+    try {
+      const imageUrl = await chatBackgroundService.uploadBackgroundImage(file, user.id);
+      await chatBackgroundService.setChatBackground(
+        user.id,
+        groupId,
+        'group',
+        imageUrl
+      );
+      setBackgroundImageUrl(imageUrl);
+      setShowBackgroundSettings(false);
+      showToast.success('背景图片设置成功');
+      // 重新加载历史记录
+      loadBackgroundHistory();
+    } catch (error) {
+      console.error('Error uploading background image:', error);
+      showToast.error('背景图片上传失败，请重试');
+    } finally {
+      setUploadingBackground(false);
+    }
+  }, [user?.id, groupId, uploadingBackground, loadBackgroundHistory]);
+
+  // 移除聊天背景图片
+  const handleRemoveBackgroundImage = useCallback(async () => {
+    if (!user?.id || !groupId) return;
+    
+    try {
+      await chatBackgroundService.setChatBackground(
+        user.id,
+        groupId,
+        'group',
+        null
+      );
+      setBackgroundImageUrl(null);
+      setShowBackgroundSettings(false);
+      showToast.success('背景图片移除成功');
+    } catch (error) {
+      console.error('Error removing background image:', error);
+      showToast.error('移除背景图片失败，请重试');
+    }
+  }, [user?.id, groupId]);
+
+  // 使用历史背景图片
+  const handleUseHistoryImage = useCallback(async (imageUrl: string) => {
+    if (!user?.id || !groupId) return;
+    
+    try {
+      await chatBackgroundService.useBackgroundFromHistory(
+        user.id,
+        groupId,
+        'group',
+        imageUrl
+      );
+      setBackgroundImageUrl(imageUrl);
+      setShowBackgroundSettings(false);
+      showToast.success('背景图片设置成功');
+    } catch (error) {
+      console.error('Error using history background image:', error);
+      showToast.error('使用历史图片失败，请重试');
+    }
+  }, [user?.id, groupId]);
+
+  // 显示/隐藏历史图片区域
+  const toggleHistorySection = useCallback(() => {
+    setShowHistorySection(!showHistorySection);
+    if (!showHistorySection && backgroundHistory.length === 0) {
+      loadBackgroundHistory();
+    }
+  }, [showHistorySection, backgroundHistory.length, loadBackgroundHistory]);
+
+  // 组件挂载时加载聊天背景图片
+  useEffect(() => {
+    loadChatBackground();
+  }, [loadChatBackground]);
+
+  // 离开群聊
   const handleLeaveGroup = async () => {
     try {
       await chatService.leaveGroup(groupId);
@@ -1104,49 +1248,49 @@ const GroupChatPage = ({ params }: { params: Promise<{ groupId: string }> }) => 
           {/* 群聊头部 */}
           <div className="p-4 border-b border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800">
             <div className="flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <Link href="/chat" className="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors">
-                  <XIcon className="h-5 w-5 text-gray-600 dark:text-gray-300" />
-                </Link>
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-full overflow-hidden border-2 border-white dark:border-gray-700 shadow-sm">
-                    {group.avatar_url ? (
-                      <Image
-                        src={group.avatar_url}
-                        alt={group.name}
-                        width={40}
-                        height={40}
-                        className="object-cover w-full h-full"
-                      />
-                    ) : (
-                      <div className="w-full h-full bg-gradient-to-br from-purple-200 to-pink-300 dark:from-purple-700 dark:to-pink-800 flex items-center justify-center">
-                        <UsersIcon className="h-5 w-5 text-purple-500 dark:text-purple-400" />
-                      </div>
-                    )}
-                  </div>
-                  <div>
-                    <h2 className="text-xl font-bold text-gray-800 dark:text-white">
-                      {group.name}
-                    </h2>
-                    <div className="flex items-center gap-2 text-sm">
-                      <p className="text-gray-500 dark:text-gray-400">
-                        {groupMembers.length} 位成员
-                      </p>
-                      {/* 在线成员数量 */}
-                      <p className="flex items-center gap-1 text-green-500 dark:text-green-400">
-                        <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse"></span>
-                        {groupMembers.filter(member => {
-                          if (!member.user_profile) return false;
-                          
-                          const { online_status, last_seen } = member.user_profile;
-                          // 直接使用isUserOnline函数判断是否在线，简化逻辑
-                          return isUserOnline(online_status, last_seen);
-                        }).length} 人在线
-                      </p>
+              <div className="flex items-center gap-3 flex-shrink-0">
+              <Link href="/chat" className="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors flex-shrink-0">
+                <XIcon className="h-5 w-5 text-gray-600 dark:text-gray-300" />
+              </Link>
+              <div className="flex items-center gap-3 flex-shrink-0">
+                <div className="w-10 h-10 rounded-full overflow-hidden border-2 border-white dark:border-gray-700 shadow-sm flex-shrink-0">
+                  {group.avatar_url ? (
+                    <Image
+                      src={group.avatar_url}
+                      alt={group.name}
+                      width={40}
+                      height={40}
+                      className="object-cover w-full h-full"
+                    />
+                  ) : (
+                    <div className="w-full h-full bg-gradient-to-br from-purple-200 to-pink-300 dark:from-purple-700 dark:to-pink-800 flex items-center justify-center">
+                      <UsersIcon className="h-5 w-5 text-purple-500 dark:text-purple-400" />
                     </div>
+                  )}
+                </div>
+                <div className="flex-shrink-0 min-w-0">
+                  <h2 className="text-xl font-bold text-gray-800 dark:text-white truncate">
+                    {group.name}
+                  </h2>
+                  <div className="flex items-center gap-2 text-sm">
+                    <p className="text-gray-500 dark:text-gray-400 truncate">
+                      {groupMembers.length} 位成员
+                    </p>
+                    {/* 在线成员数量 */}
+                    <p className="flex items-center gap-1 text-green-500 dark:text-green-400 truncate">
+                      <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse"></span>
+                      {groupMembers.filter(member => {
+                        if (!member.user_profile) return false;
+                        
+                        const { online_status, last_seen } = member.user_profile;
+                        // 直接使用isUserOnline函数判断是否在线，简化逻辑
+                        return isUserOnline(online_status, last_seen);
+                      }).length} 人在线
+                    </p>
                   </div>
                 </div>
               </div>
+            </div>
               <div className="flex gap-2">
                 {/* 查看群成员按钮 */}
                 <button
@@ -1156,6 +1300,16 @@ const GroupChatPage = ({ params }: { params: Promise<{ groupId: string }> }) => 
                 >
                   <UsersIcon className="h-5 w-5 text-gray-600 dark:text-gray-300" />
                 </button>
+                
+                {/* 背景设置按钮 */}
+                <button
+                  onClick={() => setShowBackgroundSettings(!showBackgroundSettings)}
+                  className="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+                  aria-label="聊天背景"
+                >
+                  <Palette className="h-5 w-5 text-gray-600 dark:text-gray-300" />
+                </button>
+                
                 {/* 管理员设置按钮 */}
                 {(currentUserRole === 'owner' || currentUserRole === 'admin') && (
                   <button
@@ -1221,7 +1375,17 @@ const GroupChatPage = ({ params }: { params: Promise<{ groupId: string }> }) => 
           </div>
 
           {/* 消息列表 */}
-          <div className="h-[calc(100vh-280px)] sm:h-[calc(100vh-250px)] overflow-y-auto p-4 bg-gray-50 dark:bg-gray-900" onScroll={handleScroll}>
+          <div 
+            className="h-[calc(100vh-280px)] sm:h-[calc(100vh-250px)] overflow-y-auto p-4 relative" 
+            onScroll={handleScroll}
+            style={{
+              backgroundImage: backgroundImageUrl ? `url(${backgroundImageUrl})` : undefined,
+              backgroundSize: 'cover',
+              backgroundPosition: 'center',
+              backgroundRepeat: 'no-repeat',
+              backgroundColor: 'var(--bg-color, #f9fafb)',
+            }}
+          >
             {loadingMessages ? (
               <div className="flex justify-center items-center py-8">
                 <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary-500"></div>
@@ -1749,7 +1913,7 @@ const GroupChatPage = ({ params }: { params: Promise<{ groupId: string }> }) => 
 
       {/* 退出群聊确认 */}
       {showLeaveConfirm && (
-        <div className="fixed inset-0 bg-gradient-to-br from-orange-500 to-red-500 opacity-50 backdrop-blur-sm flex items-center justify-center z-50">
+        <div className="fixed inset-0 bg-gradient-to-br from-orange-500 to-red-500 opacity-100 backdrop-blur-sm flex items-center justify-center z-50">
           <div className="bg-white dark:bg-gray-800 rounded-2xl p-6 max-w-sm w-full mx-4 shadow-xl">
             <div className="text-center mb-4">
               <div className="text-4xl mb-2">⚠️</div>
@@ -1780,7 +1944,7 @@ const GroupChatPage = ({ params }: { params: Promise<{ groupId: string }> }) => 
 
       {/* 删除群聊确认 */}
       {showDeleteGroupConfirm && (
-        <div className="fixed inset-0 bg-gradient-to-br from-orange-500 to-red-500 opacity-50 backdrop-blur-sm flex items-center justify-center z-50">
+        <div className="fixed inset-0 bg-gradient-to-br from-orange-500 to-red-500 opacity-100 backdrop-blur-sm flex items-center justify-center z-50">
           <div className="bg-white dark:bg-gray-800 rounded-2xl p-6 max-w-sm w-full mx-4 shadow-xl">
             <div className="text-center mb-4">
               <div className="text-4xl mb-2">⚠️</div>
@@ -1811,7 +1975,7 @@ const GroupChatPage = ({ params }: { params: Promise<{ groupId: string }> }) => 
       
       {/* 删除消息确认 */}
       {showDeleteMessageConfirm && selectedMessageId && (
-        <div className="fixed inset-0 bg-gradient-to-br from-orange-500 to-red-500 opacity-50 backdrop-blur-sm flex items-center justify-center z-50">
+        <div className="fixed inset-0 bg-gradient-to-br from-orange-500 to-red-500 opacity-100 backdrop-blur-sm flex items-center justify-center z-50">
           <div className="bg-white dark:bg-gray-800 rounded-2xl p-6 max-w-sm w-full mx-4 shadow-xl">
             <div className="text-center mb-4">
               <div className="text-4xl mb-2">🗑️</div>
@@ -1860,6 +2024,132 @@ const GroupChatPage = ({ params }: { params: Promise<{ groupId: string }> }) => 
               >
                 确认删除
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 背景图片设置弹窗 */}
+      {showBackgroundSettings && (
+        <div className="fixed inset-0 bg-black/70 backdrop-blur-md flex items-center justify-center z-50">
+          <div className="bg-white dark:bg-gray-800 rounded-2xl p-6 max-w-sm w-full mx-4 shadow-2xl max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-xl font-bold text-gray-900 dark:text-white">
+                聊天背景设置
+              </h3>
+              <button
+                onClick={() => setShowBackgroundSettings(false)}
+                className="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+              >
+                <XIcon className="w-5 h-5 text-gray-600 dark:text-gray-300" />
+              </button>
+            </div>
+            
+            <div className="space-y-6">
+              {/* 上传新背景图片 */}
+              <div className="bg-gray-50 dark:bg-gray-700/50 rounded-xl p-4">
+                <h4 className="text-base font-semibold text-gray-800 dark:text-gray-200 mb-3">
+                  上传新背景图片
+                </h4>
+                <div className="flex items-center gap-3">
+                  <input
+                    type="file"
+                    accept="image/*"
+                    onChange={handleBackgroundImageUpload}
+                    disabled={uploadingBackground}
+                    className="hidden"
+                    id="group-background-upload"
+                  />
+                  <label
+                    htmlFor="group-background-upload"
+                    className="flex items-center gap-2 px-5 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-all duration-300 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed shadow-md hover:shadow-lg"
+                  >
+                    <Upload className="w-5 h-5" />
+                    <span className="font-medium">{uploadingBackground ? '上传中...' : '选择图片'}</span>
+                  </label>
+                </div>
+              </div>
+              
+              {/* 历史图片按钮 */}
+              <div className="bg-gray-50 dark:bg-gray-700/50 rounded-xl p-4">
+                <button
+                  onClick={toggleHistorySection}
+                  className="w-full flex items-center justify-between px-5 py-3 bg-gray-100 dark:bg-gray-600 text-gray-800 dark:text-gray-200 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-500 transition-all duration-300 font-medium"
+                >
+                  <div className="flex items-center gap-2">
+                    <Clock className="w-5 h-5" />
+                    <span>历史图片</span>
+                  </div>
+                  <span className="text-sm text-gray-500 dark:text-gray-400">
+                    {showHistorySection ? '收起' : '展开'}
+                  </span>
+                </button>
+                
+                {/* 历史图片列表 */}
+                {showHistorySection && (
+                  <div className="mt-3">
+                    {loadingHistory ? (
+                      <div className="flex justify-center py-4">
+                        <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-primary-500"></div>
+                      </div>
+                    ) : backgroundHistory.length === 0 ? (
+                      <div className="text-center py-4 text-gray-500 dark:text-gray-400 text-sm">
+                        暂无历史图片
+                      </div>
+                    ) : (
+                      <div className="grid grid-cols-3 gap-3">
+                        {backgroundHistory.map((item) => (
+                          <div key={item.id} className="relative group cursor-pointer">
+                            <div className="aspect-square rounded-lg overflow-hidden border-2 border-gray-200 dark:border-gray-600 shadow-md hover:shadow-lg transition-all duration-300">
+                              <Image
+                                src={item.image_url}
+                                alt={item.image_name || 'Background image'}
+                                fill
+                                className="object-cover"
+                              />
+                            </div>
+                            <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity duration-300 flex items-center justify-center">
+                              <button
+                                onClick={() => handleUseHistoryImage(item.image_url)}
+                                className="px-3 py-1 bg-white text-gray-800 rounded-full text-xs font-medium hover:bg-gray-100 transition-colors"
+                              >
+                                使用
+                              </button>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+              
+              {/* 当前背景图片预览 */}
+              {backgroundImageUrl && (
+                <div className="bg-gray-50 dark:bg-gray-700/50 rounded-xl p-4">
+                  <h4 className="text-base font-semibold text-gray-800 dark:text-gray-200 mb-3">
+                    当前背景图片
+                  </h4>
+                  <div className="relative h-40 rounded-xl overflow-hidden border-2 border-gray-200 dark:border-gray-600 shadow-md">
+                    <Image
+                      src={backgroundImageUrl}
+                      alt="Current background"
+                      fill
+                      className="object-cover"
+                    />
+                  </div>
+                </div>
+              )}
+              
+              {/* 移除背景图片 */}
+              <div className="bg-gray-50 dark:bg-gray-700/50 rounded-xl p-4">
+                <button
+                  onClick={handleRemoveBackgroundImage}
+                  className="w-full px-5 py-3 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-all duration-300 font-medium shadow-md hover:shadow-lg"
+                >
+                  移除背景图片
+                </button>
+              </div>
             </div>
           </div>
         </div>

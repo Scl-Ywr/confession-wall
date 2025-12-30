@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useCallback } from 'react';
 import { useAuth } from '@/context/AuthContext';
 import MeteorShower from '@/components/MeteorShower';
 import Link from 'next/link';
@@ -47,6 +47,16 @@ const RegisterPage: React.FC = () => {
   const [registerSuccess, setRegisterSuccess] = useState(false);
   const [captchaToken, setCaptchaToken] = useState<string | null>(null);
   const [captchaError, setCaptchaError] = useState<string | null>(null);
+
+  // Captcha callbacks
+  const handleCaptchaSuccess = useCallback((token: string) => {
+    setCaptchaToken(token);
+    setCaptchaError(null);
+  }, []);
+
+  const handleCaptchaError = useCallback(() => {
+    setCaptchaError('验证失败，请重试');
+  }, []);
 
   // 使用react-hook-form管理注册表单
   const {
@@ -211,17 +221,18 @@ const RegisterPage: React.FC = () => {
 
           {/* Cloudflare Turnstile 验证 */}
           <div className="mt-4">
-            {/* Cloudflare Turnstile 验证 */}
-            <Turnstile
-              siteKey="0x4AAAAAACJs5Xb_A9aqqv_u"
-              onSuccess={(token) => {
-                setCaptchaToken(token);
-                setCaptchaError(null);
-              }}
-              onError={() => {
-                setCaptchaError('验证失败，请重试');
-              }}
-            />
+            {!process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY && (
+              <div className="p-3 rounded-xl text-sm bg-red-50/80 border border-red-200 text-red-600">
+                Turnstile site key not configured
+              </div>
+            )}
+            {process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY && (
+              <Turnstile
+                  siteKey={process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY}
+                  onSuccess={handleCaptchaSuccess}
+                  onError={handleCaptchaError}
+                />
+            )}
             {captchaError && (
               <p className="mt-1 text-sm text-red-500 pl-1 animate-slide-up">{captchaError}</p>
             )}

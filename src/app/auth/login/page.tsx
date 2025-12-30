@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/context/AuthContext';
 import MeteorShower from '@/components/MeteorShower';
@@ -39,6 +39,16 @@ const LoginPage: React.FC = () => {
   React.useEffect(() => {
     clearError();
   }, [clearError]);
+
+  // Captcha callbacks
+  const handleCaptchaSuccess = useCallback((token: string) => {
+    setCaptchaToken(token);
+    setCaptchaError(null);
+  }, []);
+
+  const handleCaptchaError = useCallback(() => {
+    setCaptchaError('验证失败，请重试');
+  }, []);
 
   // 监听邮箱输入变化，获取登录尝试信息
   React.useEffect(() => {
@@ -95,29 +105,6 @@ const LoginPage: React.FC = () => {
       password: '',
     },
   });
-
-  // 添加事件监听器处理Turnstile回调
-  React.useEffect(() => {
-    // 监听Turnstile成功事件
-    const handleTurnstileSuccess = (event: CustomEvent) => {
-      setCaptchaToken(event.detail.token);
-      setCaptchaError(null);
-    };
-    
-    // 监听Turnstile错误事件
-    const handleTurnstileError = () => {
-      setCaptchaError('验证失败，请重试');
-    };
-    
-    window.addEventListener('login-turnstile-success', handleTurnstileSuccess as EventListener);
-    window.addEventListener('login-turnstile-error', handleTurnstileError as EventListener);
-    
-    return () => {
-      // 清理事件监听器
-      window.removeEventListener('login-turnstile-success', handleTurnstileSuccess as EventListener);
-      window.removeEventListener('login-turnstile-error', handleTurnstileError as EventListener);
-    };
-  }, []);
 
   const onSubmit = async (data: LoginFormData) => {
     // 验证captchaToken
@@ -241,17 +228,18 @@ const LoginPage: React.FC = () => {
 
           {/* Cloudflare Turnstile 验证 */}
           <div className="mt-4">
-            {/* Cloudflare Turnstile 验证 */}
-            <Turnstile
-              siteKey="0x4AAAAAACJs5Xb_A9aqqv_u"
-              onSuccess={(token) => {
-                setCaptchaToken(token);
-                setCaptchaError(null);
-              }}
-              onError={() => {
-                setCaptchaError('验证失败，请重试');
-              }}
-            />
+            {!process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY && (
+              <div className="p-3 rounded-xl text-sm bg-red-50/80 border border-red-200 text-red-600">
+                Turnstile site key not configured
+              </div>
+            )}
+            {process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY && (
+              <Turnstile
+                  siteKey={process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY}
+                  onSuccess={handleCaptchaSuccess}
+                  onError={handleCaptchaError}
+                />
+            )}
             {captchaError && (
               <p className="mt-1 text-sm text-red-500 pl-1 animate-slide-up">{captchaError}</p>
             )}

@@ -87,7 +87,7 @@ const MultimediaMessage: React.FC<MultimediaMessageProps> = ({ message }) => {
                 alt="聊天图片"
                 width={600}
                 height={400}
-                className="max-w-full max-h-80 object-contain transition-transform duration-300 hover:scale-[1.02]"
+                className="w-full h-auto max-h-80 object-contain transition-transform duration-300 hover:scale-[1.02]"
                 loading="lazy"
                 priority={false}
               />

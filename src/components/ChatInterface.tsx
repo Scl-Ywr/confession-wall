@@ -2,8 +2,9 @@
 
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { chatService } from '@/services/chatService';
+import { chatBackgroundService } from '@/services/chatBackgroundService';
 import { ChatMessage, Profile } from '@/types/chat';
-import { MessageSquare, Send, Smile, Trash2, Search, Image as ImageIcon } from 'lucide-react';
+import { MessageSquare, Send, Smile, Trash2, Search, Image as ImageIcon, Upload, X, Palette, Clock } from 'lucide-react';
 import Image from 'next/image';
 import { useAuth } from '@/context/AuthContext';
 import { supabase } from '@/lib/supabase/client';
@@ -11,6 +12,7 @@ import MultimediaMessage from './MultimediaMessage';
 import LoadingSpinner from './LoadingSpinner';
 import { getOnlineStatusInfo } from '@/utils/onlineStatus';
 import VoiceRecorder from './VoiceRecorder';
+import { showToast } from '@/utils/toast';
 
 type ChatInterfaceProps = {
   otherUserId: string;
@@ -40,13 +42,180 @@ export function ChatInterface({ otherUserId, otherUserProfile: initialOtherUserP
   const [hasMore, setHasMore] = useState(true);
   const [offset, setOffset] = useState(0);
   const [connectionStatus, setConnectionStatus] = useState<'connected' | 'connecting' | 'disconnected'>('connecting');
+  
+  // 背景图片相关状态
+  const [backgroundImageUrl, setBackgroundImageUrl] = useState<string | null>(null);
+  const [showBackgroundSettings, setShowBackgroundSettings] = useState(false);
+  const [uploadingBackground, setUploadingBackground] = useState(false);
+  const [backgroundHistory, setBackgroundHistory] = useState<Array<{ id: string; image_url: string; image_name?: string; used_at: string }>>([]);
+  const [loadingHistory, setLoadingHistory] = useState(false);
+  const [showHistorySection, setShowHistorySection] = useState(false);
+  
+  // 搜索相关状态
+  const [searchActive, setSearchActive] = useState(false);
+  const [searchKeyword, setSearchKeyword] = useState('');
+  const [searchResults, setSearchResults] = useState<ChatMessage[]>([]);
+  const [searchLoading, setSearchLoading] = useState(false);
 
   // 滚动到最新消息
-  const scrollToBottom = () => {
-
+  const scrollToBottom = useCallback(() => {
     if (messagesEndRef.current) {
       messagesEndRef.current.scrollIntoView({ behavior: 'smooth', block: 'end' });
     }
+  }, []);
+
+  // 加载聊天背景图片
+  const loadChatBackground = useCallback(async () => {
+    if (!currentUserId || !otherUserId) return;
+    
+    try {
+      const backgroundSetting = await chatBackgroundService.getChatBackground(
+        currentUserId,
+        otherUserId,
+        'private'
+      );
+      
+      if (backgroundSetting?.background_image_url) {
+        setBackgroundImageUrl(backgroundSetting.background_image_url);
+      }
+    } catch (error) {
+      console.error('Error loading chat background:', error);
+    }
+  }, [currentUserId, otherUserId]);
+
+  // 获取背景图片历史记录
+  const loadBackgroundHistory = useCallback(async () => {
+    if (!currentUserId) return;
+    
+    setLoadingHistory(true);
+    try {
+      const history = await chatBackgroundService.getBackgroundHistory(currentUserId, 10);
+      setBackgroundHistory(history);
+    } catch (error) {
+      console.error('Error loading background history:', error);
+      showToast.error('加载历史图片失败');
+    } finally {
+      setLoadingHistory(false);
+    }
+  }, [currentUserId]);
+
+  // 上传并设置聊天背景图片
+  const handleBackgroundImageUpload = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (!currentUserId || !otherUserId || uploadingBackground) return;
+    
+    const file = e.target.files?.[0];
+    if (!file) return;
+    
+    setUploadingBackground(true);
+    try {
+      const imageUrl = await chatBackgroundService.uploadBackgroundImage(file, currentUserId);
+      await chatBackgroundService.setChatBackground(
+        currentUserId,
+        otherUserId,
+        'private',
+        imageUrl
+      );
+      setBackgroundImageUrl(imageUrl);
+      setShowBackgroundSettings(false);
+      showToast.success('背景图片设置成功');
+      // 重新加载历史记录
+      loadBackgroundHistory();
+    } catch (error) {
+      console.error('Error uploading background image:', error);
+      showToast.error('背景图片上传失败，请重试');
+    } finally {
+      setUploadingBackground(false);
+    }
+  }, [currentUserId, otherUserId, uploadingBackground, loadBackgroundHistory]);
+
+  // 移除聊天背景图片
+  const handleRemoveBackgroundImage = useCallback(async () => {
+    if (!currentUserId || !otherUserId) return;
+    
+    try {
+      await chatBackgroundService.setChatBackground(
+        currentUserId,
+        otherUserId,
+        'private',
+        null
+      );
+      setBackgroundImageUrl(null);
+      setShowBackgroundSettings(false);
+      showToast.success('背景图片移除成功');
+    } catch (error) {
+      console.error('Error removing background image:', error);
+      showToast.error('移除背景图片失败，请重试');
+    }
+  }, [currentUserId, otherUserId]);
+
+  // 使用历史背景图片
+  const handleUseHistoryImage = useCallback(async (imageUrl: string) => {
+    if (!currentUserId || !otherUserId) return;
+    
+    try {
+      await chatBackgroundService.useBackgroundFromHistory(
+        currentUserId,
+        otherUserId,
+        'private',
+        imageUrl
+      );
+      setBackgroundImageUrl(imageUrl);
+      setShowBackgroundSettings(false);
+      showToast.success('背景图片设置成功');
+    } catch (error) {
+      console.error('Error using history background image:', error);
+      showToast.error('使用历史图片失败，请重试');
+    }
+  }, [currentUserId, otherUserId]);
+
+  // 显示/隐藏历史图片区域
+  const toggleHistorySection = useCallback(() => {
+    setShowHistorySection(!showHistorySection);
+    if (!showHistorySection && backgroundHistory.length === 0) {
+      loadBackgroundHistory();
+    }
+  }, [showHistorySection, backgroundHistory.length, loadBackgroundHistory]);
+
+  // 搜索聊天记录
+  const searchChatMessages = useCallback(async () => {
+    if (!searchKeyword.trim() || !currentUserId || !otherUserId) return;
+    
+    setSearchLoading(true);
+    try {
+      // 搜索当前聊天的消息记录
+      const allMessages = [...messages];
+      // 简单的本地搜索实现，匹配消息内容
+      const filteredMessages = allMessages.filter(message => 
+        message.content.toLowerCase().includes(searchKeyword.toLowerCase())
+      );
+      setSearchResults(filteredMessages);
+    } catch (error) {
+      console.error('Search error:', error);
+      setSearchResults([]);
+    } finally {
+      setSearchLoading(false);
+    }
+  }, [searchKeyword, messages, currentUserId, otherUserId]);
+
+  // 组件挂载时加载聊天背景图片
+  useEffect(() => {
+    loadChatBackground();
+  }, [loadChatBackground]);
+
+  // 处理搜索按钮点击
+  const handleSearchClick = () => {
+    setSearchActive(!searchActive);
+    if (searchActive) {
+      // 关闭搜索时清空搜索状态
+      setSearchKeyword('');
+      setSearchResults([]);
+    }
+  };
+
+  // 处理搜索提交
+  const handleSearchSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    searchChatMessages();
   };
 
   // 检查好友关系状态
@@ -273,7 +442,7 @@ export function ChatInterface({ otherUserId, otherUserProfile: initialOtherUserP
       supabase.removeChannel(channel);
       channelRef.current = null;
     };
-  }, [currentUserId, otherUserId, user, otherUserProfile]);
+  }, [currentUserId, otherUserId, user, otherUserProfile, scrollToBottom]);
 
   // 初始加载消息和检查好友关系
   useEffect(() => {
@@ -336,12 +505,23 @@ export function ChatInterface({ otherUserId, otherUserProfile: initialOtherUserP
     ]);
   }, [fetchMessages, checkFriendship, currentUserId, otherUserId]);
 
-  // 当消息列表变化时，滚动到最新消息（仅在初始加载时）
+  // 当消息列表变化时，滚动到最新消息
   useEffect(() => {
-    if (loading || loadingMore) {
+    // 当消息列表加载完成或有新消息时，自动滚动到最新消息
+    if (!loading && !loadingMore && messages.length > 0) {
       scrollToBottom();
     }
-  }, [messages, loading, loadingMore]);
+  }, [messages, loading, loadingMore, scrollToBottom]);
+
+  // 当组件挂载完成后，自动滚动到最新消息
+  useEffect(() => {
+    // 使用setTimeout确保DOM已完全渲染
+    const timer = setTimeout(() => {
+      scrollToBottom();
+    }, 100);
+    
+    return () => clearTimeout(timer);
+  }, [scrollToBottom]);
 
   // 定期检查好友关系状态和对方用户资料 - 降低检查频率，减少网络请求
   useEffect(() => {
@@ -713,8 +893,8 @@ export function ChatInterface({ otherUserId, otherUserProfile: initialOtherUserP
     <div className="flex flex-col h-[calc(100vh-120px)] sm:h-[calc(100vh-100px)] bg-white dark:bg-gray-800 rounded-xl shadow-lg overflow-hidden sm:rounded-none sm:shadow-none">
       {/* 聊天头部 */}
       <div className="flex items-center justify-between p-4 border-b border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800">
-        <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-full bg-gray-200 dark:bg-gray-700 flex items-center justify-center overflow-hidden">
+        <div className="flex items-center gap-3 flex-shrink-0">
+          <div className="w-10 h-10 rounded-full bg-gray-200 dark:bg-gray-700 flex items-center justify-center overflow-hidden flex-shrink-0">
             {otherUserProfile.avatar_url ? (
               <Image
                 src={otherUserProfile.avatar_url}
@@ -731,8 +911,8 @@ export function ChatInterface({ otherUserId, otherUserProfile: initialOtherUserP
               </span>
             )}
           </div>
-          <div>
-            <div className="font-medium text-gray-800 dark:text-white">
+          <div className="flex-shrink-0 min-w-0">
+            <div className="font-medium text-gray-800 dark:text-white truncate">
               {otherUserProfile.display_name || otherUserProfile.username}
             </div>
             {friendshipStatus === 'accepted' ? (
@@ -763,10 +943,43 @@ export function ChatInterface({ otherUserId, otherUserProfile: initialOtherUserP
             )}
           </div>
         </div>
-        <div className="flex items-center gap-2">
-          <button className="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors duration-200">
+        <div className="flex items-center gap-2 ml-auto">
+          {/* 搜索输入框 */}
+          {searchActive && (
+            <form onSubmit={handleSearchSubmit} className="flex items-center gap-2 flex-grow">
+              <input
+                type="text"
+                placeholder="搜索聊天记录..."
+                className="flex-grow px-3 py-1.5 rounded-lg border border-gray-200 dark:border-gray-700 bg-white/80 dark:bg-gray-800/80 backdrop-blur-sm focus:ring-2 focus:ring-primary-500 focus:outline-none text-sm transition-all duration-300"
+                value={searchKeyword}
+                onChange={(e) => setSearchKeyword(e.target.value)}
+              />
+              <button
+                type="submit"
+                className="px-3 py-1.5 bg-primary-500 text-white rounded-lg hover:bg-primary-600 transition-colors duration-300 text-sm"
+                disabled={searchLoading}
+              >
+                {searchLoading ? '搜索中...' : '搜索'}
+              </button>
+            </form>
+          )}
+          
+          {/* 背景设置按钮 */}
+          <button 
+            className="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors duration-200"
+            onClick={() => setShowBackgroundSettings(!showBackgroundSettings)}
+          >
+            <Palette className="w-5 h-5 text-gray-600 dark:text-gray-300" />
+          </button>
+          
+          {/* 搜索按钮 */}
+          <button 
+            className="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors duration-200"
+            onClick={handleSearchClick}
+          >
             <Search className="w-5 h-5 text-gray-600 dark:text-gray-300" />
           </button>
+          
           {selectedMessages.length > 0 && (
             <button
               className="p-2 rounded-lg hover:bg-red-100 dark:hover:bg-red-900/20 transition-colors duration-200"
@@ -798,8 +1011,143 @@ export function ChatInterface({ otherUserId, otherUserProfile: initialOtherUserP
         </div>
       )}
 
+      {/* 背景图片设置弹窗 */}
+      {showBackgroundSettings && (
+        <div className="fixed inset-0 bg-black/70 backdrop-blur-md flex items-center justify-center z-50">
+          <div className="bg-white dark:bg-gray-800 rounded-2xl p-6 max-w-sm w-full mx-4 shadow-2xl max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-xl font-bold text-gray-900 dark:text-white">
+                聊天背景设置
+              </h3>
+              <button
+                onClick={() => setShowBackgroundSettings(false)}
+                className="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+              >
+                <X className="w-5 h-5 text-gray-600 dark:text-gray-300" />
+              </button>
+            </div>
+            
+            <div className="space-y-6">
+              {/* 上传新背景图片 */}
+              <div className="bg-gray-50 dark:bg-gray-700/50 rounded-xl p-4">
+                <h4 className="text-base font-semibold text-gray-800 dark:text-gray-200 mb-3">
+                  上传新背景图片
+                </h4>
+                <div className="flex items-center gap-3">
+                  <input
+                    type="file"
+                    accept="image/*"
+                    onChange={handleBackgroundImageUpload}
+                    disabled={uploadingBackground}
+                    className="hidden"
+                    id="background-upload"
+                  />
+                  <label
+                    htmlFor="background-upload"
+                    className="flex items-center gap-2 px-5 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-all duration-300 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed shadow-md hover:shadow-lg"
+                  >
+                    <Upload className="w-5 h-5" />
+                    <span className="font-medium">{uploadingBackground ? '上传中...' : '选择图片'}</span>
+                  </label>
+                </div>
+              </div>
+              
+              {/* 历史图片按钮 */}
+              <div className="bg-gray-50 dark:bg-gray-700/50 rounded-xl p-4">
+                <button
+                  onClick={toggleHistorySection}
+                  className="w-full flex items-center justify-between px-5 py-3 bg-gray-100 dark:bg-gray-600 text-gray-800 dark:text-gray-200 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-500 transition-all duration-300 font-medium"
+                >
+                  <div className="flex items-center gap-2">
+                    <Clock className="w-5 h-5" />
+                    <span>历史图片</span>
+                  </div>
+                  <span className="text-sm text-gray-500 dark:text-gray-400">
+                    {showHistorySection ? '收起' : '展开'}
+                  </span>
+                </button>
+                
+                {/* 历史图片列表 */}
+                {showHistorySection && (
+                  <div className="mt-3">
+                    {loadingHistory ? (
+                      <div className="flex justify-center py-4">
+                        <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-primary-500"></div>
+                      </div>
+                    ) : backgroundHistory.length === 0 ? (
+                      <div className="text-center py-4 text-gray-500 dark:text-gray-400 text-sm">
+                        暂无历史图片
+                      </div>
+                    ) : (
+                      <div className="grid grid-cols-3 gap-3">
+                        {backgroundHistory.map((item) => (
+                          <div key={item.id} className="relative group cursor-pointer">
+                            <div className="aspect-square rounded-lg overflow-hidden border-2 border-gray-200 dark:border-gray-600 shadow-md hover:shadow-lg transition-all duration-300">
+                              <Image
+                                src={item.image_url}
+                                alt={item.image_name || 'Background image'}
+                                fill
+                                className="object-cover"
+                              />
+                            </div>
+                            <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity duration-300 flex items-center justify-center">
+                              <button
+                                onClick={() => handleUseHistoryImage(item.image_url)}
+                                className="px-3 py-1 bg-white text-gray-800 rounded-full text-xs font-medium hover:bg-gray-100 transition-colors"
+                              >
+                                使用
+                              </button>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+              
+              {/* 当前背景图片预览 */}
+              {backgroundImageUrl && (
+                <div className="bg-gray-50 dark:bg-gray-700/50 rounded-xl p-4">
+                  <h4 className="text-base font-semibold text-gray-800 dark:text-gray-200 mb-3">
+                    当前背景图片
+                  </h4>
+                  <div className="relative h-40 rounded-xl overflow-hidden border-2 border-gray-200 dark:border-gray-600 shadow-md">
+                    <Image
+                      src={backgroundImageUrl}
+                      alt="Current background"
+                      fill
+                      className="object-cover"
+                    />
+                  </div>
+                </div>
+              )}
+              
+              {/* 移除背景图片 */}
+              <div className="bg-gray-50 dark:bg-gray-700/50 rounded-xl p-4">
+                <button
+                  onClick={handleRemoveBackgroundImage}
+                  className="w-full px-5 py-3 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-all duration-300 font-medium shadow-md hover:shadow-lg"
+                >
+                  移除背景图片
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* 消息列表 */}
-      <div className="flex-grow overflow-y-auto p-4 bg-gray-50 dark:bg-gray-900">
+      <div 
+        className="flex-grow overflow-y-auto p-4 relative"
+        style={{
+          backgroundImage: backgroundImageUrl ? `url(${backgroundImageUrl})` : undefined,
+          backgroundSize: 'cover',
+          backgroundPosition: 'center',
+          backgroundRepeat: 'no-repeat',
+          backgroundColor: 'var(--bg-color, #f9fafb)',
+        }}
+      >
         {(loading || !initialCheckDone) ? (
           <div className="flex justify-center items-center py-16">
             <LoadingSpinner 
@@ -816,7 +1164,49 @@ export function ChatInterface({ otherUserId, otherUserProfile: initialOtherUserP
             <MessageSquare className="w-12 h-12 mx-auto mb-2 opacity-50" />
             <p>还没有消息，开始聊天吧！</p>
           </div>
+        ) : searchResults.length > 0 ? (
+          // 显示搜索结果
+          <>
+            <div className="mb-4 flex items-center justify-between">
+              <h3 className="font-medium text-gray-800 dark:text-white">
+                搜索结果 ({searchResults.length})
+              </h3>
+              <button
+                onClick={() => {
+                  setSearchResults([]);
+                  setSearchKeyword('');
+                }}
+                className="text-sm text-primary-500 hover:text-primary-600"
+              >
+                清空搜索
+              </button>
+            </div>
+            
+            {/* 搜索结果列表 */}
+            {searchResults.map((message, index) => {
+              // 优化日期分隔逻辑，避免频繁创建Date对象
+              const currentDate = message.created_at.split('T')[0];
+              const prevMessage = index > 0 ? searchResults[index - 1] : null;
+              const prevDate = prevMessage ? prevMessage.created_at.split('T')[0] : null;
+              const showDateSeparator = index === 0 || prevDate !== currentDate;
+              
+              return (
+                <div key={message.id}>
+                  {/* 日期分隔栏 */}
+                  {showDateSeparator && (
+                    <div className="flex justify-center my-4">
+                      <div className="bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 text-xs px-4 py-1 rounded-full">
+                        {currentDate}
+                      </div>
+                    </div>
+                  )}
+                  {renderMessageBubble(message)}
+                </div>
+              );
+            })}
+          </>
         ) : (
+          // 显示正常消息列表
           <>
             {/* 顶部加载更多指示器 */}
             <div ref={messagesStartRef} className="flex justify-center py-4">
