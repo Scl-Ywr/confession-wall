@@ -2,52 +2,35 @@ import { createServerClient } from '@supabase/ssr';
 import { NextResponse, NextRequest } from 'next/server';
 
 export async function middleware(request: NextRequest) {
-  let supabaseResponse = NextResponse.next({
-    request,
-  });
-
+  // 使用更简单的方式实现中间件，避免复杂的cookie处理
+  const response = NextResponse.next();
+  
+  // 直接从request中获取cookies
+  const cookies = request.cookies.getAll();
+  
+  // 创建Supabase客户端，使用更简单的cookie处理
   const supabase = createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
     {
       cookies: {
         getAll() {
-          return request.cookies.getAll();
+          return cookies;
         },
-        setAll(cookiesToSet) {
-          // 不再直接修改request.cookies，只修改response的cookies
-          // 创建一个新的请求头，包含所有cookies
-          const newHeaders = new Headers(request.headers);
-          
-          // 创建一个新的Response对象
-          supabaseResponse = NextResponse.next({
-            request: new NextRequest(request.url, {
-              headers: newHeaders,
-              method: request.method,
-              body: request.body,
-              redirect: request.redirect,
-              cache: request.cache,
-              credentials: request.credentials,
-              integrity: request.integrity,
-              keepalive: request.keepalive,
-              referrer: request.referrer,
-              referrerPolicy: request.referrerPolicy,
-              signal: request.signal,
-            }),
+        setAll(newCookies) {
+          // 只在response中设置cookies，不修改request
+          newCookies.forEach(({ name, value, options }) => {
+            response.cookies.set(name, value, options);
           });
-          
-          // 在response上设置所有cookies
-          cookiesToSet.forEach(({ name, value, options }) =>
-            supabaseResponse.cookies.set(name, value, options)
-          );
         },
       },
     }
   );
-
+  
+  // 调用getUser()检查认证状态
   await supabase.auth.getUser();
-
-  return supabaseResponse;
+  
+  return response;
 }
 
 export const config = {
