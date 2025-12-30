@@ -312,10 +312,8 @@ const VerifyEmailPage: React.FC = () => {
     }
 
     try {
-      // 根据环境设置不同的redirect URL
-      const redirectUrl = process.env.NODE_ENV === 'production' 
-        ? 'https://vercel.suchuanli.me/auth/verify-email' 
-        : 'http://localhost:3000/auth/verify-email';
+      // 使用应用URL配置，不区分环境
+      const redirectUrl = `${process.env.NEXT_PUBLIC_APP_URL}/auth/verify-email`;
       
       const { error } = await supabase.auth.resend({
         type: 'signup',
