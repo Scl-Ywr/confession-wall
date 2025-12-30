@@ -42,6 +42,12 @@ const nextConfig = {
   },
   serverExternalPackages: ['ioredis', '@supabase/supabase-js'],
   productionBrowserSourceMaps: false,
+  outputFileTracingIncludes: {
+    '/': ['./node_modules/**/*.js', './node_modules/**/*.json'],
+  },
+  experimental: {
+    serverComponentsExternalPackages: ['@supabase/ssr'],
+  },
 };
 
 module.exports = nextConfig;
