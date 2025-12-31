@@ -52,7 +52,7 @@ const ResetPasswordPage: React.FC = () => {
       
       if (data && data.length > 0) {
         const tokenInfo = data[0];
-        console.log('令牌状态:', tokenInfo);
+
         
         // 更新要重置密码的邮箱
         setResetEmail(tokenInfo.email);
@@ -158,23 +158,14 @@ const ResetPasswordPage: React.FC = () => {
           const access_token = searchParams.get('access_token') || fragmentParams.get('access_token');
           const refresh_token = searchParams.get('refresh_token') || fragmentParams.get('refresh_token');
           const customToken = searchParams.get('token') || fragmentParams.get('token'); // 我们自定义的token
-          const type = searchParams.get('type') || fragmentParams.get('type');
-          
-          console.log('解析到的URL参数:', {
-            token_hash,
-            access_token,
-            refresh_token,
-            customToken,
-            type
-          });
-          
+                    
           // 优先使用我们自定义的token
           const finalToken = customToken || token_hash || access_token || refresh_token;
           
           // 检查用户当前的会话状态
           const { data: session } = await supabase.auth.getSession();
           
-          console.log('当前会话状态:', session.session ? '已登录' : '未登录');
+
           
           // 设置token和验证状态
           if (finalToken || session.session) {
@@ -271,11 +262,11 @@ const ResetPasswordPage: React.FC = () => {
       // 检查用户当前的会话状态
       const { data: session } = await supabase.auth.getSession();
       
-      console.log('开始密码重置，当前会话状态:', session.session ? '已登录' : '未登录');
+
       
       if (session.session) {
         // 情况1：用户已登录，直接更新密码
-        console.log('用户已登录，直接更新密码');
+
         
         const { error } = await supabase.auth.updateUser({
           password: data.password
@@ -286,7 +277,7 @@ const ResetPasswordPage: React.FC = () => {
         }
       } else if (token && verificationStatus === 'verified') {
         // 情况2：URL中包含token，且已验证
-        console.log('使用已验证的token进行密码重置');
+
         
         // 尝试使用Supabase的resetPasswordForEmail或其他方法进行密码重置
         // 由于我们的自定义token已经验证，我们可以直接调用updateUser
@@ -318,7 +309,7 @@ const ResetPasswordPage: React.FC = () => {
 
           if (verifyError) {
             // 如果verifyOtp失败，尝试使用邮箱和密码直接登录
-            console.log('verifyOtp失败，尝试直接登录:', verifyError.message);
+  
             
             const { error: signInError } = await supabase.auth.signInWithPassword({
               email: email,
@@ -327,7 +318,7 @@ const ResetPasswordPage: React.FC = () => {
 
             if (signInError) {
               // 如果直接登录失败，可能是密码还未更新，尝试使用updateUser
-              console.log('直接登录失败，尝试更新密码:', signInError.message);
+  
               
               // 这里可能需要使用其他方法，比如调用RPC函数直接更新密码
               const { error: updateError } = await supabase.rpc(
@@ -347,7 +338,7 @@ const ResetPasswordPage: React.FC = () => {
           });
 
           if (updateError) {
-            console.log('更新密码失败，但可能已经成功:', updateError.message);
+    
           }
         }
       } else {

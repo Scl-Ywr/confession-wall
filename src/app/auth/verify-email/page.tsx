@@ -48,13 +48,7 @@ const VerifyEmailPage: React.FC = () => {
       setErrorMessage(null);
 
       try {
-        // 1. 添加详细的调试日志
-        console.log('=== Email Verification Debug ===');
-        console.log('Current URL:', typeof window !== 'undefined' ? window.location.href : 'Server-side');
-        console.log('Search params:', searchParams ? Object.fromEntries(searchParams.entries()) : 'No search params');
-        console.log('Verification status:', verificationStatus);
-        console.log('Current timestamp:', new Date().toISOString());
-        
+        // 1. 添加详细的调试日志  
         // 2. 检查URL fragment中的参数（用于PKCE流程）
         let fragmentParams = new URLSearchParams();
         if (typeof window !== 'undefined' && window.location.hash) {

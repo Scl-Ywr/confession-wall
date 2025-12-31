@@ -5,7 +5,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { useParams } from 'next/navigation';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/Card';
 import { getRoleById, getPermissions, getRolePermissions, assignPermissionsToRole, detectPermissionConflicts } from '@/services/admin/adminService';
-import { showSuccess, showError, showWarning } from '@/lib/notification';
+import { showSuccess, showError } from '@/lib/notification';
 import { Role, Permission } from '@/services/admin/adminService';
 
 export default function RolePermissionsPage() {

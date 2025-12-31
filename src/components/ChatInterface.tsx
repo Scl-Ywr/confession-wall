@@ -912,34 +912,34 @@ export function ChatInterface({ otherUserId, otherUserProfile: initialOtherUserP
             )}
           </div>
           <div className="flex-shrink-0 min-w-0">
-            <div className="font-medium text-gray-800 dark:text-white truncate">
+            <div className="font-medium text-gray-800 dark:text-white whitespace-normal break-all">
               {otherUserProfile.display_name || otherUserProfile.username}
             </div>
             {friendshipStatus === 'accepted' ? (
-              <div className="flex flex-col">
-                <div className="flex items-center gap-1 text-sm">
+              <div className="flex flex-col gap-1">
+                <div className="flex items-center gap-1 text-sm flex-wrap">
                   {/* 在线状态判断逻辑，使用统一的在线状态函数 */}
                 {(() => {
                   const onlineStatusInfo = getOnlineStatusInfo(otherUserProfile.online_status, otherUserProfile.last_seen);
                   return (
                     <>
                       <span className={`w-2 h-2 rounded-full ${onlineStatusInfo.color}`}></span>
-                      <span className={onlineStatusInfo.textColor}>
+                      <span className={`${onlineStatusInfo.textColor} whitespace-nowrap`}>
                         {onlineStatusInfo.text}
                       </span>
                     </>
                   );
                 })()}
                 </div>
-                <div className="flex items-center gap-1 text-xs mt-1">
+                <div className="flex items-center gap-1 text-xs mt-1 flex-wrap">
                   <span className={`w-1.5 h-1.5 rounded-full ${connectionStatus === 'connected' ? 'bg-green-500' : connectionStatus === 'connecting' ? 'bg-yellow-500' : 'bg-red-500'}`}></span>
-                  <span className={connectionStatus === 'connected' ? 'text-green-500' : connectionStatus === 'connecting' ? 'text-yellow-500' : 'text-red-500'}>
+                  <span className={`${connectionStatus === 'connected' ? 'text-green-500' : connectionStatus === 'connecting' ? 'text-yellow-500' : 'text-red-500'} whitespace-nowrap`}>
                     {connectionStatus === 'connected' ? '实时连接' : connectionStatus === 'connecting' ? '连接中...' : '连接断开'}
                   </span>
                 </div>
               </div>
             ) : (
-              <div className="text-sm text-red-500">已删除好友</div>
+              <div className="text-sm text-red-500 whitespace-normal break-all">已删除好友</div>
             )}
           </div>
         </div>
@@ -1309,7 +1309,7 @@ export function ChatInterface({ otherUserId, otherUserProfile: initialOtherUserP
                         <button
                           key={index}
                           type="button"
-                          className="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors duration-200 text-xl"
+                          className="p-1 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors duration-200 text-xl flex items-center justify-center"
                           onClick={() => {
                             setNewMessage(prev => prev + emoji);
                             setShowEmojiPicker(false);

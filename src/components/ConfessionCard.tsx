@@ -15,6 +15,7 @@ import { supabase } from '@/lib/supabase/client';
 import toast from 'react-hot-toast';
 import MarkdownRenderer from './MarkdownRenderer';
 import { useQueryClient } from '@tanstack/react-query';
+import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
 interface ConfessionCardProps {
   confession: Confession;
   currentUserId?: string;
@@ -32,6 +33,8 @@ export default function ConfessionCard({
   const [isEditing, setIsEditing] = useState(false);
   const [editContent, setEditContent] = useState('');
   const [isSaving, setIsSaving] = useState(false);
+  const [showDownloadConfirm, setShowDownloadConfirm] = useState(false);
+  const [downloadMedia, setDownloadMedia] = useState<ConfessionImage | null>(null);
   const router = useRouter();
   const queryClient = useQueryClient();
 
@@ -209,7 +212,8 @@ export default function ConfessionCard({
       // Get the current session token for authentication
       const { data: { session } } = await supabase.auth.getSession();
 
-      // Check if media is locked
+
+      // Check if media is locked with other lock types first
       if (media.is_locked) {
         // For locked media, check if user is logged in first
         if (!session) {
@@ -236,9 +240,24 @@ export default function ConfessionCard({
           });
           return;
         }
-      } else {
-        // Media is not locked, proceed with download
       }
+      
+      // Show download confirmation modal for all media
+      setDownloadImageId(imageId);
+      setDownloadMedia(media);
+      setShowDownloadConfirm(true);
+    } catch (error) {
+      console.error('Error in download process:', error);
+      toast.error('下载失败，请重试', {
+        duration: 3000,
+        position: 'top-right',
+      });
+    }
+  };
+  
+  // Actual download implementation
+  const performDownload = async (imageId: string, media: ConfessionImage, session: { access_token: string } | null) => {
+    try {
       // Use the download API endpoint with proper authorization
       // Let the API handle all other validation (user lock, ownership, etc.)
       const response = await fetch(`/api/download-media?imageId=${imageId}`, {
@@ -286,12 +305,44 @@ export default function ConfessionCard({
         });
       }
     } catch (error) {
-      console.error('Error downloading media:', error);
+      console.error('Error performing download:', error);
+      throw error;
+    }
+  };
+  
+  // Handle download confirmation
+  const handleConfirmDownload = async () => {
+    if (!downloadImageId || !downloadMedia) {
+      setShowDownloadConfirm(false);
+      return;
+    }
+    
+    try {
+      // Get the current session token for authentication
+      const { data: { session } } = await supabase.auth.getSession();
+      
+      // Proceed with actual download
+      await performDownload(downloadImageId, downloadMedia, session);
+    } catch (error) {
+      console.error('Error in confirm download:', error);
       toast.error('下载失败，请重试', {
         duration: 3000,
         position: 'top-right',
       });
+    } finally {
+      // Close confirmation modal and reset state
+      setShowDownloadConfirm(false);
+      setDownloadImageId('');
+      setDownloadMedia(null);
     }
+  };
+  
+  // Handle download cancellation
+  const handleCancelDownload = () => {
+    // Close confirmation modal and reset state
+    setShowDownloadConfirm(false);
+    setDownloadImageId('');
+    setDownloadMedia(null);
   };
   
   // Handle password submission for download
@@ -802,6 +853,17 @@ export default function ConfessionCard({
         <CommentSection confessionId={confession.id} />
       </div>
       
+      {/* Download Confirmation Dialog */}
+      <ConfirmDialog
+        isOpen={showDownloadConfirm}
+        onClose={handleCancelDownload}
+        onConfirm={handleConfirmDownload}
+        title="确认下载"
+        message="此媒体为公开锁定状态，您确定要下载吗？"
+        confirmText="确认下载"
+        cancelText="取消"
+        confirmColor="green"
+      />
 
     </motion.div>
   );

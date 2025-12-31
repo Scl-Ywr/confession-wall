@@ -892,13 +892,22 @@ const GroupChatPage = ({ params }: { params: Promise<{ groupId: string }> }) => 
   // 离开群聊
   const handleLeaveGroup = async () => {
     try {
+      // 立即清理所有资源，防止页面卡死
+      // 清理通道
+      if (channelRef.current) {
+        supabase.removeChannel(channelRef.current);
+        channelRef.current = null;
+      }
+      
+      // 离开群聊
       await chatService.leaveGroup(groupId);
       setShowLeaveConfirm(false);
+      
       // 跳转到聊天列表页
       showToast.success('退出群聊成功！');
-      setTimeout(() => {
-        window.location.href = '/chat';
-      }, 1500);
+      
+      // 使用更可靠的方式跳转，避免setTimeout可能导致的问题
+      window.location.replace('/chat');
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : '退出群聊失败，请重试';
       showToast.error(errorMessage);
@@ -913,27 +922,45 @@ const GroupChatPage = ({ params }: { params: Promise<{ groupId: string }> }) => 
       setShowNotMemberPrompt(false);
     } else {
       // 用户选择删除聊天记录
+      // 立即清理所有资源，防止页面卡死
+      if (channelRef.current) {
+        supabase.removeChannel(channelRef.current);
+        channelRef.current = null;
+      }
+      
       // 跳转到聊天列表页，群聊将从列表中移除
-      window.location.href = '/chat';
+      window.location.replace('/chat');
     }
   };
 
   // 从聊天页面删除群聊
   const handleDeleteChat = () => {
+    // 立即清理所有资源，防止页面卡死
+    if (channelRef.current) {
+      supabase.removeChannel(channelRef.current);
+      channelRef.current = null;
+    }
+    
     // 跳转到聊天列表页，群聊将从列表中移除
-    window.location.href = '/chat';
+    window.location.replace('/chat');
   };
 
   // 删除群聊
   const handleDeleteGroup = async () => {
     try {
+      // 立即清理所有资源，防止页面卡死
+      if (channelRef.current) {
+        supabase.removeChannel(channelRef.current);
+        channelRef.current = null;
+      }
+      
       await chatService.deleteGroup(groupId);
       setShowDeleteGroupConfirm(false);
       // 跳转到聊天列表页
       showToast.success('群聊已删除！');
-      setTimeout(() => {
-        window.location.href = '/chat';
-      }, 1500);
+      
+      // 使用更可靠的方式跳转
+      window.location.replace('/chat');
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : '删除群聊失败，请重试';
       showToast.error(errorMessage);
@@ -1702,7 +1729,7 @@ const GroupChatPage = ({ params }: { params: Promise<{ groupId: string }> }) => 
                           <button
                             key={index}
                             type="button"
-                            className="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors duration-200 text-xl"
+                            className="p-1 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors duration-200 text-xl flex items-center justify-center"
                             onClick={() => {
                               setNewMessage(prev => prev + emoji);
                               setShowEmojiPicker(false);
@@ -2586,48 +2613,50 @@ const GroupChatPage = ({ params }: { params: Promise<{ groupId: string }> }) => 
                             )}
                           </div>
                           
-                          <div className="flex-1">
-                            <div className="flex items-center gap-2">
-                              <h4 className="font-medium text-gray-900 dark:text-white">
-                                {member.group_nickname || originalName}
-                              </h4>
-                              {member.role === 'owner' && (
-                                <span className="px-2 py-0.5 bg-yellow-100 dark:bg-yellow-900/30 text-yellow-700 dark:text-yellow-300 text-xs rounded-full">
-                                  群主
-                                </span>
-                              )}
-                              {member.role === 'admin' && (
-                                <span className="px-2 py-0.5 bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 text-xs rounded-full">
-                                  管理员
-                                </span>
-                              )}
-                              {/* 在线状态 - 使用统一的在线状态信息函数，与好友列表保持一致 */}
-                              {(() => {
-                                const profile = member.user_profile;
-                                if (!profile) {
+                          <div className="flex-1 min-w-0">
+                            <div className="flex flex-col gap-1">
+                              <div className="flex items-center gap-2 flex-wrap">
+                                <h4 className="font-medium text-gray-900 dark:text-white whitespace-normal break-all">
+                                  {member.group_nickname || originalName}
+                                </h4>
+                                {member.role === 'owner' && (
+                                  <span className="px-2 py-0.5 bg-yellow-100 dark:bg-yellow-900/30 text-yellow-700 dark:text-yellow-300 text-xs rounded-full flex-shrink-0">
+                                    群主
+                                  </span>
+                                )}
+                                {member.role === 'admin' && (
+                                  <span className="px-2 py-0.5 bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 text-xs rounded-full flex-shrink-0">
+                                    管理员
+                                  </span>
+                                )}
+                                {/* 在线状态 - 使用统一的在线状态信息函数，与好友列表保持一致 */}
+                                {(() => {
+                                  const profile = member.user_profile;
+                                  if (!profile) {
+                                    return (
+                                      <span className="flex items-center gap-1 text-gray-500 dark:text-gray-400 text-xs flex-shrink-0">
+                                        <span className="w-2 h-2 rounded-full bg-gray-500"></span>
+                                        离线
+                                      </span>
+                                    );
+                                  }
+                                  
+                                  const { online_status, last_seen } = profile;
+                                  // 使用与好友列表相同的getOnlineStatusInfo函数，确保一致性
+                                  const onlineStatusInfo = getOnlineStatusInfo(online_status, last_seen);
+                                  
                                   return (
-                                    <span className="flex items-center gap-1 text-gray-500 dark:text-gray-400 text-xs">
-                                      <span className="w-2 h-2 rounded-full bg-gray-500"></span>
-                                      离线
+                                    <span className={`flex items-center gap-1 ${onlineStatusInfo.textColor} text-xs flex-shrink-0`}>
+                                      <span className={`w-2 h-2 rounded-full ${onlineStatusInfo.color} ${onlineStatusInfo.isOnline ? 'animate-pulse' : ''}`}></span>
+                                      {onlineStatusInfo.text}
                                     </span>
                                   );
-                                }
-                                
-                                const { online_status, last_seen } = profile;
-                                // 使用与好友列表相同的getOnlineStatusInfo函数，确保一致性
-                                const onlineStatusInfo = getOnlineStatusInfo(online_status, last_seen);
-                                
-                                return (
-                                  <span className={`flex items-center gap-1 ${onlineStatusInfo.textColor} text-xs`}>
-                                    <span className={`w-2 h-2 rounded-full ${onlineStatusInfo.color} ${onlineStatusInfo.isOnline ? 'animate-pulse' : ''}`}></span>
-                                    {onlineStatusInfo.text}
-                                  </span>
-                                );
-                              })()}
+                                })()}
+                              </div>
+                              <p className="text-sm text-gray-500 dark:text-gray-400 break-all">
+                                {member.user_id}
+                              </p>
                             </div>
-                            <p className="text-sm text-gray-500 dark:text-gray-400">
-                              {member.user_id}
-                            </p>
                           </div>
                         </div>
                         

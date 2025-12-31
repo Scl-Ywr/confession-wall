@@ -60,11 +60,6 @@ const ChatListPage = () => {
     }
   }, [user]);
 
-  // 初始加载好友列表和群聊列表
-  useEffect(() => {
-    fetchFriendsAndGroups();
-  }, [user, fetchFriendsAndGroups]);
-
   // 刷新未读消息数量的辅助函数
   const refreshUnreadCounts = useCallback(async () => {
     if (!user) return;
@@ -156,6 +151,16 @@ const ChatListPage = () => {
     },
     [fetchFriendsAndGroups, refreshUnreadCounts]
   );
+
+  // 初始加载消息和检查好友关系
+  useEffect(() => {
+    const loadData = async () => {
+      await fetchFriendsAndGroups();
+      // 在获取好友和群聊列表后，立即刷新未读计数
+      await refreshUnreadCounts();
+    };
+    loadData();
+  }, [user, fetchFriendsAndGroups, refreshUnreadCounts]);
 
   // 监听未读消息变化的事件和实时订阅
   useEffect(() => {

@@ -30,9 +30,6 @@ export async function POST(request: NextRequest) {
       });
       
       allCookies.push(...parsedCookies);
-      
-      const hasFlowState = parsedCookies.some(c => c.name.includes('flow-state'));
-      const hasCodeVerifier = parsedCookies.some(c => c.name.includes('code-verifier'));
     } else {
       console.warn('[OAuth Callback API] No Cookie header found!');
     }
@@ -51,7 +48,7 @@ export async function POST(request: NextRequest) {
           getAll() {
             return allCookies;
           },
-          setAll(_cookiesToSet) {
+          setAll() {
           },
         },
       }

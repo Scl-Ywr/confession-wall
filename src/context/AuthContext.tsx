@@ -107,6 +107,14 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       return '该记录已存在，请勿重复操作';
     }
     
+    // 验证码相关错误
+    if (errorMessage.includes('captcha protection')) {
+      if (errorMessage.includes('invalid-input-response')) {
+        return '验证码错误，请重新验证';
+      }
+      return '验证码验证失败，请重试';
+    }
+    
     // 其他错误
     return error.message || '发生未知错误，请重试';
   };

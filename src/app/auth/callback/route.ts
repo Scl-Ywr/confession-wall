@@ -7,11 +7,7 @@ export async function GET(request: NextRequest) {
   const code = requestUrl.searchParams.get('code');
   const next = requestUrl.searchParams.get('next') || '/';
 
-  console.log('[Server OAuth Callback] Processing callback:', {
-    hasCode: !!code,
-    origin: requestUrl.origin,
-    next
-  });
+  
 
   if (code) {
     const cookieStore = await cookies();
@@ -37,7 +33,7 @@ export async function GET(request: NextRequest) {
       }
     );
 
-    console.log('[Server OAuth Callback] Exchanging code for session...');
+
 
     try {
       const { data, error } = await supabase.auth.exchangeCodeForSession(code);
@@ -50,11 +46,7 @@ export async function GET(request: NextRequest) {
       }
 
       if (data.session) {
-        console.log('[Server OAuth Callback] Session established:', {
-          userId: data.session.user.id,
-          email: data.session.user.email,
-          provider: data.session.user.app_metadata?.provider
-        });
+        
 
         // 重定向到首页或指定页面
         return NextResponse.redirect(`${requestUrl.origin}${next}`);

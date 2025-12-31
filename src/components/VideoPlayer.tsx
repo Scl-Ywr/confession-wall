@@ -21,28 +21,8 @@ export default function VideoPlayer({ id, videoUrl, className = '', posterUrl }:
   const { currentlyPlayingId, setCurrentlyPlayingId } = useVideoPlayerContext();
   const [isPaused, setIsPaused] = useState(true);
   const [isMuted, setIsMuted] = useState(false);
-  const [showControls, setShowControls] = useState(true); // 控制组件显示状态
   const [aspectRatio, setAspectRatio] = useState<string>('16/9'); // 视频宽高比，默认为16/9
-  
-  const controlsTimeoutRef = useRef<NodeJS.Timeout | null>(null); // 控制组件隐藏定时器
-  
   const playerRef = useRef<HTMLVideoElement | null>(null);
-
-  // 显示控制栏并设置自动隐藏定时器
-  const showControlsWithTimeout = () => {
-    // 显示控制栏
-    setShowControls(true);
-    
-    // 清除之前的定时器
-    if (controlsTimeoutRef.current) {
-      clearTimeout(controlsTimeoutRef.current);
-    }
-    
-    // 设置新的定时器，2秒后隐藏控制栏
-    controlsTimeoutRef.current = setTimeout(() => {
-      setShowControls(false);
-    }, 2000);
-  };
 
   // 监听当前播放视频变化 - 实现互斥播放
   useEffect(() => {
@@ -94,11 +74,9 @@ export default function VideoPlayer({ id, videoUrl, className = '', posterUrl }:
         muted={isMuted}
         onPlay={() => {
           setIsPaused(false);
-          showControlsWithTimeout();
         }}
         onPause={() => {
           setIsPaused(true);
-          showControlsWithTimeout();
         }}
         onLoadedMetadata={(event: React.SyntheticEvent<HTMLVideoElement>) => {
           if (event.target) {

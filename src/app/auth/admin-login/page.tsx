@@ -108,18 +108,16 @@ const AdminLoginPage: React.FC = () => {
 
   const onSubmit = async (data: LoginFormData) => {
     setIsLoggingIn(true);
-    console.log('Admin login attempt:', { email: data.email });
+
     try {
       // 管理员登录，传递captchaToken和isAdminLogin参数
       // 由于目前还未在admin-login页面添加captcha，所以captchaToken为undefined
       await login(data.email, data.password, undefined, true);
       
-      console.log('Admin login successful:', { email: data.email });
+
       // 登录成功后跳转到管理员页面
       router.push(redirectUrl);
-    } catch (err) {
-      console.error('Admin login failed:', { email: data.email, error: err instanceof Error ? err.message : 'Unknown error' });
-      
+    } catch {
       // 登录失败后，重新获取登录尝试信息
       const ipResponse = await fetch('/api/get-ip');
       const ipData = await ipResponse.json();

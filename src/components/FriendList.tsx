@@ -100,12 +100,9 @@ export function FriendList() {
           table: 'friendships',
           filter: `user_id=eq.${user.id}`
         },
-        (payload) => {
+        () => {
           // 当好友关系变化时，重新获取好友列表
           fetchFriends(true);
-          if (process.env.NODE_ENV === 'development') {
-            console.log('Friendship changed:', payload.eventType, payload.new || payload.old);
-          }
         }
       )
       .subscribe();
@@ -224,13 +221,7 @@ export function FriendList() {
             
             // 调试信息：打印在线状态判断详情
             if (process.env.NODE_ENV === 'development') {
-              console.log('Online status check:', {
-                username: friend.username,
-                displayName: friend.display_name,
-                onlineStatus: friend.online_status,
-                lastSeen: friend.last_seen,
-                ...onlineStatusInfo
-              });
+              // 在线状态检查调试信息已移除
             }
             
             return (
@@ -263,12 +254,14 @@ export function FriendList() {
                     <div className={`absolute bottom-0 right-0 w-3 h-3 rounded-full ${onlineStatusInfo.color} border-2 border-white dark:border-gray-800`}></div>
                   </div>
                   
-                  <div className="flex-grow">
-                    <div className="font-medium text-gray-800 dark:text-white flex items-center gap-2">
-                      {friend.display_name || friend.username}
-                      <span className={`text-xs ${onlineStatusInfo.textColor}`}>{onlineStatusInfo.text}</span>
+                  <div className="flex-grow min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="font-medium text-gray-800 dark:text-white whitespace-normal break-all">
+                        {friend.display_name || friend.username}
+                      </span>
+                      <span className={`text-xs ${onlineStatusInfo.textColor} flex-shrink-0`}>{onlineStatusInfo.text}</span>
                     </div>
-                    <div className="text-sm text-gray-500 dark:text-gray-400">
+                    <div className="text-sm text-gray-500 dark:text-gray-400 whitespace-normal break-all">
                       @{friend.username}
                     </div>
                   </div>

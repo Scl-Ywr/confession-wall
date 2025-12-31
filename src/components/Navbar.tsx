@@ -8,11 +8,11 @@ import { useAuth } from '@/context/AuthContext';
 import { useTheme } from '@/theme/ThemeContext';
 import { useChat } from '@/context/ChatContext';
 import { useDeviceDetection } from '@/hooks/useDeviceDetection';
-import { HomeIcon, UserIcon, ArrowLeftOnRectangleIcon, UserPlusIcon, UsersIcon, MoonIcon, SunIcon, BellIcon, VideoCameraIcon, MusicalNoteIcon, XMarkIcon, PaintBrushIcon, HeartIcon } from '@heroicons/react/20/solid';
+import { HomeIcon, UserIcon, ArrowRightOnRectangleIcon, UserPlusIcon, UsersIcon, MoonIcon, SunIcon, BellIcon, VideoCameraIcon, MusicalNoteIcon, XMarkIcon, PaintBrushIcon, HeartIcon } from '@heroicons/react/20/solid';
 import { MessageCircleIcon } from 'lucide-react';
 import { chatService } from '@/services/chatService';
 import { Notification } from '@/types/chat';
-import { useRouter } from 'next/navigation';
+import { usePathname, useRouter } from 'next/navigation';
 import Alert from './Alert';
 import { NotificationCenter } from './NotificationCenter';
 import { themes } from '@/theme/themes';
@@ -21,6 +21,7 @@ const Navbar = () => {
   const { user, logout, loading } = useAuth();
   const { theme, setTheme, isDarkMode, toggleTheme } = useTheme();
   const { totalUnreadCount } = useChat();
+  const pathname = usePathname();
   const router = useRouter();
   const { isMobile } = useDeviceDetection();
   const [isHydrated, setIsHydrated] = useState(false);
@@ -37,6 +38,9 @@ const Navbar = () => {
   const [canGoBack, setCanGoBack] = useState(false);
   const [canGoForward, setCanGoForward] = useState(false);
   const [browserType, setBrowserType] = useState<'desktop' | 'mobile'>('desktop');
+  
+  // 检查是否在聊天列表页面（/chat 或 /chat/search）
+  const isInChatListPage = pathname === '/chat' || pathname === '/chat/search';
 
   // 检测屏幕尺寸并设置浏览器类型
   const checkScreenSize = () => {
@@ -391,7 +395,7 @@ const Navbar = () => {
                     aria-label="聊天"
                   >
                     <MessageCircleIcon className="w-5.5 h-5.5 text-warm-600 dark:text-warm-400" />
-                    {totalUnreadCount > 0 && (
+                    {totalUnreadCount > 0 && !isInChatListPage && (
                       <span className="absolute -top-1 -right-1 w-4.5 h-4.5 bg-red-500 text-white text-xs font-bold rounded-full flex items-center justify-center border-2 border-white dark:border-gray-700 shadow-md">
                         {totalUnreadCount > 9 ? '9+' : totalUnreadCount}
                       </span>
@@ -411,7 +415,7 @@ const Navbar = () => {
                     aria-label="退出登录"
                   >
                     {loading ? '...' : (
-                      <ArrowLeftOnRectangleIcon className="w-5.5 h-5.5 text-warm-600 dark:text-warm-400" />
+                      <ArrowRightOnRectangleIcon className="w-5.5 h-5.5 text-warm-600 dark:text-warm-400" />
                     )}
                   </button>
                 </div>
@@ -554,7 +558,7 @@ const Navbar = () => {
                           </div>
                           <span className="text-lg font-medium">聊天</span>
                         </div>
-                        {totalUnreadCount > 0 && (
+                        {totalUnreadCount > 0 && !isInChatListPage && (
                           <span className="w-7 h-7 text-white text-xs font-bold rounded-full flex items-center justify-center shadow-md" style={{ backgroundColor: 'var(--color-accent)' }}>
                             {totalUnreadCount > 9 ? '9+' : totalUnreadCount}
                           </span>
@@ -582,7 +586,7 @@ const Navbar = () => {
                         style={{ color: 'var(--color-text)' }}
                       >
                         <div className="w-10 h-10 rounded-full bg-gradient-to-r from-orange-500 to-red-500 flex items-center justify-center text-white shadow-md">
-                          <ArrowLeftOnRectangleIcon className="w-5 h-5" />
+                          <ArrowRightOnRectangleIcon className="w-5 h-5" />
                         </div>
                         <span className="text-lg font-medium">退出登录</span>
                       </button>

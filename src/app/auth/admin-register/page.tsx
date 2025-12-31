@@ -45,7 +45,7 @@ const AdminRegisterPage: React.FC = () => {
     setIsSubmitting(true);
     setSuccessMessage(null);
     setErrorMessage(null);
-    console.log('Admin registration attempt:', { email: data.email, code: data.code });
+
 
     try {
       // 调用API注册管理员
@@ -58,13 +58,13 @@ const AdminRegisterPage: React.FC = () => {
       });
 
       const result = await response.json();
-      console.log('Admin registration API response:', { status: response.status, result });
+
 
       if (!response.ok) {
         throw new Error(result.error || '注册失败，请重试');
       }
 
-      console.log('Admin registration successful:', { email: data.email });
+
       setSuccessMessage('管理员注册成功！即将跳转到登录页面...');
       reset();
       

@@ -137,11 +137,28 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
       )
       .subscribe();
 
+    // 监听自定义事件，确保未读消息计数及时更新
+    const handlePrivateMessagesRead = () => {
+      calculateTotalUnreadCount();
+    };
+
+    const handleGroupMessagesRead = () => {
+      calculateTotalUnreadCount();
+    };
+
+    // 添加自定义事件监听器
+    window.addEventListener('privateMessagesRead', handlePrivateMessagesRead);
+    window.addEventListener('groupMessagesRead', handleGroupMessagesRead);
+
     return () => {
       // 安全移除通道
       supabase.removeChannel(privateMessagesChannel);
       supabase.removeChannel(groupMessagesChannel);
       supabase.removeChannel(groupMessageCreateChannel);
+      
+      // 移除自定义事件监听器
+      window.removeEventListener('privateMessagesRead', handlePrivateMessagesRead);
+      window.removeEventListener('groupMessagesRead', handleGroupMessagesRead);
     };
   }, [user, calculateTotalUnreadCount]);
 
