@@ -45,10 +45,9 @@ const nextConfig = {
   outputFileTracingIncludes: {
     '/': ['./node_modules/**/*.js', './node_modules/**/*.json'],
   },
-  // 解决工作区根目录检测问题
+  // 明确指定工作区根目录，解决多个锁文件导致的构建问题
   turbopack: {
-    // 设置正确的根目录
-    root: process.cwd(),
+    root: __dirname,
   },
   experimental: {
     // 移除无效的middleware配置和重复的serverComponentsExternalPackages配置
