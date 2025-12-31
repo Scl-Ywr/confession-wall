@@ -422,6 +422,149 @@ export default function CrossBrowserVideoPlayer({
     };
   }, []);
 
+  // Enhanced poster generation - works across mobile and desktop
+  useEffect(() => {
+    const video = videoRef.current;
+    if (!video) {
+      console.log('[Poster] No video ref');
+      return;
+    }
+
+    // If posterUrl is provided, use it directly
+    if (posterUrl) {
+      console.log('[Poster] Using provided posterUrl:', posterUrl);
+      video.poster = posterUrl;
+      return;
+    }
+
+    // If no posterUrl and no videoUrl, nothing to do
+    if (!videoUrl) {
+      console.log('[Poster] No videoUrl provided');
+      return;
+    }
+
+    console.log('[Poster] Starting auto-generation from video first frame');
+
+    // Generate poster from video first frame
+    // Use multiple event listeners to ensure it works across all browsers/devices
+    let posterGenerated = false;
+
+    const generatePoster = (eventName?: string) => {
+      if (posterGenerated) {
+        console.log(`[Poster] Already generated, skipping (event: ${eventName})`);
+        return;
+      }
+
+      if (!video) {
+        console.log('[Poster] Video ref lost');
+        return;
+      }
+
+      console.log(`[Poster] Attempting generation (event: ${eventName}, readyState: ${video.readyState}, dimensions: ${video.videoWidth}x${video.videoHeight})`);
+
+      try {
+        // Check if video has valid dimensions
+        if (video.videoWidth === 0 || video.videoHeight === 0) {
+          console.log('[Poster] Video dimensions not ready yet');
+          return; // Not ready yet, will try again on next event
+        }
+
+        // Seek to a specific time to ensure we have a frame (avoid black frames)
+        if (video.currentTime === 0) {
+          video.currentTime = 0.1; // Seek to 0.1s to avoid potential black first frame
+        }
+
+        // Create canvas and draw first frame
+        const canvas = document.createElement('canvas');
+        canvas.width = video.videoWidth;
+        canvas.height = video.videoHeight;
+
+        const ctx = canvas.getContext('2d');
+        if (ctx) {
+          ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+          // Convert to data URL with good quality
+          const dataUrl = canvas.toDataURL('image/jpeg', 0.85);
+
+          // Update video element's poster attribute
+          video.poster = dataUrl;
+          posterGenerated = true;
+
+          console.log('✓ [Poster] Successfully generated from video first frame');
+          console.log(`[Poster] Size: ${canvas.width}x${canvas.height}, Data URL length: ${dataUrl.length}`);
+
+          // Reset currentTime back to 0
+          video.currentTime = 0;
+        } else {
+          console.error('[Poster] Failed to get canvas 2D context');
+        }
+      } catch (error) {
+        console.error('[Poster] Error generating poster:', error);
+      }
+    };
+
+    // Try to generate poster on multiple events to maximize compatibility
+    // Different browsers/devices may trigger different events at different times
+    const events = [
+      'loadedmetadata',  // When metadata is loaded (dimensions available)
+      'loadeddata',      // When first frame is loaded
+      'canplay',         // When enough data is available to play
+      'canplaythrough',  // When video can play all the way through
+      'seeked'           // After seeking to get a frame
+    ];
+
+    const eventHandlers: { [key: string]: () => void } = {};
+
+    events.forEach(event => {
+      const handler = () => generatePoster(event);
+      eventHandlers[event] = handler;
+      video.addEventListener(event, handler);
+    });
+
+    // Force load the video to trigger events
+    if (video.readyState === 0) {
+      console.log('[Poster] Forcing video load()');
+      video.load();
+    }
+
+    // For mobile devices, especially iOS, also try after delays
+    const timeoutId1 = setTimeout(() => {
+      if (!posterGenerated) {
+        console.log('[Poster] Timeout 1s check');
+        if (video.readyState >= 2) {
+          generatePoster('timeout-1s');
+        } else {
+          console.log(`[Poster] Video not ready yet at 1s (readyState: ${video.readyState})`);
+        }
+      }
+    }, 1000);
+
+    const timeoutId2 = setTimeout(() => {
+      if (!posterGenerated) {
+        console.log('[Poster] Timeout 2s check');
+        if (video.readyState >= 1) {
+          // Even with just metadata, try to generate
+          generatePoster('timeout-2s');
+        }
+      }
+    }, 2000);
+
+    // Clean up
+    return () => {
+      clearTimeout(timeoutId1);
+      clearTimeout(timeoutId2);
+      events.forEach(event => {
+        if (eventHandlers[event]) {
+          video.removeEventListener(event, eventHandlers[event]);
+        }
+      });
+      console.log('[Poster] Cleanup');
+    };
+  }, [videoUrl, posterUrl]);
+  
+  // Use posterUrl directly, no need for generated poster state
+  const finalPosterUrl = posterUrl;
+  
   return (
     <div 
       ref={containerRef}
@@ -471,36 +614,59 @@ export default function CrossBrowserVideoPlayer({
         </div>
       )}
 
-      <video
-        ref={videoRef}
-        className="w-full h-full object-contain rounded-3xl"
-        poster={posterUrl}
-        preload="metadata"
-        autoPlay={autoPlay}
-        muted={muted}
-        loop={loop}
-        playsInline
-        webkit-playsinline="true"
-        x-webkit-airplay="allow"
-        controls={capabilities.isIOS && useNativeControls}
-        onLoadedMetadata={handleLoadedMetadata}
-        onTimeUpdate={handleTimeUpdate}
-        onPlay={handlePlay}
-        onPause={handlePause}
-        onEnded={handleEnded}
-        onSeeked={handleSeeked}
-        onVolumeChange={handleVolumeChange}
-        onError={handleError}
-        onClick={!useNativeControls ? togglePlay : undefined}
-        aria-label="视频内容"
-        style={{
-          WebkitTapHighlightColor: 'transparent'
-        }}
-      >
-        <source src={videoUrl} type="video/mp4" />
-        <source src={videoUrl.replace(/\.(mp4|mov|avi)$/i, '.webm')} type="video/webm" />
-        您的浏览器不支持视频播放。
-      </video>
+      {/* 简化的视频显示 - 直接使用视频元素的能力 */}
+      <div className="relative w-full h-full">
+        <video
+          ref={videoRef}
+          className="w-full h-full object-contain rounded-3xl"
+          poster={finalPosterUrl}
+          preload={capabilities.isMobile ? "auto" : "metadata"}
+          autoPlay={autoPlay}
+          muted={muted}
+          loop={loop}
+          playsInline
+          webkit-playsinline="true"
+          x-webkit-airplay="allow"
+          controls={capabilities.isIOS && useNativeControls}
+          onLoadedMetadata={handleLoadedMetadata}
+          onTimeUpdate={handleTimeUpdate}
+          onPlay={handlePlay}
+          onPause={handlePause}
+          onEnded={handleEnded}
+          onSeeked={handleSeeked}
+          onVolumeChange={handleVolumeChange}
+          onError={handleError}
+          onClick={!useNativeControls ? togglePlay : undefined}
+          aria-label="视频内容"
+          style={{
+            WebkitTapHighlightColor: 'transparent',
+            backgroundColor: 'black',
+            // 确保视频在暂停时能显示当前帧和poster
+            objectFit: 'contain',
+            // 移除可能影响显示的样式
+            background: 'none',
+            border: 'none',
+            outline: 'none',
+            // 确保poster正确显示
+            backgroundSize: 'contain',
+            backgroundPosition: 'center',
+            backgroundRepeat: 'no-repeat'
+          }}
+        >
+          <source src={videoUrl} type="video/mp4" />
+          <source src={videoUrl.replace(/\.(mp4|mov|avi)$/i, '.webm')} type="video/webm" />
+          您的浏览器不支持视频播放。
+        </video>
+        
+        {/* 初始加载占位符 - 只在视频未加载时显示 */}
+        {isLoading && !finalPosterUrl && (
+          <div className="absolute inset-0 bg-gradient-to-br from-gray-800 to-black z-10 flex items-center justify-center">
+            <div className="text-white/50 text-4xl">
+              🎬
+            </div>
+          </div>
+        )}
+      </div>
 
       {controls && !useNativeControls && (
         <AnimatePresence>

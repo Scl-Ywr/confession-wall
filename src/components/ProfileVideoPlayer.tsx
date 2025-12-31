@@ -15,18 +15,11 @@ export default function ProfileVideoPlayer({
   className = '' 
 }: ProfileVideoPlayerProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
-  const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [isPlaying, setIsPlaying] = useState(false);
 
-  const handleLoadedData = useCallback(() => {
-    setIsLoading(false);
-    setError(null);
-  }, []);
-
   const handleError = useCallback(() => {
     setError('视频加载失败');
-    setIsLoading(false);
   }, []);
 
   const handlePlay = useCallback(() => {
@@ -53,7 +46,7 @@ export default function ProfileVideoPlayer({
     if (!videoRef.current) return;
 
     switch (e.key) {
-      case ' ':
+      case ' ': 
       case 'k':
         e.preventDefault();
         togglePlay();
@@ -68,12 +61,6 @@ export default function ProfileVideoPlayer({
       onKeyDown={handleKeyDown}
       tabIndex={0}
     >
-      {isLoading && (
-        <div className="absolute inset-0 flex items-center justify-center bg-gray-900 z-10">
-          <div className="animate-spin rounded-full h-8 w-8 border-2 border-orange-500 border-t-transparent"></div>
-        </div>
-      )}
-
       {error && (
         <div className="absolute inset-0 flex items-center justify-center bg-red-900 z-10 text-white text-center p-4">
           <div>
@@ -83,6 +70,7 @@ export default function ProfileVideoPlayer({
         </div>
       )}
 
+      {/* 视频元素 - 优化iOS兼容性 */}
       <video
         ref={videoRef}
         className="w-full h-full object-contain"
@@ -92,26 +80,30 @@ export default function ProfileVideoPlayer({
         webkit-playsinline="true"
         x-webkit-airplay="allow"
         controls
-        onLoadedData={handleLoadedData}
+        controlsList="nodownload"
         onError={handleError}
         onPlay={handlePlay}
         onPause={handlePause}
         aria-label="视频内容"
+        crossOrigin="anonymous"
         style={{
-          WebkitTapHighlightColor: 'transparent'
+          WebkitTapHighlightColor: 'transparent',
+          backgroundColor: 'black'
         }}
       >
-        <source src={videoUrl} type="video/mp4" />
-        <source src={videoUrl.replace(/\.(mp4|mov|avi)$/i, '.webm')} type="video/webm" />
+        {/* 支持多种视频格式，确保浏览器能播放 */}
+        {videoUrl && (
+          <>
+            {/* 直接使用原视频URL，不修改扩展名 */}
+            <source src={videoUrl} type="video/mp4" />
+            <source src={videoUrl} type="video/quicktime" />
+            <source src={videoUrl} type="video/mov" />
+          </>
+        )}
         您的浏览器不支持视频播放。
       </video>
 
-      {/* 移动端点击播放优化 */}
-      <div 
-        className="absolute inset-0 sm:hidden"
-        onClick={togglePlay}
-        style={{ background: 'transparent' }}
-      />
+
     </div>
   );
 }

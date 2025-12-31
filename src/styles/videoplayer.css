@@ -28,12 +28,15 @@ video {
   -webkit-touch-callout: none;
 }
 
-/* iOS 视频全屏优化 */
-video::-webkit-media-controls {
+/* iOS 视频全屏优化 - 仅应用于自定义视频播放器 */
+/* 避免影响ProfileVideoPlayer等简单视频播放器 */
+.custom-video-player video::-webkit-media-controls,
+.video-player-card video::-webkit-media-controls {
   display: none !important;
 }
 
-video::-webkit-media-controls-enclosure {
+.custom-video-player video::-webkit-media-controls-enclosure,
+.video-player-card video::-webkit-media-controls-enclosure {
   display: none !important;
 }
 
