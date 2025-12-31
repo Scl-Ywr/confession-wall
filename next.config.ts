@@ -42,9 +42,6 @@ const nextConfig = {
   },
   serverExternalPackages: ['ioredis', '@supabase/supabase-js'],
   productionBrowserSourceMaps: false,
-  outputFileTracingIncludes: {
-    '/': ['./node_modules/**/*.js', './node_modules/**/*.json'],
-  },
   // 明确指定工作区根目录，解决多个锁文件导致的构建问题
   turbopack: {
     root: __dirname,
