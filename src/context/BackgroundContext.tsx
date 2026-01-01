@@ -181,18 +181,86 @@ export const BackgroundProvider = ({ children }: BackgroundProviderProps) => {
         
         // 根据设备类型设置不同的背景样式
         if (isMobileDevice) {
-          // 移动端：保持上传时的9:16比例，固定背景，完整显示
-          body.style.backgroundSize = 'contain';
-          body.style.backgroundAttachment = 'fixed';
-          body.style.backgroundPosition = currentBackgroundPosition;
-          // 确保背景色填充图片周围的空白区域
-          body.style.backgroundColor = '#1a1a1a';
+          // 移动端：创建一个全屏容器来保持图片原始比例
+          // 移除直接设置在body上的背景
+          body.style.backgroundImage = '';
+          body.style.backgroundSize = '';
+          body.style.backgroundPosition = '';
+          body.style.backgroundRepeat = '';
+          body.style.backgroundAttachment = '';
+          
+          // 创建或更新背景容器
+          let bgContainer = document.getElementById('mobile-background-container');
+          if (!bgContainer) {
+            bgContainer = document.createElement('div');
+            bgContainer.id = 'mobile-background-container';
+            bgContainer.style.position = 'fixed';
+            bgContainer.style.top = '0';
+            bgContainer.style.left = '0';
+            bgContainer.style.width = '100%';
+            bgContainer.style.height = '100%';
+            bgContainer.style.zIndex = '-1';
+            bgContainer.style.overflow = 'hidden';
+            bgContainer.style.backgroundColor = '#1a1a1a';
+            document.body.appendChild(bgContainer);
+          }
+          
+          // 设置背景图片
+          bgContainer.style.backgroundImage = `url('${currentBackgroundImage}')`;
+          bgContainer.style.backgroundPosition = currentBackgroundPosition;
+          bgContainer.style.backgroundRepeat = 'no-repeat';
+          
+          // 智能缩放策略：如果图片太窄，适当放大以填充屏幕
+          // 创建临时图片对象来检测实际尺寸
+          const img = new Image();
+          img.onload = function() {
+            const containerAspect = window.innerWidth / window.innerHeight;
+            const imageAspect = img.width / img.height;
+            
+            console.log('图片尺寸检测:', {
+              containerWidth: window.innerWidth,
+              containerHeight: window.innerHeight,
+              containerAspect: containerAspect.toFixed(2),
+              imageWidth: img.width,
+              imageHeight: img.height,
+              imageAspect: imageAspect.toFixed(2),
+              aspectDiff: Math.abs(containerAspect - imageAspect).toFixed(2)
+            });
+            
+            // 更激进的策略：对于窄图片（宽高比小于0.7或大于1.5），直接使用cover模式
+            if (imageAspect < 0.7 || imageAspect > 1.5) {
+              console.log('检测到窄图片，使用cover模式放大图片');
+              bgContainer.style.backgroundSize = 'cover';
+            } else if (Math.abs(containerAspect - imageAspect) > 0.3) {
+              console.log('图片与屏幕比例差异大，使用cover模式填充');
+              bgContainer.style.backgroundSize = 'cover';
+            } else {
+              // 否则使用contain保持原始比例
+              console.log('使用contain模式保持比例');
+              bgContainer.style.backgroundSize = 'contain';
+            }
+          };
+          
+          // 添加错误处理
+          img.onerror = function() {
+            console.error('图片加载失败，使用默认contain模式');
+            bgContainer.style.backgroundSize = 'contain';
+          };
+          
+          img.src = currentBackgroundImage;
         } else {
           // 桌面端：保持比例，占满整个屏幕
+          body.style.backgroundImage = `url('${currentBackgroundImage}')`;
           body.style.backgroundSize = 'cover';
           body.style.backgroundAttachment = 'fixed';
           body.style.backgroundPosition = currentBackgroundPosition;
           body.style.backgroundColor = '';
+          
+          // 移除移动端背景容器（如果存在）
+          const bgContainer = document.getElementById('mobile-background-container');
+          if (bgContainer) {
+            bgContainer.remove();
+          }
         }
       } else {
         // 重置为默认背景
@@ -201,9 +269,78 @@ export const BackgroundProvider = ({ children }: BackgroundProviderProps) => {
         body.style.backgroundPosition = '';
         body.style.backgroundRepeat = '';
         body.style.backgroundAttachment = '';
+        
+        // 移除移动端背景容器（如果存在）
+        const bgContainer = document.getElementById('mobile-background-container');
+        if (bgContainer) {
+          bgContainer.remove();
+        }
       }
     }
   }, [desktopBackgroundImage, desktopBackgroundPosition, mobileBackgroundImage, mobileBackgroundPosition, isMobile]);
+  
+  // 处理移动端窗口大小变化的useEffect
+  useEffect(() => {
+    if (typeof window !== 'undefined' && isMobile) {
+      // 处理窗口大小变化的函数
+      const handleResize = () => {
+        const currentBgImage = mobileBackgroundImage;
+        if (currentBgImage) {
+          const bgContainer = document.getElementById('mobile-background-container');
+          if (bgContainer) {
+            // 重新计算背景图片缩放
+            const img = new Image();
+            img.onload = function() {
+              const containerAspect = window.innerWidth / window.innerHeight;
+              const imageAspect = img.width / img.height;
+              
+              console.log('窗口大小变化 - 图片尺寸检测:', {
+                containerWidth: window.innerWidth,
+                containerHeight: window.innerHeight,
+                containerAspect: containerAspect.toFixed(2),
+                imageWidth: img.width,
+                imageHeight: img.height,
+                imageAspect: imageAspect.toFixed(2),
+                aspectDiff: Math.abs(containerAspect - imageAspect).toFixed(2)
+              });
+              
+              // 更激进的策略：对于窄图片（宽高比小于0.7或大于1.5），直接使用cover模式
+              if (imageAspect < 0.7 || imageAspect > 1.5) {
+                console.log('窗口大小变化 - 检测到窄图片，使用cover模式放大图片');
+                bgContainer.style.backgroundSize = 'cover';
+              } else if (Math.abs(containerAspect - imageAspect) > 0.3) {
+                console.log('窗口大小变化 - 图片与屏幕比例差异大，使用cover模式填充');
+                bgContainer.style.backgroundSize = 'cover';
+              } else {
+                // 否则使用contain保持原始比例
+                console.log('窗口大小变化 - 使用contain模式保持比例');
+                bgContainer.style.backgroundSize = 'contain';
+              }
+            };
+            
+            // 添加错误处理
+            img.onerror = function() {
+              console.error('窗口大小变化 - 图片加载失败，使用默认contain模式');
+              bgContainer.style.backgroundSize = 'contain';
+            };
+            
+            img.src = currentBgImage;
+          }
+        }
+      };
+      
+      // 添加窗口大小变化监听
+      window.addEventListener('resize', handleResize);
+      
+      // 初始执行一次
+      handleResize();
+      
+      // 清理函数
+      return () => {
+        window.removeEventListener('resize', handleResize);
+      };
+    }
+  }, [mobileBackgroundImage, isMobile]);
 
   // 保存背景设置到数据库
   const saveBackgroundToDatabase = async (imageUrl: string | null, position: string, deviceType: DeviceType) => {

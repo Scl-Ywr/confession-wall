@@ -17,7 +17,6 @@ export const BackgroundCustomizer = ({ onClose }: BackgroundCustomizerProps) => 
     currentDeviceType, 
     setBackgroundImage, 
     resetBackground, 
-    setBackgroundPosition, 
     addToHistory, 
     backgroundHistory, 
     selectFromHistory, 
@@ -28,6 +27,7 @@ export const BackgroundCustomizer = ({ onClose }: BackgroundCustomizerProps) => 
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
   const [showHistory, setShowHistory] = useState<boolean>(false);
+  const [previewHistoryItem, setPreviewHistoryItem] = useState<{ id: string; url: string; position: string; createdAt: number } | null>(null);
 
   // 处理图片选择
   const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -67,28 +67,26 @@ export const BackgroundCustomizer = ({ onClose }: BackgroundCustomizerProps) => 
       } finally {
         setUploading(false);
       }
+    } else if (previewHistoryItem) {
+      setUploading(true);
+      try {
+        await selectFromHistory(previewHistoryItem, currentDeviceType);
+        onClose();
+      } catch (error) {
+        console.error('设置背景失败:', error);
+        alert('设置背景失败，请重试');
+      } finally {
+        setUploading(false);
+      }
     }
   };
 
-  // 处理从历史记录选择
-  const handleSelectFromHistory = async (item: { id: string; url: string; position: string; createdAt: number }) => {
-    if (!user) {
-      alert('请先登录再使用历史记录');
-      return;
-    }
-    
-    setUploading(true);
-    try {
-      await selectFromHistory(item, currentDeviceType);
-      onClose();
-    } catch (error) {
-      console.error('从历史记录选择失败:', error);
-      alert('从历史记录选择失败，请重试');
-    } finally {
-      setUploading(false);
-    }
+  // 处理从历史记录预览
+  const handlePreviewFromHistory = (item: { id: string; url: string; position: string; createdAt: number }) => {
+    setPreviewHistoryItem(item);
+    // 清除已选择的图片，避免混淆
+    setSelectedImage(null);
   };
-
   // 处理重置背景
   const handleResetBackground = async () => {
     if (!user) {
@@ -111,6 +109,7 @@ export const BackgroundCustomizer = ({ onClose }: BackgroundCustomizerProps) => 
   // 处理取消选择
   const handleCancelSelection = () => {
     setSelectedImage(null);
+    setPreviewHistoryItem(null);
   };
 
   return (
@@ -122,14 +121,15 @@ export const BackgroundCustomizer = ({ onClose }: BackgroundCustomizerProps) => 
       onClick={onClose}
     >
       <motion.div
-        className="glass-card rounded-2xl shadow-2xl w-full max-w-md overflow-hidden"
+        className="glass-card rounded-2xl shadow-2xl w-full max-w-md max-h-[90vh] overflow-hidden flex flex-col"
         initial={{ scale: 0.9, y: -20 }}
         animate={{ scale: 1, y: 0 }}
         exit={{ scale: 0.9, y: -20 }}
         transition={{ type: 'spring', damping: 25, stiffness: 200 }}
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="p-6">
+        {/* 固定头部 */}
+        <div className="p-6 pb-0 flex-shrink-0">
           <div className="flex items-center justify-between mb-6">
             <h2 className="text-2xl font-bold text-gray-900 dark:text-white">
               自定义背景
@@ -142,13 +142,17 @@ export const BackgroundCustomizer = ({ onClose }: BackgroundCustomizerProps) => 
               <XMarkIcon className="w-5 h-5 text-gray-900 dark:text-white" />
             </motion.button>
           </div>
+        </div>
+        
+        {/* 可滚动内容区域 */}
+        <div className="p-6 pt-0 overflow-y-auto flex-1">
 
           {/* 未登录提示 */}
           {!user && (
-            <div className="bg-yellow-50 dark:bg-yellow-900/20 border-l-4 border-yellow-500 p-4 mb-6 rounded-r-lg">
+            <div className="bg-yellow-50 dark:bg-yellow-900/20 border-l-4 border-yellow-500 p-4 mb-4 rounded-r-lg">
               <div className="flex items-start">
-                <LockClosedIcon className="h-5 w-5 text-yellow-500 mt-0.5 mr-2" />
-                <div>
+                <LockClosedIcon className="h-5 w-5 text-yellow-500 mt-0.5 mr-2 flex-shrink-0" />
+                <div className="flex-1">
                   <h3 className="text-sm font-semibold text-yellow-800 dark:text-yellow-400">需要登录</h3>
                   <p className="text-sm text-yellow-700 dark:text-yellow-300 mt-1">
                     请先登录，才能设置和保存背景图片
@@ -186,7 +190,7 @@ export const BackgroundCustomizer = ({ onClose }: BackgroundCustomizerProps) => 
                           width={100}
                           height={100}
                           className="w-full h-24 object-cover rounded-lg cursor-pointer hover:opacity-80 transition-opacity border border-gray-200 dark:border-gray-700"
-                          onClick={() => handleSelectFromHistory(item)}
+                          onClick={() => handlePreviewFromHistory(item)}
                         />
                         <button
                           onClick={(e) => {
@@ -236,10 +240,10 @@ export const BackgroundCustomizer = ({ onClose }: BackgroundCustomizerProps) => 
 
             {/* 预览区域 */}
             <div className="relative border-2 border-dashed border-gray-400 dark:border-gray-500 rounded-xl p-6 flex items-center justify-center bg-white/90 dark:bg-gray-700/90 backdrop-blur-sm">
-              {selectedImage ? (
+              {(selectedImage || previewHistoryItem) ? (
                 <div className={`relative ${currentDeviceType === 'desktop' ? 'w-full aspect-video' : 'w-full aspect-[9/16]'}`}>
                   <Image
-                    src={selectedImage}
+                    src={selectedImage || previewHistoryItem?.url || ''}
                     alt="Preview"
                     fill
                     className="object-cover rounded-lg"
@@ -254,6 +258,11 @@ export const BackgroundCustomizer = ({ onClose }: BackgroundCustomizerProps) => 
                   >
                     <XMarkIcon className="w-4 h-4 text-gray-900 dark:text-white" />
                   </motion.button>
+                  {previewHistoryItem && (
+                    <div className="absolute bottom-2 left-2 bg-black/70 text-white px-2 py-1 rounded text-xs">
+                      历史记录 - {new Date(previewHistoryItem.createdAt).toLocaleDateString()}
+                    </div>
+                  )}
                 </div>
               ) : (
                 <div className="text-center">
@@ -274,49 +283,49 @@ export const BackgroundCustomizer = ({ onClose }: BackgroundCustomizerProps) => 
                 </div>
               )}
             </div>
+          </div>
+        </div>
+        
+        {/* 操作按钮 - 固定在底部 */}
+        <div className="p-6 pt-0 border-t border-gray-200 dark:border-gray-700">
+          <div className="flex gap-3">
+            <button
+              onClick={handleResetBackground}
+              disabled={isLoading}
+              className="flex-1 px-4 py-3 bg-gradient-to-r from-red-500 to-white text-white font-semibold text-base rounded-lg transition-colors hover:bg-gradient-to-r hover:from-red-600 hover:to-gray-100 shadow-sm disabled:opacity-50 disabled:cursor-not-allowed dark:text-gray-900 dark:bg-gradient-to-r dark:from-white dark:to-red-500 dark:hover:from-gray-100 dark:hover:to-red-600"
+            >
+              重置为默认
+            </button>
             
-
-
-            {/* 操作按钮 */}
-            <div className="flex gap-3">
+            {(selectedImage || previewHistoryItem) ? (
               <button
-                onClick={handleResetBackground}
-                disabled={isLoading}
-                className="flex-1 px-4 py-3 bg-gradient-to-r from-red-500 to-white text-white font-semibold text-base rounded-lg transition-colors hover:bg-gradient-to-r hover:from-red-600 hover:to-gray-100 shadow-sm disabled:opacity-50 disabled:cursor-not-allowed dark:text-gray-900 dark:bg-gradient-to-r dark:from-white dark:to-red-500 dark:hover:from-gray-100 dark:hover:to-red-600"
+                onClick={handleSetBackground}
+                disabled={uploading || isLoading || !user}
+                className="flex-1 px-4 py-3 bg-gradient-to-r from-gray-900 to-white text-white font-semibold text-base rounded-lg transition-all duration-300 transform hover:scale-105 shadow-md disabled:opacity-50 disabled:cursor-not-allowed dark:text-gray-900 dark:bg-gradient-to-r dark:from-white dark:to-gray-900 dark:hover:from-gray-100 dark:hover:to-gray-800"
               >
-                重置为默认
-              </button>
-              
-              {selectedImage ? (
-                <button
-                  onClick={handleSetBackground}
-                  disabled={uploading || isLoading || !user}
-                  className="flex-1 px-4 py-3 bg-gradient-to-r from-gray-900 to-white text-white font-semibold text-base rounded-lg transition-all duration-300 transform hover:scale-105 shadow-md disabled:opacity-50 disabled:cursor-not-allowed dark:text-gray-900 dark:bg-gradient-to-r dark:from-white dark:to-gray-900 dark:hover:from-gray-100 dark:hover:to-gray-800"
-                >
-                  {(uploading || isLoading) ? (
-                    <div className="flex items-center justify-center gap-2">
-                      <div className="w-5 h-5 border-2 border-gray-900 dark:border-white border-t-transparent rounded-full animate-spin"></div>
-                      <span>设置中...</span>
-                    </div>
-                  ) : (
-                    <div className="flex items-center justify-center gap-2">
-                      <CheckIcon className="w-5 h-5 text-gray-900 dark:text-white" />
-                      <span>设置背景</span>
-                    </div>
-                  )}
-                </button>
-              ) : (
-                <button
-                  onClick={() => document.getElementById('image-upload')?.click()}
-                  className="flex-1 px-4 py-3 bg-gradient-to-r from-gray-900 to-white text-white font-semibold text-base rounded-lg transition-all duration-300 transform hover:scale-105 shadow-md dark:text-gray-900 dark:bg-gradient-to-r dark:from-white dark:to-gray-900 dark:hover:from-gray-100 dark:hover:to-gray-800"
-                >
+                {(uploading || isLoading) ? (
                   <div className="flex items-center justify-center gap-2">
-                    <CloudArrowUpIcon className="w-5 h-5 text-gray-900 dark:text-white" />
-                    <span>上传图片</span>
+                    <div className="w-5 h-5 border-2 border-gray-900 dark:border-white border-t-transparent rounded-full animate-spin"></div>
+                    <span>设置中...</span>
                   </div>
-                </button>
-              )}
-            </div>
+                ) : (
+                  <div className="flex items-center justify-center gap-2">
+                    <CheckIcon className="w-5 h-5 text-gray-900 dark:text-white" />
+                    <span>{previewHistoryItem ? '应用历史背景' : '设置背景'}</span>
+                  </div>
+                )}
+              </button>
+            ) : (
+              <button
+                onClick={() => document.getElementById('image-upload')?.click()}
+                className="flex-1 px-4 py-3 bg-gradient-to-r from-gray-900 to-white text-white font-semibold text-base rounded-lg transition-all duration-300 transform hover:scale-105 shadow-md dark:text-gray-900 dark:bg-gradient-to-r dark:from-white dark:to-gray-900 dark:hover:from-gray-100 dark:hover:to-gray-800"
+              >
+                <div className="flex items-center justify-center gap-2">
+                  <CloudArrowUpIcon className="w-5 h-5 text-gray-900 dark:text-white" />
+                  <span>上传图片</span>
+                </div>
+              </button>
+            )}
           </div>
         </div>
       </motion.div>
