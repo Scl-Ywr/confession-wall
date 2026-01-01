@@ -176,10 +176,24 @@ export const BackgroundProvider = ({ children }: BackgroundProviderProps) => {
       
       if (currentBackgroundImage) {
         body.style.backgroundImage = `url('${currentBackgroundImage}')`;
-        body.style.backgroundSize = 'cover';
         body.style.backgroundPosition = currentBackgroundPosition;
         body.style.backgroundRepeat = 'no-repeat';
-        body.style.backgroundAttachment = 'fixed';
+        
+        // 根据设备类型设置不同的背景样式
+        if (isMobileDevice) {
+          // 移动端：保持上传时的9:16比例，固定背景，完整显示
+          body.style.backgroundSize = 'contain';
+          body.style.backgroundAttachment = 'fixed';
+          body.style.backgroundPosition = currentBackgroundPosition;
+          // 确保背景色填充图片周围的空白区域
+          body.style.backgroundColor = '#1a1a1a';
+        } else {
+          // 桌面端：保持比例，占满整个屏幕
+          body.style.backgroundSize = 'cover';
+          body.style.backgroundAttachment = 'fixed';
+          body.style.backgroundPosition = currentBackgroundPosition;
+          body.style.backgroundColor = '';
+        }
       } else {
         // 重置为默认背景
         body.style.backgroundImage = '';

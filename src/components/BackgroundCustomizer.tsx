@@ -136,7 +136,7 @@ export const BackgroundCustomizer = ({ onClose }: BackgroundCustomizerProps) => 
             </h2>
             <motion.button
               onClick={onClose}
-              className="p-2 rounded-full bg-white/80 dark:bg-gray-700/80 hover:bg-gray-100 dark:hover:bg-gray-600 transition-colors shadow-md"
+              className="w-8 h-8 p-0 flex items-center justify-center rounded-full bg-white/80 dark:bg-gray-700/80 hover:bg-gray-100 dark:hover:bg-gray-600 transition-colors shadow-md"
               whileTap={{ scale: 0.9 }}
             >
               <XMarkIcon className="w-5 h-5 text-gray-900 dark:text-white" />
@@ -193,9 +193,9 @@ export const BackgroundCustomizer = ({ onClose }: BackgroundCustomizerProps) => 
                             e.stopPropagation();
                             removeFromHistory(item.id);
                           }}
-                          className="absolute top-1 right-1 p-1 bg-red-500 text-white rounded-full opacity-0 group-hover:opacity-100 transition-opacity hover:bg-red-600"
+                          className="absolute top-0 right-0 w-1 h-1 flex items-center justify-center bg-red-500 text-white rounded-full opacity-0 group-hover:opacity-100 transition-opacity hover:bg-red-600 z-20 transform translate-x-1/4 -translate-y-1/4"
                         >
-                          <XMarkIcon className="w-3 h-3" />
+                          <XMarkIcon className="w-4 h-4" />
                         </button>
                         <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">{new Date(item.createdAt).toLocaleDateString()}</p>
                       </div>
@@ -235,9 +235,9 @@ export const BackgroundCustomizer = ({ onClose }: BackgroundCustomizerProps) => 
             </div>
 
             {/* 预览区域 */}
-            <div className="relative border-2 border-dashed border-gray-400 dark:border-gray-500 rounded-xl p-6 h-48 flex items-center justify-center bg-white/90 dark:bg-gray-700/90 backdrop-blur-sm">
+            <div className="relative border-2 border-dashed border-gray-400 dark:border-gray-500 rounded-xl p-6 flex items-center justify-center bg-white/90 dark:bg-gray-700/90 backdrop-blur-sm">
               {selectedImage ? (
-                <div className="relative w-full h-full">
+                <div className={`relative ${currentDeviceType === 'desktop' ? 'w-full aspect-video' : 'w-full aspect-[9/16]'}`}>
                   <Image
                     src={selectedImage}
                     alt="Preview"
