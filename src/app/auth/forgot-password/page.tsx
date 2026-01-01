@@ -1,12 +1,13 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useCallback } from 'react';
 import { supabase } from '@/lib/supabase/client';
 import MeteorShower from '@/components/MeteorShower';
 import Link from 'next/link';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
+import Turnstile from '@/components/Turnstile';
 
 // 创建密码重置表单的Zod schema
 const forgotPasswordSchema = z.object({
@@ -21,6 +22,29 @@ const ForgotPasswordPage: React.FC = () => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
+  const [captchaToken, setCaptchaToken] = useState<string | null>(null);
+  const [captchaError, setCaptchaError] = useState<string | null>(null);
+
+  // Captcha callbacks
+  const handleCaptchaSuccess = useCallback((token: string) => {
+    setCaptchaToken(token);
+    setCaptchaError(null);
+  }, []);
+
+  const handleCaptchaError = useCallback(() => {
+    setCaptchaToken(null);
+    setCaptchaError('验证失败，请重试');
+  }, []);
+
+  const handleCaptchaExpire = useCallback(() => {
+    setCaptchaToken(null);
+    setCaptchaError('验证已过期，请刷新页面重试');
+  }, []);
+
+  const handleCaptchaTimeout = useCallback(() => {
+    setCaptchaToken(null);
+    setCaptchaError('验证超时，请刷新页面重试');
+  }, []);
 
   // 使用react-hook-form
   const {
@@ -38,6 +62,13 @@ const ForgotPasswordPage: React.FC = () => {
   const onSubmit = async (data: ForgotPasswordFormData) => {
     setLoading(true);
     setError(null);
+
+    // 验证captchaToken
+    if (!captchaToken) {
+      setCaptchaError('请完成验证');
+      setLoading(false);
+      return;
+    }
 
     try {
       // 步骤1：调用RPC函数生成密码重置令牌
@@ -58,9 +89,21 @@ const ForgotPasswordPage: React.FC = () => {
       // 将生成的token添加到URL中，用于跨设备验证
       // 使用应用URL配置，不区分环境
       const redirectUrl = `${process.env.NEXT_PUBLIC_APP_URL}/auth/reset-password?token=${resetToken}`;
-      const { error } = await supabase.auth.resetPasswordForEmail(data.email, {
-        redirectTo: redirectUrl
+      
+      // 为resetPasswordForEmail添加超时处理，避免无限期挂起
+      const timeoutPromise = new Promise<never>((_, reject) => {
+        setTimeout(() => {
+          reject(new Error('发送邮件超时，请稍后重试'));
+        }, 10000); // 10秒超时
       });
+      
+      // 使用Promise.race实现超时控制
+      const { error } = await Promise.race([
+        supabase.auth.resetPasswordForEmail(data.email, {
+          redirectTo: redirectUrl
+        }),
+        timeoutPromise
+      ]);
       
       console.log('密码重置邮件已发送，redirectTo:', redirectUrl);
 
@@ -74,6 +117,7 @@ const ForgotPasswordPage: React.FC = () => {
     } catch (error) {
       const errorObj = error as Error;
       setError(errorObj.message || '发送密码重置邮件失败，请重试');
+      console.error('发送密码重置邮件失败:', error);
     } finally {
       setLoading(false);
     }
@@ -140,6 +184,27 @@ const ForgotPasswordPage: React.FC = () => {
                   <p className="mt-1 text-sm text-red-500 pl-1 animate-slide-up">{errors.email.message}</p>
                 )}
               </div>
+            </div>
+
+            {/* Cloudflare Turnstile 验证 */}
+            <div className="mt-4">
+              {!process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY && (
+                <div className="p-3 rounded-xl text-sm bg-red-50/80 border border-red-200 text-red-600">
+                  Turnstile site key not configured
+                </div>
+              )}
+              {process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY && (
+                <Turnstile
+                    siteKey={process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY}
+                    onSuccess={handleCaptchaSuccess}
+                    onError={handleCaptchaError}
+                    onExpire={handleCaptchaExpire}
+                    onTimeout={handleCaptchaTimeout}
+                  />
+              )}
+              {captchaError && (
+                <p className="mt-1 text-sm text-red-500 pl-1 animate-slide-up">{captchaError}</p>
+              )}
             </div>
 
             {error && (

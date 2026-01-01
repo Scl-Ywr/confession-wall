@@ -8,7 +8,7 @@ import { useAuth } from '@/context/AuthContext';
 import { useTheme } from '@/theme/ThemeContext';
 import { useChat } from '@/context/ChatContext';
 import { useDeviceDetection } from '@/hooks/useDeviceDetection';
-import { HomeIcon, UserIcon, ArrowRightOnRectangleIcon, UserPlusIcon, UsersIcon, MoonIcon, SunIcon, BellIcon, VideoCameraIcon, MusicalNoteIcon, XMarkIcon, PaintBrushIcon, HeartIcon } from '@heroicons/react/20/solid';
+import { HomeIcon, UserIcon, ArrowRightOnRectangleIcon, UserPlusIcon, UsersIcon, BellIcon, VideoCameraIcon, MusicalNoteIcon, XMarkIcon, PaintBrushIcon, HeartIcon } from '@heroicons/react/20/solid';
 import { MessageCircleIcon } from 'lucide-react';
 import { chatService } from '@/services/chatService';
 import { Notification } from '@/types/chat';
@@ -16,6 +16,7 @@ import { usePathname, useRouter } from 'next/navigation';
 import Alert from './Alert';
 import { NotificationCenter } from './NotificationCenter';
 import { themes } from '@/theme/themes';
+import { BackgroundCustomizer } from './BackgroundCustomizer';
 
 const Navbar = () => {
   const { user, logout, loading } = useAuth();
@@ -28,12 +29,19 @@ const Navbar = () => {
   const [showNotifications, setShowNotifications] = useState(false);
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [showAlert, setShowAlert] = useState(false);
+  const [alertConfig, setAlertConfig] = useState({
+    title: '请先登录',
+    message: '您需要登录才能查看通知',
+    confirmText: '去登录',
+    cancelText: '取消'
+  });
   const [showMobileMenu, setShowMobileMenu] = useState(false);
   const [showMobileNotifications, setShowMobileNotifications] = useState(false);
   const [targetUrl, setTargetUrl] = useState('');
   const [showBrowserModal, setShowBrowserModal] = useState(false);
   const [browserModalMaximized, setBrowserModalMaximized] = useState(false);
   const [showThemeSwitcher, setShowThemeSwitcher] = useState(false);
+  const [showBackgroundCustomizer, setShowBackgroundCustomizer] = useState(false);
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const [canGoBack, setCanGoBack] = useState(false);
   const [canGoForward, setCanGoForward] = useState(false);
@@ -130,7 +138,13 @@ const Navbar = () => {
   // 切换通知列表显示状态
   const toggleNotifications = async () => {
     if (!user) {
-      // 用户未登录，显示自定义Alert
+      // 用户未登录，显示通知相关的登录提示
+      setAlertConfig({
+        title: '请先登录',
+        message: '您需要登录才能查看通知',
+        confirmText: '去登录',
+        cancelText: '取消'
+      });
       setShowAlert(true);
       return;
     }
@@ -270,11 +284,9 @@ const Navbar = () => {
               {isMobile && (
                 <motion.button
                   onClick={() => setShowMobileMenu(!showMobileMenu)}
-                  className="flex items-center justify-center w-11 h-11 rounded-full transition-all duration-300 transform hover:scale-110 backdrop-blur-sm shadow-sm hover:shadow-md"
-                  style={{ backgroundColor: 'var(--color-background)', color: 'var(--color-text)' }}
+                  className="app-btn"
                   aria-label="菜单"
-                  whileHover={{ scale: 1.1 }}
-                  whileTap={{ scale: 0.95 }}
+                  whileTap={{ scale: 0.95, transition: { duration: 0.1 } }}
                 >
                   {showMobileMenu ? (
                     <XMarkIcon className="w-5.5 h-5.5" />
@@ -283,17 +295,16 @@ const Navbar = () => {
                   )}
                 </motion.button>
               )}
-              
-              <div className="flex-shrink-0 flex items-center">
+              <div className="flex-shrink-0">
                 <Link 
                     href="/" 
-                    className="flex items-center gap-2 text-xl sm:text-2xl font-bold hover:opacity-90 transition-opacity"
-                    style={{ color: 'var(--color-primary)' }}
+                    className="app-btn"
+                    aria-label="首页"
                   >
-                  <HomeIcon className="w-6 h-6 sm:w-7 sm:h-7" />
-                  <span className="hidden sm:inline">表白墙</span>
+                  <HomeIcon className="w-5.5 h-5.5" />
                 </Link>
               </div>
+
             </div>
             
             <div className="flex items-center gap-3">
@@ -302,15 +313,13 @@ const Navbar = () => {
                   <div className="relative">
                     <motion.button
                       onClick={toggleNotifications}
-                      className="flex items-center justify-center w-11 h-11 sm:w-13 sm:h-13 rounded-full transition-all duration-300 transform hover:scale-110 backdrop-blur-sm relative shadow-sm hover:shadow-md"
-                      style={{ backgroundColor: 'var(--color-background)', color: 'var(--color-text)' }}
+                      className="app-btn"
                       aria-label="查看通知"
-                      whileHover={{ scale: 1.1, transition: { duration: 0.2 } }}
                       whileTap={{ scale: 0.95, transition: { duration: 0.1 } }}
                     >
-                      <BellIcon className="w-5.5 h-5.5 sm:w-6.5 sm:h-6.5" />
+                      <BellIcon className="w-5.5 h-5.5" />
                       {unreadCount > 0 && (
-                        <span className="absolute top-0.5 right-0.5 w-4.5 h-4.5 sm:w-5.5 sm:h-5.5 text-white text-xs font-bold rounded-full flex items-center justify-center shadow-md" style={{ backgroundColor: 'var(--color-accent)' }}>
+                        <span className="absolute top-1 right-1 w-4.5 h-4.5 text-white text-xs font-bold rounded-full flex items-center justify-center shadow-md" style={{ backgroundColor: 'var(--color-accent)' }}>
                           {unreadCount}
                         </span>
                       )}
@@ -324,59 +333,80 @@ const Navbar = () => {
                   
                   <motion.button
                     onClick={toggleTheme}
-                    className="flex items-center justify-center w-11 h-11 sm:w-13 sm:h-13 rounded-full transition-all duration-300 transform hover:scale-110 backdrop-blur-sm shadow-sm hover:shadow-md"
-                    style={{ backgroundColor: 'var(--color-background)', color: 'var(--color-text)' }}
+                    className="theme-toggle"
+                    id="theme-toggle-btn"
+                    role="switch"
+                    aria-checked={isHydrated ? isDarkMode : false}
                     aria-label={isHydrated ? (isDarkMode ? '切换到浅色模式' : '切换到深色模式') : '切换到深色模式'}
-                    whileHover={{ scale: 1.1, transition: { duration: 0.2 } }}
                     whileTap={{ scale: 0.95, transition: { duration: 0.1 } }}
                   >
-                    {isHydrated ? (
-                      isDarkMode ? (
-                        <SunIcon className="w-5.5 h-5.5 sm:w-6.5 sm:h-6.5" />
-                      ) : (
-                        <MoonIcon className="w-5.5 h-5.5 sm:w-6.5 sm:h-6.5" />
-                      )
-                    ) : (
-                      <MoonIcon className="w-5.5 h-5.5 sm:w-6.5 sm:h-6.5" />
-                    )}
+                    <div className="theme-toggle__container">
+                      <div className="theme-toggle__clouds"></div>
+                      <div className="theme-toggle__stars">
+                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 144 55" fill="none">
+                          <path fillRule="evenodd" clipRule="evenodd" d="M135.831 3.00688C135.055 3.85027 134.111 4.29946 133 4.35447C134.111 4.40947 135.055 4.85867 135.831 5.71123C136.607 6.55462 136.996 7.56303 136.996 8.72727C136.996 7.95722 137.172 7.25134 137.525 6.59129C137.886 5.93124 138.372 5.39954 138.98 5.00535C139.598 4.60199 140.268 4.39114 141 4.35447C139.88 4.2903 138.936 3.85027 138.16 3.00688C137.384 2.16348 136.996 1.16425 136.996 0C136.996 1.16425 136.607 2.16348 135.831 3.00688ZM31 23.3545C32.1114 23.2995 33.0551 22.8503 33.8313 22.0069C34.6075 21.1635 34.9956 20.1642 34.9956 19C34.9956 20.1642 35.3837 21.1635 36.1599 22.0069C36.9361 22.8503 37.8798 23.2903 39 23.3545C38.2679 23.3911 37.5976 23.602 36.9802 24.0053C36.3716 24.3995 35.8864 24.9312 35.5248 25.5913C35.172 26.2513 34.9956 26.9572 34.9956 27.7273C34.9956 26.563 34.6075 25.5546 33.8313 24.7112C33.0551 23.8587 32.1114 23.4095 31 23.3545Z"/>
+                        </svg>
+                      </div>
+                      <div className="theme-toggle__sun">
+                        <div className="theme-toggle__moon-mask">
+                          <div className="theme-toggle__crater"></div>
+                          <div className="theme-toggle__crater"></div>
+                          <div className="theme-toggle__crater"></div>
+                        </div>
+                      </div>
+                    </div>
                   </motion.button>
                   
                   <motion.button
                     onClick={() => setShowThemeSwitcher(!showThemeSwitcher)}
-                    className="flex items-center justify-center w-11 h-11 sm:w-13 sm:h-13 rounded-full transition-all duration-300 transform hover:scale-110 backdrop-blur-sm shadow-sm hover:shadow-md"
-                    style={{ backgroundColor: 'var(--color-background)', color: 'var(--color-text)' }}
+                    className="app-btn"
                     aria-label="主题设置"
-                    whileHover={{ scale: 1.1, transition: { duration: 0.2 } }}
                     whileTap={{ scale: 0.95, transition: { duration: 0.1 } }}
                   >
-                    <PaintBrushIcon className="w-5.5 h-5.5 sm:w-6.5 sm:h-6.5" />
+                    <PaintBrushIcon className="w-5.5 h-5.5" />
                   </motion.button>
                   
-                  <Link
-                    href="/"
-                    className="flex items-center justify-center w-11 h-11 sm:w-13 sm:h-13 rounded-full transition-all duration-300 transform hover:scale-110 backdrop-blur-sm shadow-sm hover:shadow-md"
-                    style={{ backgroundColor: 'var(--color-background)', color: 'var(--color-text)' }}
-                    aria-label="主界面"
+                  <motion.button
+                    onClick={() => {
+                      if (!user) {
+                        // 用户未登录，显示特定的背景设置登录提示
+                        setAlertConfig({
+                          title: '请先登录',
+                          message: '您需要登录才能设置背景图片',
+                          confirmText: '去登录',
+                          cancelText: '取消'
+                        });
+                        setShowAlert(true);
+                      } else {
+                        // 用户已登录，打开背景自定义器
+                        setShowBackgroundCustomizer(true);
+                      }
+                    }}
+                    className="app-btn"
+                    aria-label="自定义背景"
+                    whileTap={{ scale: 0.95, transition: { duration: 0.1 } }}
                   >
-                    <HomeIcon className="w-5.5 h-5.5 sm:w-6.5 sm:h-6.5" />
-                  </Link>
+                    <svg xmlns="http://www.w3.org/2000/svg" className="w-5.5 h-5.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                    </svg>
+                  </motion.button>
+                  
+
                   
                   <button
-                    className="flex items-center justify-center w-11 h-11 sm:w-13 sm:h-13 rounded-full transition-all duration-300 transform hover:scale-110 backdrop-blur-sm shadow-sm hover:shadow-md"
-                    style={{ backgroundColor: 'var(--color-background)', color: 'var(--color-text)' }}
+                    className="app-btn"
                     aria-label="视频"
                     onClick={() => handleMediaButtonClick('https://alist.suchuanli.dpdns.org')}
                   >
-                    <VideoCameraIcon className="w-5.5 h-5.5 sm:w-6.5 sm:h-6.5" />
+                    <VideoCameraIcon className="w-5.5 h-5.5" />
                   </button>
                   
                   <button
-                    className="flex items-center justify-center w-11 h-11 sm:w-13 sm:h-13 rounded-full transition-all duration-300 transform hover:scale-110 backdrop-blur-sm shadow-sm hover:shadow-md"
-                    style={{ backgroundColor: 'var(--color-background)', color: 'var(--color-text)' }}
+                    className="app-btn"
                     aria-label="音乐"
                     onClick={() => handleMediaButtonClick('https://solara.christmas.qzz.io')}
                   >
-                    <MusicalNoteIcon className="w-5.5 h-5.5 sm:w-6.5 sm:h-6.5" />
+                    <MusicalNoteIcon className="w-5.5 h-5.5" />
                   </button>
                 </>
               )}
@@ -391,10 +421,10 @@ const Navbar = () => {
                 <div className="ml-3 flex items-center md:ml-5 gap-2.5">
                   <Link
                     href="/chat"
-                    className="flex items-center justify-center w-11 h-11 rounded-full bg-warm-50/70 hover:bg-warm-100 transition-all duration-300 transform hover:scale-110 dark:bg-warm-900/30 dark:hover:bg-warm-800/40 backdrop-blur-sm relative shadow-sm hover:shadow-md"
+                    className="app-btn relative"
                     aria-label="聊天"
                   >
-                    <MessageCircleIcon className="w-5.5 h-5.5 text-warm-600 dark:text-warm-400" />
+                    <MessageCircleIcon className="w-5.5 h-5.5" />
                     {totalUnreadCount > 0 && !isInChatListPage && (
                       <span className="absolute -top-1 -right-1 w-4.5 h-4.5 bg-red-500 text-white text-xs font-bold rounded-full flex items-center justify-center border-2 border-white dark:border-gray-700 shadow-md">
                         {totalUnreadCount > 9 ? '9+' : totalUnreadCount}
@@ -403,19 +433,19 @@ const Navbar = () => {
                   </Link>
                   <Link
                     href="/profile"
-                    className="flex items-center justify-center w-11 h-11 rounded-full bg-warm-50/70 hover:bg-warm-100 transition-all duration-300 transform hover:scale-110 dark:bg-warm-900/30 dark:hover:bg-warm-800/40 backdrop-blur-sm shadow-sm hover:shadow-md"
+                    className="app-btn"
                     aria-label="个人资料"
                   >
-                    <UserIcon className="w-5.5 h-5.5 text-warm-600 dark:text-warm-400" />
+                    <UserIcon className="w-5.5 h-5.5" />
                   </Link>
                   <button
                     onClick={handleLogout}
                     disabled={loading}
-                    className="flex items-center justify-center w-11 h-11 rounded-full bg-warm-50/70 hover:bg-warm-100 transition-all duration-300 transform hover:scale-110 dark:bg-warm-900/30 dark:hover:bg-warm-800/40 backdrop-blur-sm shadow-sm hover:shadow-md"
+                    className="app-btn"
                     aria-label="退出登录"
                   >
                     {loading ? '...' : (
-                      <ArrowRightOnRectangleIcon className="w-5.5 h-5.5 text-warm-600 dark:text-warm-400" />
+                      <ArrowRightOnRectangleIcon className="w-5.5 h-5.5" />
                     )}
                   </button>
                 </div>
@@ -423,9 +453,10 @@ const Navbar = () => {
                 <div className="ml-3 flex items-center gap-2.5">
                   <Link
                     href="/auth/login"
-                    className="hidden sm:flex items-center gap-1.5 text-gray-700 hover:text-warm-600 font-medium transition-colors dark:text-gray-300 dark:hover:text-warm-400 px-4 py-2 rounded-xl hover:bg-warm-50/50 dark:hover:bg-warm-900/20"
+                    className="app-btn"
+                    aria-label="登录"
                   >
-                    登录
+                    <UserIcon className="w-5.5 h-5.5" />
                   </Link>
                   <Link
                     href="/auth/register"
@@ -503,6 +534,35 @@ const Navbar = () => {
                     )}
                   </button>
                   
+                  <div
+                    onClick={() => {
+                      toggleTheme();
+                      setShowMobileMenu(false);
+                    }}
+                    className="flex items-center justify-between w-full p-4 rounded-2xl hover:bg-gradient-to-r from-orange-50 to-red-50 dark:hover:bg-gradient-to-r from-orange-900/20 to-red-900/20 transition-all duration-300 transform hover:-translate-x-1 shadow-sm hover:shadow-md cursor-pointer"
+                  >
+                    <div className="flex items-center gap-4">
+                      <div className="theme-toggle">
+                        <div className="theme-toggle__container">
+                          <div className="theme-toggle__clouds"></div>
+                          <div className="theme-toggle__stars">
+                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 144 55" fill="none">
+                              <path fillRule="evenodd" clipRule="evenodd" d="M135.831 3.00688C135.055 3.85027 134.111 4.29946 133 4.35447C134.111 4.40947 135.055 4.85867 135.831 5.71123C136.607 6.55462 136.996 7.56303 136.996 8.72727C136.996 7.95722 137.172 7.25134 137.525 6.59129C137.886 5.93124 138.372 5.39954 138.98 5.00535C139.598 4.60199 140.268 4.39114 141 4.35447C139.88 4.2903 138.936 3.85027 138.16 3.00688C137.384 2.16348 136.996 1.16425 136.996 0C136.996 1.16425 136.607 2.16348 135.831 3.00688ZM31 23.3545C32.1114 23.2995 33.0551 22.8503 33.8313 22.0069C34.6075 21.1635 34.9956 20.1642 34.9956 19C34.9956 20.1642 35.3837 21.1635 36.1599 22.0069C36.9361 22.8503 37.8798 23.2903 39 23.3545C38.2679 23.3911 37.5976 23.602 36.9802 24.0053C36.3716 24.3995 35.8864 24.9312 35.5248 25.5913C35.172 26.2513 34.9956 26.9572 34.9956 27.7273C34.9956 26.563 34.6075 25.5546 33.8313 24.7112C33.0551 23.8587 32.1114 23.4095 31 23.3545Z"/>
+                            </svg>
+                          </div>
+                          <div className="theme-toggle__sun">
+                            <div className="theme-toggle__moon-mask">
+                              <div className="theme-toggle__crater"></div>
+                              <div className="theme-toggle__crater"></div>
+                              <div className="theme-toggle__crater"></div>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                      <span className="text-lg font-medium text-gray-800 dark:text-white">{isDarkMode ? '深色模式' : '浅色模式'}</span>
+                    </div>
+                  </div>
+                  
                   <button
                     onClick={() => {
                       setShowThemeSwitcher(!showThemeSwitcher);
@@ -515,6 +575,35 @@ const Navbar = () => {
                         <PaintBrushIcon className="w-5 h-5" />
                       </div>
                       <span className="text-lg font-medium text-gray-800 dark:text-white">主题设置</span>
+                    </div>
+                  </button>
+                  
+                  <button
+                    onClick={() => {
+                      if (!user) {
+                        // 用户未登录，显示特定的背景设置登录提示
+                        setAlertConfig({
+                          title: '请先登录',
+                          message: '您需要登录才能设置背景图片',
+                          confirmText: '去登录',
+                          cancelText: '取消'
+                        });
+                        setShowAlert(true);
+                      } else {
+                        // 用户已登录，打开背景自定义器
+                        setShowBackgroundCustomizer(true);
+                      }
+                      setShowMobileMenu(false);
+                    }}
+                    className="flex items-center justify-between w-full p-4 rounded-2xl hover:bg-gradient-to-r from-orange-50 to-red-50 dark:hover:bg-gradient-to-r from-orange-900/20 to-red-900/20 transition-all duration-300 transform hover:-translate-x-1 shadow-sm hover:shadow-md"
+                  >
+                    <div className="flex items-center gap-4">
+                      <div className="w-10 h-10 rounded-full bg-gradient-to-r from-orange-500 to-red-500 flex items-center justify-center text-white shadow-md">
+                        <svg xmlns="http://www.w3.org/2000/svg" className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                        </svg>
+                      </div>
+                      <span className="text-lg font-medium text-gray-800 dark:text-white">自定义背景</span>
                     </div>
                   </button>
                   
@@ -707,10 +796,10 @@ const Navbar = () => {
         isOpen={showAlert}
         onClose={() => setShowAlert(false)}
         onConfirm={handleAlertConfirm}
-        title="请先登录"
-        message="您需要登录才能查看通知"
-        confirmText="去登录"
-        cancelText="取消"
+        title={alertConfig.title}
+        message={alertConfig.message}
+        confirmText={alertConfig.confirmText}
+        cancelText={alertConfig.cancelText}
       />
       
 
@@ -1072,6 +1161,15 @@ const Navbar = () => {
           </motion.div>
         </div>
       )}
+      
+      {/* 背景自定义面板 */}
+      <AnimatePresence>
+        {showBackgroundCustomizer && (
+          <BackgroundCustomizer
+            onClose={() => setShowBackgroundCustomizer(false)}
+          />
+        )}
+      </AnimatePresence>
     </>
   );
 };

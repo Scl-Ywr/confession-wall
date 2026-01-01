@@ -7,6 +7,7 @@ import { LikeProvider } from "@/context/LikeContext";
 import { ChatProvider } from "@/context/ChatContext";
 import { Providers } from "./providers";
 import { VideoPlayerProvider } from "@/context/VideoPlayerContext";
+import { BackgroundProvider } from "@/context/BackgroundContext";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -44,15 +45,17 @@ export default function RootLayout({
       >
         <ThemeProvider>
           <AuthProvider>
-            <ChatProvider>
-              <Providers>
-                <LikeProvider>
-                  <VideoPlayerProvider>
-                    {children}
-                  </VideoPlayerProvider>
-                </LikeProvider>
-              </Providers>
-            </ChatProvider>
+            <BackgroundProvider>
+              <ChatProvider>
+                <Providers>
+                  <LikeProvider>
+                    <VideoPlayerProvider>
+                      {children}
+                    </VideoPlayerProvider>
+                  </LikeProvider>
+                </Providers>
+              </ChatProvider>
+            </BackgroundProvider>
           </AuthProvider>
         </ThemeProvider>
       </body>

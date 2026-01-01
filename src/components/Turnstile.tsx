@@ -91,10 +91,10 @@ const Turnstile: React.FC<TurnstileProps> = ({
           return;
         }
 
-        // Create script tag
+        // Create script tag without onload parameter to avoid potential issues
         const script = document.createElement('script');
         script.id = 'cf-turnstile-script';
-        script.src = 'https://challenges.cloudflare.com/turnstile/v0/api.js?onload=onTurnstileLoad';
+        script.src = 'https://challenges.cloudflare.com/turnstile/v0/api.js';
         script.async = true;
         script.defer = true;
 

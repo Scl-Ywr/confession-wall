@@ -43,6 +43,13 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
       border: '#334155',
     } : currentTheme.colors;
     
+    // 添加或移除dark类
+    if (darkMode) {
+      root.classList.add('dark');
+    } else {
+      root.classList.remove('dark');
+    }
+    
     root.style.setProperty('--color-primary', colors.primary);
     root.style.setProperty('--color-secondary', colors.secondary);
     root.style.setProperty('--color-accent', colors.accent);
