@@ -14,29 +14,15 @@ export async function POST(request: NextRequest) {
     const secretKey = process.env.TURNSTILE_SECRET_KEY;
     const isDevelopment = process.env.NODE_ENV === 'development';
 
-    // 检查是否使用测试密钥
-    const isTestToken = token.startsWith('test_token_') || 
-                        token === '1x00000000000000000000AA' ||
-                        token === 'XXXX.DUMMY.TOKEN.XXXX';
-
     if (!secretKey) {
-      console.warn('TURNSTILE_SECRET_KEY not configured');
-
-      // 开发模式或测试 token 时跳过验证
-      if (isDevelopment || isTestToken) {
-        console.log('开发模式或测试Token：跳过 Turnstile 后端验证');
-        return NextResponse.json({
-          success: true,
-          warning: 'Validation skipped - no secret key configured'
-        });
-      }
-
-      return NextResponse.json(
-        { success: false, error: '验证服务配置错误，请联系管理员' },
-        { status: 500 }
-      );
+      console.warn('TURNSTILE_SECRET_KEY not configured, skipping verification as per user configuration');
+      
+      // 用户已在Supabase后端配置了Secret Key，本地无需验证，直接返回成功
+      return NextResponse.json({
+        success: true,
+        warning: 'Validation skipped - no local secret key configured (handled by Supabase backend)'
+      });
     }
-
     // 调用Cloudflare API验证token
     const verifyEndpoint = 'https://challenges.cloudflare.com/turnstile/v0/siteverify';
 

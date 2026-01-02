@@ -1,7 +1,6 @@
 // 服务器端API路由，用于获取用户真实IP地址和地理位置信息
 import { NextRequest, NextResponse } from 'next/server';
-import { createSupabaseServerClient } from '@/lib/supabase/server';
-import { handleApiError, createUnauthorizedError } from '@/lib/error-handler';
+import { handleApiError } from '@/lib/error-handler';
 
 // 定义IP查询服务列表，支持获取城市、省份信息和代理检测
 // 优化服务顺序，优先使用高精度、高可靠性的服务，增强代理检测能力
@@ -489,12 +488,6 @@ async function getGeoLocation(ip: string) {
 
 export async function GET(request: NextRequest) {
   try {
-    const supabase = await createSupabaseServerClient();
-    const { data: { user } } = await supabase.auth.getUser();
-
-    if (!user) {
-      throw createUnauthorizedError();
-    }
 
     let userIp = getUserRealIP(request);
     

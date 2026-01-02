@@ -12,6 +12,7 @@ import { HashtagInput } from './HashtagInput';
 import { CategorySelect } from './CategorySelect';
 import { MentionInput } from './MentionInput';
 import MarkdownEditor from './MarkdownEditor';
+import { CustomSelect } from './CustomSelect';
 
 interface CreateConfessionFormProps {
   onSuccess: (newConfession: Confession) => void;
@@ -280,22 +281,16 @@ export default function CreateConfessionForm({ onSuccess, user, groupId }: Creat
           transition={{ duration: 0.5, delay: 0.45, ease: "easeOut" }}
         >
           <div className="mb-2 text-sm font-medium text-gray-700 dark:text-gray-300">发布到圈子（可选）</div>
-          <select
+          <CustomSelect
             value={formData.group_id || ''}
-            onChange={(e) => setFormData(prev => ({ ...prev, group_id: e.target.value || undefined }))}
-            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-800 dark:border-gray-700 dark:text-white"
-          >
-            <option value="">不发布到特定圈子</option>
-            {loadingGroups ? (
-              <option value="" disabled>加载中...</option>
-            ) : (
-              availableGroups.map(group => (
-                <option key={group.id} value={group.id}>
-                  {group.name}
-                </option>
-              ))
-            )}
-          </select>
+            onChange={(value) => setFormData(prev => ({ ...prev, group_id: value || undefined }))}
+            options={[
+              { value: '', label: '不发布到特定圈子' },
+              ...availableGroups.map(group => ({ value: group.id, label: group.name }))
+            ]}
+            className="w-full"
+            disabled={loadingGroups}
+          />
         </motion.div>
 
         {/* Hashtag Input */}

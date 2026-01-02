@@ -5,6 +5,7 @@ import { supabase } from '@/lib/supabase/client';
 import { User, AuthState } from '@/types/auth';
 import { useRouter } from 'next/navigation';
 import { globalMessageService } from '@/services/globalMessageService';
+import { profileService } from '@/services/profileService';
 
 interface AuthContextType extends AuthState {
   register: (email: string, password: string, captchaToken?: string) => Promise<void>;
@@ -29,9 +30,16 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   // 错误信息翻译函数，将英文错误转换为中文
   const translateError = (error: Error): string => {
     const errorMessage = error.message.toLowerCase();
+    // 检查是否是Supabase Auth错误，status为400的情况通常是无效的登录凭证
+    const isBadRequest = (error as any).status === 400;
     
     // 登录相关错误
-    if (errorMessage.includes('invalid login credentials') || errorMessage.includes('invalid email or password')) {
+    if (isBadRequest ||
+        errorMessage.includes('invalid login credentials') || 
+        errorMessage.includes('invalid email or password') || 
+        errorMessage.includes('invalid_credentials') ||
+        errorMessage.includes('bad request') ||
+        errorMessage.includes('invalid input')) {
       return '邮箱或密码不正确';
     }
     if (errorMessage.includes('email not confirmed') || errorMessage.includes('email not verified')) {
@@ -318,6 +326,18 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
           // 初始化全局消息服务
           globalMessageService.init(user.id);
           
+          // 更新用户IP和地理位置信息（异步，不阻塞主流程）
+          getClientIpAndLocation()
+            .then(ipLocation => {
+              return profileService.updateIpLocation({
+                user_ip: ipLocation.ip,
+                user_city: ipLocation.city,
+                user_province: ipLocation.province,
+                user_country: ipLocation.country
+              });
+            })
+            .catch(console.error);
+          
           // 获取会话信息，检查会话是否即将过期
           try {
             const { data: { session } } = await supabase.auth.getSession();
@@ -374,6 +394,18 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         
         // 初始化全局消息服务
         globalMessageService.init(session.user.id);
+        
+        // 更新用户IP和地理位置信息（异步，不阻塞主流程）
+        getClientIpAndLocation()
+          .then(ipLocation => {
+            return profileService.updateIpLocation({
+              user_ip: ipLocation.ip,
+              user_city: ipLocation.city,
+              user_province: ipLocation.province,
+              user_country: ipLocation.country
+            });
+          })
+          .catch(console.error);
         
         // 获取完整用户资料
         const completeUser = await getCompleteUserProfile(session.user);
@@ -692,15 +724,25 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     }
   };
 
-  // 获取客户端IP地址
-  const getClientIp = async (): Promise<string> => {
+  // 获取客户端IP和地理位置信息
+  const getClientIpAndLocation = async (): Promise<{ ip: string; city: string; province: string; country: string }> => {
     try {
       const response = await fetch('/api/get-ip');
       const data = await response.json();
-      return data.ip || 'unknown';
+      return {
+        ip: data.ip || 'unknown',
+        city: data.city || '未知城市',
+        province: data.province || '未知省份',
+        country: data.country || '未知国家'
+      };
     } catch (error) {
-      console.error('Failed to get client IP:', error);
-      return 'unknown';
+      console.error('Failed to get client IP and location:', error);
+      return {
+        ip: 'unknown',
+        city: '未知城市',
+        province: '未知省份',
+        country: '未知国家'
+      };
     }
   };
 
@@ -750,16 +792,19 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       });
 
       if (signInError) {
+        console.error('SignInError full details:', signInError);
         throw signInError;
       }
 
-      // 3. 登录成功后，获取IP地址
-      let ipAddress = 'unknown';
+      // 3. 登录成功后，获取IP地址和地理位置
+      let ipLocation = { ip: 'unknown', city: '未知城市', province: '未知省份', country: '未知国家' };
       try {
-        ipAddress = await getClientIp();
+        ipLocation = await getClientIpAndLocation();
       } catch (error) {
-        console.error('Failed to get client IP after login:', error);
+        console.error('Failed to get client IP and location after login:', error);
       }
+      
+      const ipAddress = ipLocation.ip;
 
       // 4. 检查用户邮箱是否已验证
       if (data.user && !data.user.email_confirmed_at) {
@@ -864,6 +909,14 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         
         logLoginAttempt(email, ipAddress, true).catch(console.error);
         updateOnlineStatus(userId, 'online').catch(console.error);
+        
+        // 更新用户IP和地理位置信息
+        profileService.updateIpLocation({
+          user_ip: ipLocation.ip,
+          user_city: ipLocation.city,
+          user_province: ipLocation.province,
+          user_country: ipLocation.country
+        }).catch(console.error);
       }
       
       // 7. 更新状态，完成登录

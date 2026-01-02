@@ -144,22 +144,31 @@ const LoginPage: React.FC = () => {
     } catch (err) {
       // 错误已在AuthContext中处理
       // 登录失败后，重新获取登录尝试信息
-      const ipResponse = await fetch('/api/get-ip');
-      const ipData = await ipResponse.json();
-      const ipAddress = ipData.ip || 'unknown';
+      let ipAddress = 'unknown';
+      try {
+        const ipResponse = await fetch('/api/get-ip');
+        const ipData = await ipResponse.json();
+        ipAddress = ipData.ip || 'unknown';
+      } catch (ipError) {
+        console.error('Failed to get IP address:', ipError);
+      }
 
-      const supabase = (await import('@/lib/supabase/client')).supabase;
-      const { data: attemptData } = await supabase
-        .rpc('check_login_attempts', {
-          p_email: data.email,
-          p_ip_address: ipAddress
-        });
+      try {
+        const supabase = (await import('@/lib/supabase/client')).supabase;
+        const { data: attemptData } = await supabase
+          .rpc('check_login_attempts', {
+            p_email: data.email,
+            p_ip_address: ipAddress
+          });
 
-      if (attemptData) {
-        setLoginAttemptInfo({
-          remainingAttempts: attemptData.remaining_attempts || 5,
-          isLocked: attemptData.is_locked || false
-        });
+        if (attemptData) {
+          setLoginAttemptInfo({
+            remainingAttempts: attemptData.remaining_attempts || 5,
+            isLocked: attemptData.is_locked || false
+          });
+        }
+      } catch (rpcError) {
+        console.error('Failed to get login attempt info:', rpcError);
       }
 
       // 验证码错误，重置验证码

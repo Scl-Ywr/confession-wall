@@ -450,21 +450,23 @@ const Navbar = () => {
                   </button>
                 </div>
               ) : (
-                <div className="ml-3 flex items-center gap-2.5">
+                <div className="ml-3 flex items-center gap-2 sm:gap-2.5 h-full">
+                  {/* 未登录状态按钮优化 */}
                   <Link
                     href="/auth/login"
-                    className="app-btn"
+                    className="app-btn relative flex items-center justify-center transition-all duration-300 hover:bg-primary-100/50 dark:hover:bg-primary-900/30"
                     aria-label="登录"
                   >
                     <UserIcon className="w-5.5 h-5.5" />
                   </Link>
                   <Link
                     href="/auth/register"
-                    className="flex items-center justify-center gap-2 px-6 py-3 rounded-full bg-gradient-to-r from-orange-500 to-red-500 hover:from-orange-600 hover:to-red-600 text-white font-bold text-lg transition-all duration-300 transform hover:scale-105 shadow-xl shadow-orange-500/60"
+                    className="group relative flex items-center justify-center gap-1.5 h-12 px-3 py-2 sm:h-14 sm:px-5 sm:py-3 rounded-full bg-gradient-to-r from-orange-500 to-red-500 hover:from-orange-600 hover:to-red-600 text-white font-bold text-xs sm:text-sm transition-all duration-300 transform hover:scale-105 shadow-lg shadow-orange-500/50 hover:shadow-xl hover:shadow-orange-500/70 overflow-hidden"
                     aria-label="注册"
                   >
-                    <UserPlusIcon className="w-6 h-6" />
-                    <span>注册</span>
+                    <span className="absolute inset-0 bg-white/10 opacity-0 group-hover:opacity-100 transition-opacity duration-300"></span>
+                    <UserPlusIcon className="w-4.5 h-4.5 sm:w-5.5 sm:h-5.5 relative z-10" />
+                    <span className="relative z-10 whitespace-nowrap">注册</span>
                   </Link>
                 </div>
               )}
@@ -537,7 +539,7 @@ const Navbar = () => {
                   <div
                     onClick={() => {
                       toggleTheme();
-                      setShowMobileMenu(false);
+                      // 不关闭菜单栏，等待用户手动关闭
                     }}
                     className="flex items-center justify-between w-full p-4 rounded-2xl hover:bg-gradient-to-r from-orange-50 to-red-50 dark:hover:bg-gradient-to-r from-orange-900/20 to-red-900/20 transition-all duration-300 transform hover:-translate-x-1 shadow-sm hover:shadow-md cursor-pointer"
                   >
@@ -559,7 +561,7 @@ const Navbar = () => {
                           </div>
                         </div>
                       </div>
-                      <span className="text-lg font-medium text-gray-800 dark:text-white">{isDarkMode ? '深色模式' : '浅色模式'}</span>
+                      <span className="text-lg font-medium" style={{ color: 'var(--color-text)' }}>{isDarkMode ? '深色模式' : '浅色模式'}</span>
                     </div>
                   </div>
                   
@@ -574,7 +576,7 @@ const Navbar = () => {
                       <div className="w-10 h-10 rounded-full bg-gradient-to-r from-orange-500 to-red-500 flex items-center justify-center text-white shadow-md">
                         <PaintBrushIcon className="w-5 h-5" />
                       </div>
-                      <span className="text-lg font-medium text-gray-800 dark:text-white">主题设置</span>
+                      <span className="text-lg font-medium" style={{ color: 'var(--color-text)' }}>主题设置</span>
                     </div>
                   </button>
                   
@@ -603,7 +605,7 @@ const Navbar = () => {
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
                         </svg>
                       </div>
-                      <span className="text-lg font-medium text-gray-800 dark:text-white">自定义背景</span>
+                      <span className="text-lg font-medium" style={{ color: 'var(--color-text)' }}>自定义背景</span>
                     </div>
                   </button>
                   
@@ -617,7 +619,7 @@ const Navbar = () => {
                     <div className="w-10 h-10 rounded-full bg-gradient-to-r from-orange-500 to-red-500 flex items-center justify-center text-white shadow-md">
                       <VideoCameraIcon className="w-5 h-5" />
                     </div>
-                    <span className="text-lg font-medium text-gray-800 dark:text-white">视频</span>
+                    <span className="text-lg font-medium" style={{ color: 'var(--color-text)' }}>视频</span>
                   </button>
                   
                   <button
@@ -630,7 +632,7 @@ const Navbar = () => {
                     <div className="w-10 h-10 rounded-full bg-gradient-to-r from-orange-500 to-red-500 flex items-center justify-center text-white shadow-md">
                       <MusicalNoteIcon className="w-5 h-5" />
                     </div>
-                    <span className="text-lg font-medium text-gray-800 dark:text-white">音乐</span>
+                    <span className="text-lg font-medium" style={{ color: 'var(--color-text)' }}>音乐</span>
                   </button>
                   
                   {user ? (
@@ -645,7 +647,7 @@ const Navbar = () => {
                           <div className="w-10 h-10 rounded-full bg-gradient-to-r from-orange-500 to-red-500 flex items-center justify-center text-white shadow-md">
                             <MessageCircleIcon className="w-5 h-5" />
                           </div>
-                          <span className="text-lg font-medium">聊天</span>
+                          <span className="text-lg font-medium" style={{ color: 'var(--color-text)' }}>聊天</span>
                         </div>
                         {totalUnreadCount > 0 && !isInChatListPage && (
                           <span className="w-7 h-7 text-white text-xs font-bold rounded-full flex items-center justify-center shadow-md" style={{ backgroundColor: 'var(--color-accent)' }}>
@@ -660,10 +662,12 @@ const Navbar = () => {
                         className="flex items-center gap-4 p-4 rounded-2xl transition-all duration-300 hover:bg-gradient-to-r from-orange-50 to-red-50 dark:hover:bg-gradient-to-r from-orange-900/20 to-red-900/20 transform hover:-translate-x-1 shadow-sm hover:shadow-md"
                         style={{ color: 'var(--color-text)' }}
                       >
-                        <div className="w-10 h-10 rounded-full bg-gradient-to-r from-orange-500 to-red-500 flex items-center justify-center text-white shadow-md">
-                          <UserIcon className="w-5 h-5" />
+                        <div className="flex items-center gap-4">
+                          <div className="w-10 h-10 rounded-full bg-gradient-to-r from-orange-500 to-red-500 flex items-center justify-center text-white shadow-md">
+                            <UserIcon className="w-5 h-5" />
+                          </div>
+                          <span className="text-lg font-medium" style={{ color: 'var(--color-text)' }}>个人资料</span>
                         </div>
-                        <span className="text-lg font-medium">个人资料</span>
                       </Link>
                       
                       <button
@@ -674,10 +678,12 @@ const Navbar = () => {
                         className="flex items-center gap-4 p-4 rounded-2xl transition-all duration-300 w-full hover:bg-gradient-to-r from-orange-50 to-red-50 dark:hover:bg-gradient-to-r from-orange-900/20 to-red-900/20 transform hover:-translate-x-1 shadow-sm hover:shadow-md"
                         style={{ color: 'var(--color-text)' }}
                       >
-                        <div className="w-10 h-10 rounded-full bg-gradient-to-r from-orange-500 to-red-500 flex items-center justify-center text-white shadow-md">
-                          <ArrowRightOnRectangleIcon className="w-5 h-5" />
+                        <div className="flex items-center gap-4">
+                          <div className="w-10 h-10 rounded-full bg-gradient-to-r from-orange-500 to-red-500 flex items-center justify-center text-white shadow-md">
+                            <ArrowRightOnRectangleIcon className="w-5 h-5" />
+                          </div>
+                          <span className="text-lg font-medium" style={{ color: 'var(--color-text)' }}>退出登录</span>
                         </div>
-                        <span className="text-lg font-medium">退出登录</span>
                       </button>
                     </>
                   ) : (
@@ -697,11 +703,12 @@ const Navbar = () => {
                       <Link
                         href="/auth/register"
                         onClick={() => setShowMobileMenu(false)}
-                        className="flex items-center justify-center w-full p-4 rounded-2xl text-white font-medium transition-all duration-300 shadow-xl shadow-orange-500/60 hover:shadow-2xl hover:shadow-orange-500/80 transform hover:scale-105"
+                        className="group relative flex items-center justify-center w-full gap-2 p-4 rounded-2xl text-white font-medium transition-all duration-300 shadow-xl shadow-orange-500/60 hover:shadow-2xl hover:shadow-orange-500/80 transform hover:scale-105"
                         style={{ background: 'var(--gradient-primary)' }}
                       >
-                        <UserPlusIcon className="w-6 h-6 mr-2" />
-                        <span className="text-lg font-bold">注册</span>
+                        <span className="absolute inset-0 bg-white/10 opacity-0 group-hover:opacity-100 transition-opacity duration-300"></span>
+                        <UserPlusIcon className="w-6 h-6 relative z-10" />
+                        <span className="text-lg font-bold relative z-10">注册</span>
                       </Link>
                     </div>
                   )}
