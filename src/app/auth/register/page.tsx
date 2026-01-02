@@ -19,7 +19,8 @@ const registerSchema = z.object({
   password: z.string()
     .nonempty('请输入密码')
     .min(8, '密码长度不能少于8个字符')
-    .regex(/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])/, '密码必须包含大小写字母、数字和特殊字符'),
+    .max(32, '密码长度不能超过32个字符')
+    .regex(/^(?=.*[a-zA-Z])(?=.*\d)/, '密码必须同时包含字母和数字'),
   confirmPassword: z.string()
     .nonempty('请确认密码'),
 }).refine((data) => data.password === data.confirmPassword, {
@@ -47,6 +48,7 @@ const RegisterPage: React.FC = () => {
   const [registerSuccess, setRegisterSuccess] = useState(false);
   const [captchaToken, setCaptchaToken] = useState<string | null>(null);
   const [captchaError, setCaptchaError] = useState<string | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   // Captcha callbacks
   const handleCaptchaSuccess = useCallback((token: string) => {
@@ -54,8 +56,9 @@ const RegisterPage: React.FC = () => {
     setCaptchaError(null);
   }, []);
 
+  // 移除handleCaptchaError，使用组件内部的错误信息
   const handleCaptchaError = useCallback(() => {
-    setCaptchaError('验证失败，请重试');
+    // 不需要在这里设置错误信息，Turnstile组件内部会处理
   }, []);
 
   // 使用react-hook-form管理注册表单
@@ -89,13 +92,37 @@ const RegisterPage: React.FC = () => {
 
   // 处理注册表单提交
   const onRegisterSubmit = async (data: RegisterFormData) => {
+    // 防止重复提交
+    if (isSubmitting) {
+      return;
+    }
+
     // 验证captchaToken
     if (!captchaToken) {
       setCaptchaError('请完成验证');
       return;
     }
-    
+
+    setIsSubmitting(true);
+    setCaptchaError(null);
+
     try {
+      // 步骤1：后端验证captchaToken
+      const verifyResponse = await fetch('/api/verify-turnstile', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ token: captchaToken }),
+      });
+
+      const verifyResult = await verifyResponse.json();
+
+      if (!verifyResult.success) {
+        setCaptchaError(verifyResult.error || '验证失败，请重试');
+        setCaptchaToken(null); // 重置token，要求重新验证
+        return;
+      }
+
+      // 步骤2：验证成功，执行注册
       await registerUser(data.email, data.password, captchaToken);
       // 注册成功后显示页面内提示，不直接跳转
       setRegisterSuccess(true);
@@ -106,15 +133,27 @@ const RegisterPage: React.FC = () => {
       // 3秒后隐藏成功提示
       setTimeout(() => setRegisterSuccess(false), 3000);
     } catch (err) {
-      // 错误已在AuthContext中处理，但需要根据不同错误类型处理
-      const errorMessage = error || (err instanceof Error ? err.message : '');
-      
+      // 使用catch块的err参数而不是error状态
+      const errorMessage = err instanceof Error ? err.message : '注册失败，请重试';
+
       if (errorMessage.includes('您已经注册成功')) {
         // 已验证邮箱用户：显示提示，2秒后自动跳转登录
         setTimeout(() => {
           router.push('/auth/login');
         }, 2000);
+      } else if (errorMessage.includes('验证码') || errorMessage.includes('captcha')) {
+        // 验证码错误，重置验证码
+        setCaptchaToken(null);
+        setCaptchaError(errorMessage);
       }
+
+      // 对于数据库操作失败，提供更友好的提示
+      if (errorMessage.includes('数据库连接失败')) {
+        // 可以在这里添加重试按钮或其他UI提示
+        console.log('数据库连接失败，提示用户检查网络');
+      }
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -231,6 +270,8 @@ const RegisterPage: React.FC = () => {
                   siteKey={process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY}
                   onSuccess={handleCaptchaSuccess}
                   onError={handleCaptchaError}
+                  onExpire={() => setCaptchaToken(null)}
+                  onTimeout={() => setCaptchaToken(null)}
                 />
             )}
             {captchaError && (
@@ -276,10 +317,10 @@ const RegisterPage: React.FC = () => {
           <div>
             <button
               type="submit"
-              disabled={loading}
-              className={`w-full flex justify-center py-4 px-6 border border-transparent text-base font-bold rounded-xl text-gray-800 dark:text-gray-300 bg-gradient-to-r from-primary-600 to-secondary-600 hover:from-primary-700 hover:to-secondary-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500 shadow-lg shadow-primary-500/30 transform hover:-translate-y-0.5 transition-all duration-200 ${loading ? 'opacity-70 cursor-wait' : ''}`}
+              disabled={loading || isSubmitting}
+              className={`w-full flex justify-center py-4 px-6 border border-transparent text-base font-bold rounded-xl text-gray-800 dark:text-gray-300 bg-gradient-to-r from-primary-600 to-secondary-600 hover:from-primary-700 hover:to-secondary-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500 shadow-lg shadow-primary-500/30 transform hover:-translate-y-0.5 transition-all duration-200 ${(loading || isSubmitting) ? 'opacity-70 cursor-wait' : ''}`}
             >
-              {loading ? (
+              {(loading || isSubmitting) ? (
                 <div className="flex items-center gap-2">
                   <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
                   <span>注册中...</span>

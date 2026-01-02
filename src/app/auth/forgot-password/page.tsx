@@ -24,6 +24,7 @@ const ForgotPasswordPage: React.FC = () => {
   const [success, setSuccess] = useState(false);
   const [captchaToken, setCaptchaToken] = useState<string | null>(null);
   const [captchaError, setCaptchaError] = useState<string | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   // Captcha callbacks
   const handleCaptchaSuccess = useCallback((token: string) => {
@@ -60,51 +61,63 @@ const ForgotPasswordPage: React.FC = () => {
   });
 
   const onSubmit = async (data: ForgotPasswordFormData) => {
+    // 防止重复提交
+    if (isSubmitting) {
+      return;
+    }
+
     setLoading(true);
+    setIsSubmitting(true);
     setError(null);
 
     // 验证captchaToken
     if (!captchaToken) {
       setCaptchaError('请完成验证');
       setLoading(false);
+      setIsSubmitting(false);
       return;
     }
 
     try {
-      // 步骤1：调用RPC函数生成密码重置令牌
+      // 步骤1：后端验证captchaToken
+      const verifyResponse = await fetch('/api/verify-turnstile', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ token: captchaToken }),
+      });
+
+      const verifyResult = await verifyResponse.json();
+
+      if (!verifyResult.success) {
+        setCaptchaError(verifyResult.error || '验证失败，请重试');
+        setCaptchaToken(null);
+        setLoading(false);
+        setIsSubmitting(false);
+        return;
+      }
+
+      // 步骤2：生成密码重置令牌
       const { data: tokenData, error: tokenError } = await supabase.rpc(
         'generate_password_reset_token',
         { p_email: data.email }
       );
-      
+
       if (tokenError) {
         console.error('生成密码重置令牌失败:', tokenError);
         throw new Error('生成密码重置令牌失败，请重试');
       }
-      
+
       const resetToken = tokenData as string;
       console.log('生成的密码重置令牌:', resetToken);
-      
-      // 步骤2：发送密码重置邮件，配置正确的redirectTo参数
-      // 将生成的token添加到URL中，用于跨设备验证
-      // 使用应用URL配置，不区分环境
+
+      // 步骤3：发送密码重置邮件（移除Promise.race超时机制）
       const redirectUrl = `${process.env.NEXT_PUBLIC_APP_URL}/auth/reset-password?token=${resetToken}`;
-      
-      // 为resetPasswordForEmail添加超时处理，避免无限期挂起
-      const timeoutPromise = new Promise<never>((_, reject) => {
-        setTimeout(() => {
-          reject(new Error('发送邮件超时，请稍后重试'));
-        }, 10000); // 10秒超时
+
+      const { error } = await supabase.auth.resetPasswordForEmail(data.email, {
+        redirectTo: redirectUrl,
+        captchaToken: captchaToken
       });
-      
-      // 使用Promise.race实现超时控制
-      const { error } = await Promise.race([
-        supabase.auth.resetPasswordForEmail(data.email, {
-          redirectTo: redirectUrl
-        }),
-        timeoutPromise
-      ]);
-      
+
       console.log('密码重置邮件已发送，redirectTo:', redirectUrl);
 
       if (error) {
@@ -114,12 +127,22 @@ const ForgotPasswordPage: React.FC = () => {
       // 确认邮件发送成功
       setSuccess(true);
       reset();
+      // 重置验证码，防止重复使用
+      setCaptchaToken(null);
     } catch (error) {
       const errorObj = error as Error;
       setError(errorObj.message || '发送密码重置邮件失败，请重试');
       console.error('发送密码重置邮件失败:', error);
+
+      // 验证码错误，重置验证码
+      const errorMessage = errorObj.message || '';
+      if (errorMessage.includes('验证码') || errorMessage.includes('captcha')) {
+        setCaptchaToken(null);
+        setCaptchaError('验证码验证失败，请重新验证');
+      }
     } finally {
       setLoading(false);
+      setIsSubmitting(false);
     }
   };
 
@@ -220,10 +243,10 @@ const ForgotPasswordPage: React.FC = () => {
 
             <button
               type="submit"
-              disabled={loading}
-              className={`w-full flex justify-center py-4 px-6 border border-transparent text-base font-bold rounded-xl text-gray-800 dark:text-gray-300 bg-gradient-to-r from-primary-600 to-secondary-600 hover:from-primary-700 hover:to-secondary-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500 shadow-lg shadow-primary-500/30 transform hover:-translate-y-0.5 transition-all duration-200 ${loading ? 'opacity-70 cursor-wait' : ''}`}
+              disabled={loading || isSubmitting}
+              className={`w-full flex justify-center py-4 px-6 border border-transparent text-base font-bold rounded-xl text-gray-800 dark:text-gray-300 bg-gradient-to-r from-primary-600 to-secondary-600 hover:from-primary-700 hover:to-secondary-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500 shadow-lg shadow-primary-500/30 transform hover:-translate-y-0.5 transition-all duration-200 ${(loading || isSubmitting) ? 'opacity-70 cursor-wait' : ''}`}
             >
-              {loading ? (
+              {(loading || isSubmitting) ? (
                 <div className="flex items-center gap-2">
                   <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
                   <span>发送确认邮件...</span>

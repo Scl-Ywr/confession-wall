@@ -34,6 +34,7 @@ const LoginPage: React.FC = () => {
   const [emailInput, setEmailInput] = React.useState<string>('');
   const [captchaToken, setCaptchaToken] = useState<string | null>(null);
   const [captchaError, setCaptchaError] = useState<string | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   // 组件挂载时清除错误信息
   React.useEffect(() => {
@@ -107,35 +108,68 @@ const LoginPage: React.FC = () => {
   });
 
   const onSubmit = async (data: LoginFormData) => {
+    // 防止重复提交
+    if (isSubmitting) {
+      return;
+    }
+
     // 验证captchaToken
     if (!captchaToken) {
       setCaptchaError('请完成验证');
       return;
     }
-    
+
+    setIsSubmitting(true);
+    setCaptchaError(null);
+
     try {
+      // 步骤1：后端验证captchaToken
+      const verifyResponse = await fetch('/api/verify-turnstile', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ token: captchaToken }),
+      });
+
+      const verifyResult = await verifyResponse.json();
+
+      if (!verifyResult.success) {
+        setCaptchaError(verifyResult.error || '验证失败，请重试');
+        setCaptchaToken(null); // 重置token，要求重新验证
+        return;
+      }
+
+      // 步骤2：验证成功，执行登录
       await login(data.email, data.password, captchaToken);
       router.push('/');
-    } catch{
+    } catch (err) {
       // 错误已在AuthContext中处理
       // 登录失败后，重新获取登录尝试信息
       const ipResponse = await fetch('/api/get-ip');
       const ipData = await ipResponse.json();
       const ipAddress = ipData.ip || 'unknown';
-      
+
       const supabase = (await import('@/lib/supabase/client')).supabase;
       const { data: attemptData } = await supabase
-        .rpc('check_login_attempts', { 
-          p_email: data.email, 
-          p_ip_address: ipAddress 
+        .rpc('check_login_attempts', {
+          p_email: data.email,
+          p_ip_address: ipAddress
         });
-      
+
       if (attemptData) {
         setLoginAttemptInfo({
           remainingAttempts: attemptData.remaining_attempts || 5,
           isLocked: attemptData.is_locked || false
         });
       }
+
+      // 验证码错误，重置验证码
+      const errorMessage = error || (err instanceof Error ? err.message : '');
+      if (errorMessage.includes('验证码') || errorMessage.includes('captcha')) {
+        setCaptchaToken(null);
+        setCaptchaError(errorMessage);
+      }
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -238,6 +272,8 @@ const LoginPage: React.FC = () => {
                   siteKey={process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY}
                   onSuccess={handleCaptchaSuccess}
                   onError={handleCaptchaError}
+                  onExpire={() => setCaptchaToken(null)}
+                  onTimeout={() => setCaptchaToken(null)}
                 />
             )}
             {captchaError && (
@@ -258,15 +294,15 @@ const LoginPage: React.FC = () => {
 
           <button
             type="submit"
-            disabled={loading}
-            className={`w-full flex justify-center py-4 px-6 border border-transparent text-base font-bold rounded-xl text-gray-800 dark:text-gray-300 bg-gradient-to-r from-primary-600 to-secondary-600 hover:from-primary-700 hover:to-secondary-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500 shadow-lg shadow-primary-500/30 transform hover:-translate-y-0.5 transition-all duration-200 ${loading ? 'opacity-70 cursor-wait' : ''}`}
+            disabled={loading || isSubmitting || loginAttemptInfo.isLocked}
+            className={`w-full flex justify-center py-4 px-6 border border-transparent text-base font-bold rounded-xl text-gray-800 dark:text-gray-300 bg-gradient-to-r from-primary-600 to-secondary-600 hover:from-primary-700 hover:to-secondary-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500 shadow-lg shadow-primary-500/30 transform hover:-translate-y-0.5 transition-all duration-200 ${(loading || isSubmitting || loginAttemptInfo.isLocked) ? 'opacity-70 cursor-wait' : ''}`}
           >
-            {loading ? (
+            {(loading || isSubmitting) ? (
               <div className="flex items-center gap-2">
                 <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
                 <span>登录中...</span>
               </div>
-            ) : '登录'}
+            ) : loginAttemptInfo.isLocked ? '账号已锁定' : '登录'}
           </button>
         </form>
 

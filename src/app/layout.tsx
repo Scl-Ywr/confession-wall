@@ -35,10 +35,10 @@ export default function RootLayout({
   return (
     <html lang="zh-CN">
       <head>
-        {/* Cloudflare Turnstile Script */}
-        <script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer></script>
         {/* Resource hint for better performance */}
         <link rel="preconnect" href="https://challenges.cloudflare.com" />
+        <link rel="dns-prefetch" href="https://challenges.cloudflare.com" />
+        {/* Turnstile 脚本由组件动态加载，避免阻塞页面渲染 */}
       </head>
       <body
         className={`${geistSans.variable} ${geistMono.variable} antialiased`}

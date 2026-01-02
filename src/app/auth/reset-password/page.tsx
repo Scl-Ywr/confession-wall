@@ -11,7 +11,9 @@ import { z } from 'zod';
 const resetPasswordSchema = z.object({
   password: z.string()
     .nonempty('请输入新密码')
-    .min(6, '密码长度不能少于6个字符'),
+    .min(8, '密码长度不能少于8个字符')
+    .max(32, '密码长度不能超过32个字符')
+    .regex(/^(?=.*[a-zA-Z])(?=.*\d)/, '密码必须同时包含字母和数字'),
   confirmPassword: z.string()
     .nonempty('请确认新密码'),
 }).refine((data) => data.password === data.confirmPassword, {

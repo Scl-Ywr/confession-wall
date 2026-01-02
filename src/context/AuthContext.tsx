@@ -52,7 +52,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       return '密码长度不能少于8个字符';
     }
     if (errorMessage.includes('password') && (errorMessage.includes('uppercase') || errorMessage.includes('lowercase') || errorMessage.includes('digit') || errorMessage.includes('special'))) {
-      return '密码必须包含大小写字母、数字和特殊字符';
+      return '密码必须包含大小写字母、数字和特殊字符（如!@#$%^&*等）';
     }
     if (errorMessage.includes('password confirmation')) {
       return '两次输入的密码不一致';
@@ -101,6 +101,16 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     
     // 数据库相关错误
     if (errorMessage.includes('database error') || errorMessage.includes('postgres error')) {
+      // 尝试提供更具体的错误信息
+      if (errorMessage.includes('connection') || errorMessage.includes('timeout')) {
+        return '数据库连接失败，请检查网络连接后重试';
+      }
+      if (errorMessage.includes('constraint') || errorMessage.includes('duplicate')) {
+        return '数据已存在，请勿重复操作';
+      }
+      if (errorMessage.includes('permission') || errorMessage.includes('authorization')) {
+        return '操作权限不足，请联系管理员';
+      }
       return '数据库操作失败，请稍后重试';
     }
     if (errorMessage.includes('unique constraint') || errorMessage.includes('duplicate key')) {
@@ -205,8 +215,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     const SESSION_REFRESH_INTERVAL = 5 * 60 * 1000; // 5分钟刷新一次会话
     
     // 获取完整用户资料（包括profile表中的信息）
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const getCompleteUserProfile = async (authUser: any | null) => {
+    const getCompleteUserProfile = async (authUser: import('@supabase/supabase-js').User | null) => {
       if (!authUser) return null;
       
       try {
@@ -584,44 +593,54 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   const register = async (email: string, password: string, captchaToken?: string) => {
     setState(prev => ({ ...prev, loading: true, error: null }));
     try {
-      // 1. 检查邮箱是否存在及验证状态
+      // 1. 验证码验证
+      if (!captchaToken) {
+        throw new Error('验证码不能为空');
+      }
+      
+      // 2. 检查邮箱是否存在及验证状态
       const emailStatus = await checkEmailExists(email);
       
-      // 2. 根据邮箱状态处理不同情况
+      // 3. 根据邮箱状态处理不同情况
       if (emailStatus.exists) {
         if (emailStatus.verified) {
           throw new Error('您已经注册成功');
         } else {
-          // 未验证的用户，检查是否为注销用户（密码为随机值）
-          const loginAttempt = await supabase.auth.signInWithPassword({
-            email,
-            password,
-          });
-          
-          if (!loginAttempt.error) {
-            // 登录成功，说明密码正确，用户是正常用户
-            await supabase.auth.signOut();
-            throw new Error('您已经注册成功');
-          }
-          
-          // 登录失败，说明是注销用户或密码错误
-          // 对于注销用户，我们需要引导用户前往密码重置页面
-          const errorMsg = loginAttempt.error.message.toLowerCase();
-          
-          if (errorMsg.includes('invalid login credentials')) {
-            // 密码错误，说明是注销用户，密码已被重置为随机值
-            // 提示用户前往密码重置页面
-            throw new Error('您的账号已注销，请前往密码重置页面重置密码后再登录');
-          } else {
-            // 其他错误，如邮箱未验证
-            throw new Error('该邮箱尚未验证');
+          // 未验证的用户，检查密码是否正确
+          try {
+            const loginAttempt = await supabase.auth.signInWithPassword({
+              email,
+              password,
+            });
+            
+            if (!loginAttempt.error) {
+              // 登录成功，说明密码正确，用户是正常用户
+              await supabase.auth.signOut();
+              throw new Error('您已经注册成功');
+            }
+          } catch (loginError: unknown) {
+            // 登录失败，检查错误类型
+            if (loginError instanceof Error) {
+              const errorMsg = loginError.message.toLowerCase();
+              
+              if (errorMsg.includes('invalid login credentials')) {
+                // 密码错误，但用户存在且未验证
+                throw new Error('该邮箱已注册但未验证，且密码不正确，请重新尝试注册或前往登录页面重置密码');
+              } else if (errorMsg.includes('email not confirmed')) {
+                // 邮箱未确认，说明是真实的注册用户
+                throw new Error('该邮箱尚未验证，请先验证邮箱');
+              }
+            }
           }
         }
       }
       
-      // 3. 邮箱不存在，执行正常注册流程
+      // 4. 邮箱不存在或允许注册，执行正常注册流程
       // 使用应用URL配置，不区分环境
       const redirectUrl = typeof window !== 'undefined' ? `${window.location.origin}/auth/verify-email` : `${process.env.NEXT_PUBLIC_APP_URL}/auth/verify-email`;
+      
+      // 记录注册尝试
+      console.debug('Attempting signup with:', { email, redirectUrl: redirectUrl });
       
       const signupResult = await supabase.auth.signUp({
         email,
@@ -637,36 +656,37 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
       if (signupResult.error) {
         // 处理Supabase返回的错误
+        console.error('Signup error:', signupResult.error);
         const errorMsg = signupResult.error.message.toLowerCase();
+        
         if (errorMsg.includes('user already registered') || errorMsg.includes('already exists')) {
-          // 对于已经存在的用户，再次检查其状态
-          const updatedStatus = await checkEmailExists(email);
-          if (updatedStatus.verified) {
-            throw new Error('您已经注册成功');
+          // 对于已经存在的用户，返回明确的错误信息
+          throw new Error('该邮箱已注册，请直接登录或重置密码');
+        } else if (errorMsg.includes('captcha')) {
+          // 验证码错误，提供更详细的错误信息
+          if (errorMsg.includes('timeout') || errorMsg.includes('duplicate')) {
+            throw new Error('验证码已超时或重复使用，请刷新页面后重新验证');
           } else {
-            // 尝试直接登录，确认密码是否正确
-            const { error: loginError } = await supabase.auth.signInWithPassword({
-              email,
-              password
-            });
-            
-            if (loginError) {
-              // 登录失败，说明是注销用户，提示前往密码重置页面
-              throw new Error('您的账号已注销，请前往密码重置页面重置密码后再登录');
-            } else {
-              // 登录成功，说明密码正确，用户是正常用户
-              await supabase.auth.signOut();
-              throw new Error('您已经注册成功');
-            }
+            throw new Error('验证码验证失败，请重新验证');
           }
+        } else if (errorMsg.includes('password')) {
+          // 密码相关错误，使用translateError处理
+          throw signupResult.error;
+        } else if (errorMsg.includes('database')) {
+          // 数据库错误，返回更友好的错误信息
+          throw new Error('注册失败，请稍后重试');
         }
+        
+        // 其他错误，直接抛出
         throw signupResult.error;
       }
       
       // 注册成功，设置loading为false
+      console.debug('Signup successful:', { email, user: signupResult.data.user?.id });
       setState(prev => ({ ...prev, loading: false }));
     } catch (error) {
       const errorObj = error instanceof Error ? error : new Error('An unknown error occurred');
+      console.error('Registration error:', errorObj);
       setState(prev => ({ ...prev, loading: false, error: translateError(errorObj) }));
       throw error;
     }
@@ -939,56 +959,48 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   // 检查邮箱是否存在及验证状态
   const checkEmailExists = useCallback(async (email: string): Promise<{ exists: boolean; verified: boolean }> => {
     try {
-      // 1. 首先尝试使用RPC函数检查
-      const rpcResult = await supabase.rpc('check_email_status', { email_to_check: email });
-      
-      if (rpcResult.error) {
-        // RPC调用失败，使用备选方案：尝试登录
-        const { error: signInError } = await supabase.auth.signInWithPassword({
-          email,
-          password: 'invalid-password-123456',
-        });
-        
-        if (!signInError) {
-          // 登录成功，说明邮箱存在且密码正确
-          await supabase.auth.signOut();
-          return { exists: true, verified: true };
-        }
-        
-        const errorMsg = signInError.message.toLowerCase();
-        if (errorMsg.includes('invalid login credentials')) {
-          // 密码错误，说明邮箱存在但可能是注销用户
-          // 对于注销用户，我们应该允许重新注册
-          return { exists: false, verified: false };
-        } else if (errorMsg.includes('email not confirmed')) {
-          // 邮箱未确认，说明是真实的注册用户
-          return { exists: true, verified: false };
-        } else if (errorMsg.includes('user not found')) {
-          // 用户不存在
-          return { exists: false, verified: false };
-        }
-        
+      // 优先尝试使用RPC函数检查
+      const { data, error } = await supabase.rpc('check_email_status', {
+        email_to_check: email
+      });
+
+      if (!error && data) {
+        // RPC调用成功
+        return {
+          exists: Boolean(data.email_exists),
+          verified: Boolean(data.verified)
+        };
+      }
+
+      // RPC调用失败，使用备选方案：登录尝试
+      console.log('RPC check_email_status failed, using fallback method');
+
+      const { error: signInError } = await supabase.auth.signInWithPassword({
+        email,
+        password: 'invalid-password-for-check-only-' + Math.random(),
+      });
+
+      if (!signInError) {
+        // 登录成功（不应该发生），说明邮箱存在且密码正确
+        await supabase.auth.signOut();
+        return { exists: true, verified: true };
+      }
+
+      const errorMsg = signInError.message.toLowerCase();
+      if (errorMsg.includes('invalid login credentials')) {
+        // 密码错误，说明邮箱存在
+        return { exists: true, verified: false };
+      } else if (errorMsg.includes('email not confirmed')) {
+        // 邮箱未确认，说明是真实的注册用户
+        return { exists: true, verified: false };
+      } else if (errorMsg.includes('user not found')) {
+        // 用户不存在
         return { exists: false, verified: false };
       }
-      
-      // 处理RPC返回的结果
-      if (rpcResult.data && Array.isArray(rpcResult.data) && rpcResult.data.length > 0) {
-        // 取数组的第一个元素
-        const rpcData = rpcResult.data[0];
-        return {
-          exists: Boolean(rpcData.email_exists),
-          verified: Boolean(rpcData.verified)
-        };
-      } else if (rpcResult.data && typeof rpcResult.data === 'object') {
-        // 兼容单个对象的情况
-        return {
-          exists: Boolean(rpcResult.data.email_exists),
-          verified: Boolean(rpcResult.data.verified)
-        };
-      } else {
-        return { exists: false, verified: false };
-      }
-    } catch {
+
+      return { exists: false, verified: false };
+    } catch (error) {
+      console.error('Error checking email status:', error);
       // 所有检查都失败，默认返回用户不存在
       return { exists: false, verified: false };
     }
