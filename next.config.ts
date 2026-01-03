@@ -38,6 +38,22 @@ const nextConfig = {
         hostname: 'lh5.googleusercontent.com',
         pathname: '/**',
       },
+      // 音乐封面图片域名
+      {
+        protocol: 'https',
+        hostname: 'p3.music.126.net',
+        pathname: '/**',
+      },
+      {
+        protocol: 'https',
+        hostname: 'p4.music.126.net',
+        pathname: '/**',
+      },
+      {
+        protocol: 'https',
+        hostname: 'via.placeholder.com',
+        pathname: '/**',
+      },
     ],
   },
   serverExternalPackages: ['ioredis', '@supabase/supabase-js'],

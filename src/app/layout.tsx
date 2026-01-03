@@ -8,6 +8,7 @@ import { ChatProvider } from "@/context/ChatContext";
 import { Providers } from "./providers";
 import { VideoPlayerProvider } from "@/context/VideoPlayerContext";
 import { BackgroundProvider } from "@/context/BackgroundContext";
+import MusicPlayer from "@/components/MusicPlayer";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -51,6 +52,7 @@ export default function RootLayout({
                   <LikeProvider>
                     <VideoPlayerProvider>
                       {children}
+                      <MusicPlayer />
                     </VideoPlayerProvider>
                   </LikeProvider>
                 </Providers>

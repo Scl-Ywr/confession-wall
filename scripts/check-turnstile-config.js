@@ -3,8 +3,8 @@
  * 运行: node scripts/check-turnstile-config.js
  */
 
-const fs = require('fs');
-const path = require('path');
+import fs from 'fs';
+import path from 'path';
 
 console.log('🔍 检查 Turnstile 配置...\n');
 
