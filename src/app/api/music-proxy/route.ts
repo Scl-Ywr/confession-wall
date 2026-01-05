@@ -15,6 +15,9 @@ const getMusicAPIUrls = (): string[] => {
   // 默认API列表
   return [
     'https://music-api.gdstudio.xyz/api.php',
+    'https://api.music.liuzhijin.cn/api.php',
+    'https://api-music.lgdsunday.club/api.php',
+    'https://music-api.yujing.fit/api.php',
   ];
 };
 

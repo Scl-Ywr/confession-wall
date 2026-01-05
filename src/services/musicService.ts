@@ -184,7 +184,12 @@ export const getMusicUrl = async (
       // 如果不是JSON，获取响应文本并记录错误
       const responseText = await response.text();
       console.error('获取音乐URL失败，响应不是JSON:', responseText);
-      throw new Error('获取音乐URL失败，请稍后重试');
+      // 返回空URL而不是抛出错误
+      return {
+        url: '',
+        br: br,
+        size: 0
+      };
     }
     
     const data = await response.json();
@@ -197,10 +202,21 @@ export const getMusicUrl = async (
       };
     }
 
-    throw new Error('获取音乐URL失败');
+    // 如果没有返回URL，返回空URL而不是抛出错误
+    console.error('获取音乐URL失败: 没有返回URL');
+    return {
+      url: '',
+      br: br,
+      size: 0
+    };
   } catch (error) {
     console.error('获取音乐URL失败:', error);
-    throw new Error('获取音乐URL失败，请稍后重试');
+    // 返回空URL而不是抛出错误
+    return {
+      url: '',
+      br: br,
+      size: 0
+    };
   }
 };
 
