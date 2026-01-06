@@ -61,8 +61,8 @@ export const confessionService = {
       }
 
       // 6. 优化查询，包含likes_count字段
-      let confessions = [];
-      let confessionsError = null;
+      let confessions: any[] = [];
+      let confessionsError: any = null;
       try {
         const result = await supabase
           .from('confessions')

@@ -19,7 +19,8 @@
       "Bash(npm uninstall:*)",
       "Bash(del \"c:\\\\Users\\\\PC\\\\Desktop\\\\confession-wall\\\\MUSIC_PROXY_TROUBLESHOOTING.md\")",
       "Bash(python -m json.tool:*)",
-      "Bash(timeout 15 curl:*)"
+      "Bash(timeout 15 curl:*)",
+      "Bash(npm run build:*)"
     ],
     "deny": [],
     "ask": []
