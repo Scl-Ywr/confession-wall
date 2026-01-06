@@ -536,7 +536,7 @@ export default function ConfessionCard({
               {confession.images.map((media) => (
                 <div
                   key={media.id}
-                  className={`relative w-full rounded-lg sm:rounded-xl border border-gray-100 dark:border-gray-700 shadow-sm transition-all duration-500 ease-in-out ${media.file_type === 'video' ? '' : 'aspect-square overflow-hidden'} group`}
+                  className={`relative w-full rounded-lg sm:rounded-xl border border-gray-100 dark:border-gray-700 shadow-sm transition-all duration-500 ease-in-out overflow-hidden group`}
                 >
                     {media.file_type === 'image' ? (
                       <PhotoView src={media.image_url}>

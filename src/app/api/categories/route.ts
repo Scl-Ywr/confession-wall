@@ -13,13 +13,15 @@ export async function GET() {
     
     if (error) {
       console.error('Error fetching categories:', error);
-      return NextResponse.json({ error: 'Failed to fetch categories' }, { status: 500 });
+      // 返回空数组而不是 500 错误，防止前端崩溃
+      return NextResponse.json({ categories: [] });
     }
     
-    return NextResponse.json({ categories });
+    return NextResponse.json({ categories: categories || [] });
   } catch (error) {
     console.error('Error in categories API:', error);
-    return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
+    // 返回空数组而不是 500 错误，防止前端崩溃
+    return NextResponse.json({ categories: [] });
   }
 }
 

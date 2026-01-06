@@ -6,7 +6,7 @@ import Image from 'next/image';
 import {
   Volume2, VolumeX, Pause, Play, Music, Search, X,
   SkipBack, SkipForward, List, Shuffle, Repeat, Repeat1,
-  ChevronDown, ChevronUp
+  ChevronDown, ChevronUp, Lock, Crown
 } from 'lucide-react';
 import { musicService, MusicSearchItem } from '@/services/musicService';
 
@@ -39,6 +39,7 @@ const MusicPlayer: React.FC<MusicPlayerProps> = () => {
   const [searchKeyword, setSearchKeyword] = useState('');
   const [searchResults, setSearchResults] = useState<MusicSearchItem[]>([]);
   const [isAddingToPlaylist, setIsAddingToPlaylist] = useState<string | null>(null);
+  const [showOnlyPlayable, setShowOnlyPlayable] = useState(false);
 
   // Playback states
   const [isPlaying, setIsPlaying] = useState(false);
@@ -65,6 +66,12 @@ const MusicPlayer: React.FC<MusicPlayerProps> = () => {
   const [currentLyricIndex, setCurrentLyricIndex] = useState(0);
 
   const isMobile = windowSize.width < 768;
+
+  // Filter search results based on playable status
+  const filteredSearchResults = React.useMemo(() => {
+    if (!showOnlyPlayable) return searchResults;
+    return searchResults.filter(item => item.playable !== false);
+  }, [searchResults, showOnlyPlayable]);
 
   // Window size tracking
   useEffect(() => {
@@ -426,11 +433,20 @@ const MusicPlayer: React.FC<MusicPlayerProps> = () => {
   // Add to playlist
   const addToPlaylist = async (item: MusicSearchItem) => {
     if (isAddingToPlaylist === item.id) return;
+
+    // Check if song is marked as unplayable
+    if (item.playable === false) {
+      alert('该歌曲暂时无法播放，请尝试其他歌曲');
+      return;
+    }
+
     try {
       setIsAddingToPlaylist(item.id);
       const musicUrl = await musicService.getUrl(item.id, 320, item.source);
       if (!musicUrl.url) {
-        alert('无法获取音乐播放链接，请尝试其他歌曲');
+        // Use message from API if available
+        const errorMsg = (musicUrl as any).message || '无法获取音乐播放链接，请尝试其他歌曲';
+        alert(errorMsg);
         setIsAddingToPlaylist(null);
         return;
       }
@@ -597,7 +613,21 @@ const MusicPlayer: React.FC<MusicPlayerProps> = () => {
                         className="px-5 pb-4 max-h-64 overflow-y-auto"
                       >
                         <div className="flex items-center justify-between mb-3">
-                          <h4 className="text-sm font-semibold text-gray-700 dark:text-gray-200">搜索结果 ({searchResults.length})</h4>
+                          <div className="flex items-center gap-2">
+                            <h4 className="text-sm font-semibold text-gray-700 dark:text-gray-200">
+                              搜索结果 ({filteredSearchResults.length}/{searchResults.length})
+                            </h4>
+                            <button
+                              onClick={() => setShowOnlyPlayable(!showOnlyPlayable)}
+                              className={`text-xs px-2 py-1 rounded-full transition-all duration-200 ${
+                                showOnlyPlayable
+                                  ? 'bg-orange-500 text-white'
+                                  : 'bg-gray-200 dark:bg-gray-700 text-gray-600 dark:text-gray-300'
+                              }`}
+                            >
+                              {showOnlyPlayable ? '显示全部' : '仅可播放'}
+                            </button>
+                          </div>
                           <button
                             onClick={() => setShowSearchResults(false)}
                             className="text-xs text-orange-600 hover:text-orange-700 dark:text-orange-400 dark:hover:text-orange-300 font-medium"
@@ -606,21 +636,36 @@ const MusicPlayer: React.FC<MusicPlayerProps> = () => {
                           </button>
                         </div>
                         <div className="space-y-2">
-                          {searchResults.map((item, index) => (
+                          {filteredSearchResults.map((item, index) => (
                             <motion.div
                               key={`${item.id}-${index}`}
-                              className="glass-card flex items-center justify-between p-3 rounded-xl cursor-pointer"
-                              whileHover={{ scale: 1.02 }}
-                              whileTap={{ scale: 0.98 }}
+                              className={`glass-card flex items-center justify-between p-3 rounded-xl cursor-pointer ${
+                                item.playable === false ? 'opacity-50' : ''
+                              }`}
+                              whileHover={{ scale: item.playable === false ? 1 : 1.02 }}
+                              whileTap={{ scale: item.playable === false ? 1 : 0.98 }}
                             >
                               <div className="flex-1 min-w-0">
-                                <div className="text-sm font-medium truncate text-gray-800 dark:text-gray-100">{item.name}</div>
+                                <div className="flex items-center gap-2 mb-1">
+                                  <div className="text-sm font-medium truncate text-gray-800 dark:text-gray-100">
+                                    {item.name}
+                                  </div>
+                                  {item.vip && (
+                                    <span className="flex items-center gap-1 text-xs bg-gradient-to-r from-yellow-400 to-yellow-500 text-white px-2 py-0.5 rounded-full whitespace-nowrap">
+                                      <Crown size={10} />
+                                      VIP
+                                    </span>
+                                  )}
+                                  {item.playable === false && (
+                                    <Lock size={12} className="text-gray-400 flex-shrink-0" />
+                                  )}
+                                </div>
                                 <div className="text-xs truncate text-gray-500 dark:text-gray-400">{item.artist.join(', ')}</div>
                               </div>
                               <button
                                 onClick={() => addToPlaylist(item)}
-                                disabled={isAddingToPlaylist === item.id}
-                                className="ml-3 p-3 rounded-full transition-all duration-200"
+                                disabled={isAddingToPlaylist === item.id || item.playable === false}
+                                className="ml-3 p-3 rounded-full transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
                                 style={{
                                   background: 'linear-gradient(135deg, #f87a43 0%, #f4728e 100%)',
                                   boxShadow: '0 2px 8px rgba(248, 122, 67, 0.3)',
@@ -973,7 +1018,21 @@ const MusicPlayer: React.FC<MusicPlayerProps> = () => {
                       className="glass absolute bottom-full left-0 right-0 mb-2 rounded-2xl shadow-2xl p-3 max-h-80 overflow-y-auto"
                     >
                       <div className="flex items-center justify-between mb-2">
-                        <h4 className="text-sm font-semibold text-gray-700 dark:text-gray-200">搜索结果 ({searchResults.length})</h4>
+                        <div className="flex items-center gap-2">
+                          <h4 className="text-sm font-semibold text-gray-700 dark:text-gray-200">
+                            搜索结果 ({filteredSearchResults.length}/{searchResults.length})
+                          </h4>
+                          <button
+                            onClick={() => setShowOnlyPlayable(!showOnlyPlayable)}
+                            className={`text-xs px-2 py-0.5 rounded-full transition-all duration-200 ${
+                              showOnlyPlayable
+                                ? 'bg-orange-500 text-white'
+                                : 'bg-gray-200 dark:bg-gray-700 text-gray-600 dark:text-gray-300'
+                            }`}
+                          >
+                            {showOnlyPlayable ? '全部' : '可播放'}
+                          </button>
+                        </div>
                         <button
                           onClick={() => setShowSearchResults(false)}
                           className="text-xs text-orange-600 hover:text-orange-700 dark:text-orange-400 dark:hover:text-orange-300 font-medium"
@@ -981,21 +1040,36 @@ const MusicPlayer: React.FC<MusicPlayerProps> = () => {
                           收起
                         </button>
                       </div>
-                      {searchResults.map((item, index) => (
+                      {filteredSearchResults.map((item, index) => (
                         <motion.div
                           key={`${item.id}-${index}`}
-                          className="glass-card flex items-center justify-between p-2 mb-1 rounded-lg cursor-pointer"
-                          whileHover={{ scale: 1.02 }}
-                          whileTap={{ scale: 0.98 }}
+                          className={`glass-card flex items-center justify-between p-2 mb-1 rounded-lg cursor-pointer ${
+                            item.playable === false ? 'opacity-50' : ''
+                          }`}
+                          whileHover={{ scale: item.playable === false ? 1 : 1.02 }}
+                          whileTap={{ scale: item.playable === false ? 1 : 0.98 }}
                         >
                           <div className="flex-1 min-w-0">
-                            <div className="text-sm font-medium truncate text-gray-800 dark:text-gray-100">{item.name}</div>
+                            <div className="flex items-center gap-1.5 mb-0.5">
+                              <div className="text-sm font-medium truncate text-gray-800 dark:text-gray-100">
+                                {item.name}
+                              </div>
+                              {item.vip && (
+                                <span className="flex items-center gap-0.5 text-xs bg-gradient-to-r from-yellow-400 to-yellow-500 text-white px-1.5 py-0.5 rounded-full whitespace-nowrap">
+                                  <Crown size={8} />
+                                  VIP
+                                </span>
+                              )}
+                              {item.playable === false && (
+                                <Lock size={10} className="text-gray-400 flex-shrink-0" />
+                              )}
+                            </div>
                             <div className="text-xs truncate text-gray-500 dark:text-gray-400">{item.artist.join(', ')}</div>
                           </div>
                           <button
                             onClick={() => addToPlaylist(item)}
-                            disabled={isAddingToPlaylist === item.id}
-                            className="ml-2 p-2 rounded-full"
+                            disabled={isAddingToPlaylist === item.id || item.playable === false}
+                            className="ml-2 p-2 rounded-full disabled:opacity-50 disabled:cursor-not-allowed"
                             style={{
                               background: 'linear-gradient(135deg, #f87a43 0%, #f4728e 100%)',
                               boxShadow: '0 2px 8px rgba(248, 122, 67, 0.3)',

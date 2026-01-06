@@ -70,8 +70,10 @@ export default function VideoPlayer({ id, videoUrl, className = '', posterUrl }:
         id={id}
         videoUrl={videoUrl}
         posterUrl={posterUrl}
-        className="w-full h-full"
+        className={`w-full h-full object-cover rounded-lg sm:rounded-xl`}
         muted={isMuted}
+        width="100%"
+        height="100%"
         onPlay={() => {
           setIsPaused(false);
         }}

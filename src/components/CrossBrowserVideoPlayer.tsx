@@ -568,8 +568,13 @@ export default function CrossBrowserVideoPlayer({
   return (
     <div 
       ref={containerRef}
-      className={`relative bg-black overflow-hidden rounded-3xl shadow-2xl ${className}`}
-      style={{ width, height }}
+      className={`relative bg-black overflow-hidden shadow-2xl ${className}`}
+      style={{ 
+        width, 
+        height,
+        borderRadius: 'inherit', // 继承父组件的圆角设置
+        overflow: 'hidden' // 确保内容不会溢出
+      }}
       onMouseMove={showControlsWithTimeout}
       onTouchStart={showControlsWithTimeout}
       onKeyDown={handleKeyDown}
@@ -615,10 +620,10 @@ export default function CrossBrowserVideoPlayer({
       )}
 
       {/* 简化的视频显示 - 直接使用视频元素的能力 */}
-      <div className="relative w-full h-full">
+      <div className="relative w-full h-full overflow-hidden rounded-lg sm:rounded-xl">
         <video
           ref={videoRef}
-          className="w-full h-full object-contain rounded-3xl"
+          className="w-full h-full object-cover"
           poster={finalPosterUrl}
           preload={capabilities.isMobile ? "auto" : "metadata"}
           autoPlay={autoPlay}
@@ -641,14 +646,14 @@ export default function CrossBrowserVideoPlayer({
           style={{
             WebkitTapHighlightColor: 'transparent',
             backgroundColor: 'black',
-            // 确保视频在暂停时能显示当前帧和poster
-            objectFit: 'contain',
+            // 确保视频填满容器，不出现空白
+            objectFit: 'cover',
             // 移除可能影响显示的样式
             background: 'none',
             border: 'none',
             outline: 'none',
             // 确保poster正确显示
-            backgroundSize: 'contain',
+            backgroundSize: 'cover',
             backgroundPosition: 'center',
             backgroundRepeat: 'no-repeat'
           }}
@@ -660,7 +665,7 @@ export default function CrossBrowserVideoPlayer({
         
         {/* 初始加载占位符 - 只在视频未加载时显示 */}
         {isLoading && !finalPosterUrl && (
-          <div className="absolute inset-0 bg-gradient-to-br from-gray-800 to-black z-10 flex items-center justify-center">
+          <div className="absolute inset-0 bg-gradient-to-br from-gray-800 to-black z-10 flex items-center justify-center rounded-lg sm:rounded-xl">
             <div className="text-white/50 text-4xl">
               🎬
             </div>

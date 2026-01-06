@@ -29,7 +29,12 @@ export async function proxy(request: NextRequest) {
     }
   );
 
-  await supabase.auth.getUser();
+  try {
+    await supabase.auth.getUser();
+  } catch (error) {
+    console.error('Error getting user in proxy:', error);
+    // 继续执行，不中断请求
+  }
 
   return supabaseResponse;
 }

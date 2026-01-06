@@ -173,7 +173,11 @@ const ResponsiveVideoContainer = React.forwardRef<HTMLDivElement, Omit<Responsiv
           }
         }}
         className="video-wrapper"
-        style={getContainerStyle()}
+        style={{
+          ...getContainerStyle(),
+          overflow: 'hidden',
+          borderRadius: '0', // 移除容器的圆角，让视频组件自己控制圆角
+        }}
       >
         {children}
         
@@ -205,7 +209,7 @@ const ResponsiveVideoContainer = React.forwardRef<HTMLDivElement, Omit<Responsiv
         }
         
         .video-container-mobile .video-wrapper {
-          border-radius: 0.5rem;
+          border-radius: 0;
         }
         
         .video-container-mobile.video-container-portrait .video-wrapper {
@@ -214,11 +218,11 @@ const ResponsiveVideoContainer = React.forwardRef<HTMLDivElement, Omit<Responsiv
         }
         
         .video-container-tablet .video-wrapper {
-          border-radius: 0.75rem;
+          border-radius: 0;
         }
         
         .video-container-desktop .video-wrapper {
-          border-radius: 1rem;
+          border-radius: 0;
         }
         
         .video-container-touch video {

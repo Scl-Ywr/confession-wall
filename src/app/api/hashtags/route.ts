@@ -23,16 +23,18 @@ export async function GET(request: NextRequest) {
         .limit(limit);
       
       if (fallbackError) {
-        return NextResponse.json({ error: 'Failed to fetch hashtags' }, { status: 500 });
+        // 返回空数组而不是 500 错误，防止前端崩溃
+        return NextResponse.json({ hashtags: [] });
       }
       
-      return NextResponse.json({ hashtags: fallbackHashtags });
+      return NextResponse.json({ hashtags: fallbackHashtags || [] });
     }
     
-    return NextResponse.json({ hashtags });
+    return NextResponse.json({ hashtags: hashtags || [] });
   } catch (error) {
     console.error('Error in hashtags API:', error);
-    return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
+    // 返回空数组而不是 500 错误，防止前端崩溃
+    return NextResponse.json({ hashtags: [] });
   }
 }
 

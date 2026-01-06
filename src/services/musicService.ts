@@ -35,7 +35,10 @@ export interface MusicSearchItem {
   artist: string[]; // 歌手列表
   album: string; // 专辑名
   pic_id: string; // 专辑图ID
+  pic_url?: string; // 专辑图片 URL（新增）
   source: MusicSource; // 音乐源
+  playable?: boolean; // 是否可播放（新增）
+  vip?: boolean; // 是否需要 VIP（新增）
 }
 
 // 音乐URL响应

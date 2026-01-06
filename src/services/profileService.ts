@@ -21,70 +21,79 @@ export const profileService = {
   // Get current user's profile
   getCurrentProfile: async (): Promise<Profile> => {
     // Get current user first
-    const userResult = await supabase.auth.getUser();
-    
-    // 处理会话缺失错误
-    if (userResult.error) {
-      if (userResult.error.message === 'Auth session missing!' || userResult.error.name === 'AuthSessionMissingError') {
-        throw new Error('用户会话不存在，请重新登录');
+    let userId = null;
+    try {
+      const userResult = await supabase.auth.getUser();
+      
+      // 处理会话缺失错误
+      if (userResult.error) {
+        if (userResult.error.message === 'Auth session missing!' || userResult.error.name === 'AuthSessionMissingError') {
+          throw new Error('用户会话不存在，请重新登录');
+        }
+        throw new Error('User not authenticated');
       }
-      throw new Error('User not authenticated');
-    }
-    
-    const user = userResult.data.user;
-    const userId = user?.id;
-    
-    if (!userId) {
-      throw new Error('User not authenticated');
-    }
+      
+      const user = userResult.data.user;
+      userId = user?.id;
+      
+      if (!userId) {
+        throw new Error('User not authenticated');
+      }
 
-    // Try to get profile from cache first
-    const cacheKey = getUserProfileCacheKey(userId);
-    const cachedProfile = await getCache<Profile>(cacheKey);
-    if (cachedProfile) {
-      return cachedProfile;
-    }
-    
-    // Try to get existing profile from database
-    const { data, error } = await supabase
-      .from('profiles')
-      .select('*')
-      .eq('id', userId)
-      .maybeSingle();
+      // Try to get profile from cache first
+      const cacheKey = getUserProfileCacheKey(userId);
+      const cachedProfile = await getCache<Profile>(cacheKey);
+      if (cachedProfile) {
+        return cachedProfile;
+      }
+      
+      // Try to get existing profile from database
+      const { data, error } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('id', userId)
+        .maybeSingle();
 
-    if (error) {
-      throw error;
-    }
-    
-    // If profile exists, cache it and return
-    if (data) {
-      await setCache(cacheKey, data, EXPIRY.MEDIUM);
-      return data as Profile;
-    }
-    
-    // If profile doesn't exist, create a default one
-    const defaultUsername = user?.email?.split('@')[0] || `user_${userId.substring(0, 8)}`;
-    const defaultDisplayName = user?.email?.split('@')[0] || `User ${userId.substring(0, 8)}`;
-    
-    const { data: newProfile, error: createError } = await supabase
-      .from('profiles')
-      .insert({
-        id: userId,
-        username: defaultUsername,
-        display_name: defaultDisplayName,
-        avatar_url: undefined
-      })
-      .select('*')
-      .single();
-    
-    if (createError) {
-      throw createError;
-    }
+      if (error) {
+        throw error;
+      }
+      
+      // If profile exists, cache it and return
+      if (data) {
+        await setCache(cacheKey, data, EXPIRY.MEDIUM);
+        return data as Profile;
+      }
+      
+      // If profile doesn't exist, create a default one
+      const defaultUsername = user?.email?.split('@')[0] || `user_${userId.substring(0, 8)}`;
+      const defaultDisplayName = user?.email?.split('@')[0] || `User ${userId.substring(0, 8)}`;
+      
+      const { data: newProfile, error: createError } = await supabase
+        .from('profiles')
+        .insert({
+          id: userId,
+          username: defaultUsername,
+          display_name: defaultDisplayName,
+          avatar_url: undefined
+        })
+        .select('*')
+        .single();
+      
+      if (createError) {
+        throw createError;
+      }
 
-    // Cache the newly created profile
-    await setCache(cacheKey, newProfile, EXPIRY.MEDIUM);
-    
-    return newProfile as Profile;
+      // Cache the newly created profile
+      await setCache(cacheKey, newProfile, EXPIRY.MEDIUM);
+      
+      return newProfile as Profile;
+    } catch (error) {
+      console.error('Error getting current profile:', error);
+      if (error instanceof Error) {
+        throw error;
+      }
+      throw new Error('Failed to get profile');
+    }
   },
 
   // Get a user's profile by ID

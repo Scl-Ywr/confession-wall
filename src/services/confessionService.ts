@@ -61,23 +61,32 @@ export const confessionService = {
       }
 
       // 6. 优化查询，包含likes_count字段
-      const { data: confessions, error: confessionsError } = await supabase
-        .from('confessions')
-        .select(`
-          id, 
-          content, 
-          is_anonymous, 
-          user_id, 
-          created_at, 
-          likes_count,
-          category_id,
-          category:confession_categories(id, name, icon, color)
-        `)
-        .order('created_at', { ascending: false })
-        .range((page - 1) * limit, page * limit - 1);
+      let confessions = [];
+      let confessionsError = null;
+      try {
+        const result = await supabase
+          .from('confessions')
+          .select(`
+            id, 
+            content, 
+            is_anonymous, 
+            user_id, 
+            created_at, 
+            likes_count,
+            category_id,
+            category:confession_categories(id, name, icon, color)
+          `)
+          .order('created_at', { ascending: false })
+          .range((page - 1) * limit, page * limit - 1);
+        confessions = result.data || [];
+        confessionsError = result.error;
+      } catch (error) {
+        console.error('Error fetching confessions:', error);
+        confessionsError = error;
+      }
 
       if (confessionsError) {
-        console.error('Error fetching confessions:', confessionsError);
+        console.error('Error fetching confessions:', confessionsError instanceof Error ? confessionsError.message : JSON.stringify(confessionsError));
         return [];
       }
 
@@ -264,6 +273,11 @@ export const confessionService = {
       return confessionsWithLikes;
     } catch (error) {
       console.error('Error in getConfessions:', error);
+      // 检测 CORS 错误
+      if (error instanceof TypeError && error.message === 'Failed to fetch') {
+        // 这可能是 CORS 错误，添加友好提示
+        console.error('可能是 CORS 配置问题，请检查 Supabase 控制台中的 CORS 设置');
+      }
       // 不抛出错误，而是返回空数组，确保页面能够正常显示
       return [];
     }
@@ -272,32 +286,41 @@ export const confessionService = {
   // 获取单个表白
   getConfession: async (id: string): Promise<Confession | null> => {
     // 6. 获取当前用户ID
-    const user = await supabase.auth.getUser();
-    
-    // 处理会话缺失错误
-    if (user.error) {
-      if (user.error.message === 'Auth session missing!' || user.error.name === 'AuthSessionMissingError') {
-        // 继续执行，返回null或默认内容
+    let userId = null;
+    try {
+      const userResult = await supabase.auth.getUser();
+      
+      // 处理会话缺失错误
+      if (userResult.error) {
+        if (userResult.error.message === 'Auth session missing!' || userResult.error.name === 'AuthSessionMissingError') {
+          // 继续执行，返回null或默认内容
+        } else {
+          console.error('Error getting user:', userResult.error);
+          // 继续执行，返回null
+        }
       } else {
-        console.error('Error getting user:', user.error);
-        // 继续执行，返回null
+        userId = userResult.data?.user?.id;
       }
+    } catch (error) {
+      console.error('Error getting user:', error);
+      // 继续执行，返回null
     }
     
-    const userId = user.data?.user?.id;
-    
     // 生成缓存键，添加用户ID，确保每个用户有独立的缓存
-    const cacheKey = cacheKeyManager.confession.detail(id, userId);
-    
+    const cacheKey = cacheKeyManager.confession.detail(id, userId || undefined);
+    const nullCacheKey = `${cacheKey}:null`;
+
     // 1. 尝试从缓存获取数据
     const cachedData = await cacheManager.getCache<Confession>(cacheKey);
     if (cachedData) {
       return cachedData;
     }
 
-    // 2. 缓存穿透防护：检查是否是空值缓存
-    const nullCacheKey = `${cacheKey}:null`;
-    const isNullCached = await cacheManager.getCache<boolean>(nullCacheKey);
+    // 2. 缓存穿透防护：检查是否是空值缓存（只在服务器环境中）
+    let isNullCached = false;
+    if (typeof window === 'undefined') {
+      isNullCached = await cacheManager.getCache<boolean>(nullCacheKey) || false;
+    }
     if (isNullCached) {
       return null;
     }
@@ -1050,8 +1073,26 @@ export const confessionService = {
   // 创建评论
   createComment: async (confessionId: string, formData: CommentFormData): Promise<Comment> => {
     // 获取当前用户
-    const user = await supabase.auth.getUser();
-    const userId = user.data.user?.id;
+    let userId = null;
+    try {
+      const userResult = await supabase.auth.getUser();
+      
+      // 处理会话缺失错误
+      if (userResult.error) {
+        if (userResult.error.message === 'Auth session missing!' || userResult.error.name === 'AuthSessionMissingError') {
+          throw new Error('用户会话不存在，请重新登录');
+        }
+        throw new Error('User not authenticated');
+      } else {
+        userId = userResult.data.user?.id;
+      }
+    } catch (error) {
+      console.error('Error getting user:', error);
+      if (error instanceof Error) {
+        throw error;
+      }
+      throw new Error('User not authenticated');
+    }
     
     if (!userId) {
       throw new Error('User not authenticated');
@@ -1157,8 +1198,25 @@ export const confessionService = {
   // 搜索表白
   searchConfessions: async (keyword: string, searchType: 'content' | 'username', page: number = 1, limit: number = 10): Promise<Confession[]> => {
     const offset = (page - 1) * limit;
-    const user = await supabase.auth.getUser();
-    const userId = user.data.user?.id;
+    let userId = null;
+    try {
+      const userResult = await supabase.auth.getUser();
+      
+      // 处理会话缺失错误
+      if (userResult.error) {
+        if (userResult.error.message === 'Auth session missing!' || userResult.error.name === 'AuthSessionMissingError') {
+          // 继续执行，返回空列表或默认内容
+        } else {
+          console.error('Error getting user:', userResult.error);
+          // 继续执行，不影响搜索结果获取
+        }
+      } else {
+        userId = userResult.data.user?.id;
+      }
+    } catch (error) {
+      console.error('Error getting user:', error);
+      // 继续执行，不影响搜索结果获取
+    }
 
     let confessions: Array<{id: string; content: string; is_anonymous: boolean; user_id: string | null; created_at: string; likes_count: number}> = [];
 
@@ -1341,7 +1399,9 @@ export const confessionService = {
       });
       
       if (!response.ok) {
-        throw new Error(`Failed to fetch categories: ${response.status} ${response.statusText}`);
+        // 不抛出错误，而是返回空数组，防止应用崩溃
+        console.error(`Failed to fetch categories: ${response.status} ${response.statusText}`);
+        return [];
       }
       
       const result = await response.json();
@@ -1349,7 +1409,7 @@ export const confessionService = {
       
       return categories;
     } catch (error) {
-      console.error('Error in getCategories:', error);
+      console.error('Error in getCategories:', error instanceof Error ? error.message : JSON.stringify(error));
       return [];
     }
   },

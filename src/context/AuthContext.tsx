@@ -279,18 +279,38 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         const { error } = await supabase.auth.refreshSession();
         if (error) {
           console.error('Error refreshing session:', error);
-          // 会话刷新失败，可能需要重新登录
-          await supabase.auth.signOut();
-          if (currentUserId) {
-            updateOnlineStatus(currentUserId, 'offline');
-            currentUserId = null;
+          // 会话刷新失败，检查是否是会话丢失错误
+          if (error.message === 'Auth session missing!' || error.name === 'AuthSessionMissingError') {
+            // 会话已丢失，不需要强制登出，只需要更新状态
+            if (currentUserId) {
+              updateOnlineStatus(currentUserId, 'offline');
+              currentUserId = null;
+            }
+            setState(prev => ({ ...prev, user: null, loading: false }));
+            // 取消消息订阅
+            globalMessageService.unsubscribe();
+            // 清除会话刷新定时器
+            if (sessionRefreshInterval) {
+              clearInterval(sessionRefreshInterval);
+              sessionRefreshInterval = null;
+            }
+          } else {
+            // 其他错误，可能需要重新登录
+            await supabase.auth.signOut();
+            if (currentUserId) {
+              updateOnlineStatus(currentUserId, 'offline');
+              currentUserId = null;
+            }
+            setState(prev => ({ ...prev, user: null, loading: false }));
+            // 取消消息订阅
+            globalMessageService.unsubscribe();
           }
-          setState(prev => ({ ...prev, user: null, loading: false }));
         } else {
           console.debug('Session refreshed successfully');
         }
       } catch (error) {
         console.error('Error refreshing session:', error);
+        // 捕获所有异常，避免会话刷新失败导致应用崩溃
       }
     };
     
