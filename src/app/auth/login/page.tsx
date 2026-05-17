@@ -10,6 +10,7 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import SocialLoginButtons from '@/components/SocialLoginButtons';
 import Turnstile from '@/components/Turnstile';
+import { LockKeyhole, LogIn, ShieldCheck } from 'lucide-react';
 
 
 // 创建登录表单的Zod schema
@@ -34,6 +35,7 @@ const LoginPage: React.FC = () => {
   const [emailInput, setEmailInput] = React.useState<string>('');
   const [captchaToken, setCaptchaToken] = useState<string | null>(null);
   const [captchaError, setCaptchaError] = useState<string | null>(null);
+  const [captchaResetKey, setCaptchaResetKey] = useState(0);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   // 组件挂载时清除错误信息
@@ -48,7 +50,16 @@ const LoginPage: React.FC = () => {
   }, []);
 
   const handleCaptchaError = useCallback(() => {
+    setCaptchaToken(null);
     setCaptchaError('验证失败，请重试');
+  }, []);
+
+  const resetCaptcha = useCallback((message?: string) => {
+    setCaptchaToken(null);
+    setCaptchaResetKey((key) => key + 1);
+    if (message) {
+      setCaptchaError(message);
+    }
   }, []);
 
   // 监听邮箱输入变化，获取登录尝试信息
@@ -123,25 +134,11 @@ const LoginPage: React.FC = () => {
     setCaptchaError(null);
 
     try {
-      // 步骤1：后端验证captchaToken
-      const verifyResponse = await fetch('/api/verify-turnstile', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ token: captchaToken }),
-      });
-
-      const verifyResult = await verifyResponse.json();
-
-      if (!verifyResult.success) {
-        setCaptchaError(verifyResult.error || '验证失败，请重试');
-        setCaptchaToken(null); // 重置token，要求重新验证
-        return;
-      }
-
-      // 步骤2：验证成功，执行登录
+      // Turnstile token 是一次性的，直接交给 Supabase Auth 验证，避免本地预验证消费 token。
       await login(data.email, data.password, captchaToken);
       router.push('/');
     } catch (err) {
+      resetCaptcha();
       // 错误已在AuthContext中处理
       // 登录失败后，重新获取登录尝试信息
       let ipAddress = 'unknown';
@@ -174,8 +171,7 @@ const LoginPage: React.FC = () => {
       // 验证码错误，重置验证码
       const errorMessage = error || (err instanceof Error ? err.message : '');
       if (errorMessage.includes('验证码') || errorMessage.includes('captcha')) {
-        setCaptchaToken(null);
-        setCaptchaError(errorMessage);
+        resetCaptcha(errorMessage);
       }
     } finally {
       setIsSubmitting(false);
@@ -183,31 +179,29 @@ const LoginPage: React.FC = () => {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center relative overflow-hidden bg-gradient-to-br from-indigo-50 via-purple-50 to-pink-50 dark:from-gray-900 dark:via-purple-900/20 dark:to-gray-900">
-      <MeteorShower className="opacity-50" />
-      
-      {/* Decorative blobs */}
-      <div className="absolute top-0 left-0 w-96 h-96 bg-purple-300/30 rounded-full mix-blend-multiply filter blur-3xl opacity-70 animate-blob dark:bg-purple-900/30"></div>
-      <div className="absolute top-0 right-0 w-96 h-96 bg-yellow-300/30 rounded-full mix-blend-multiply filter blur-3xl opacity-70 animate-blob animation-delay-2000 dark:bg-blue-900/30"></div>
-      <div className="absolute -bottom-8 left-20 w-96 h-96 bg-pink-300/30 rounded-full mix-blend-multiply filter blur-3xl opacity-70 animate-blob animation-delay-4000 dark:bg-pink-900/30"></div>
+    <div className="cw-page relative flex min-h-screen items-center justify-center overflow-hidden px-4 py-10">
+      <div className="cw-decor-grid" />
+      <MeteorShower className="opacity-20" />
+      <div className="pointer-events-none absolute left-10 top-32 h-20 w-20 rotate-[-18deg] rounded-[36%] bg-pink-300/25 blur-sm" />
+      <div className="pointer-events-none absolute right-16 bottom-28 h-24 w-24 rotate-12 rounded-[36%] bg-rose-300/25 blur-sm" />
 
-      <div className="max-w-md w-full space-y-8 relative z-10 p-8 glass rounded-3xl animate-fade-in">
+      <div className="cw-panel relative z-10 w-full max-w-md animate-fade-in space-y-8 rounded-[2rem] p-8">
         <div className="text-center">
-          <div className="mx-auto h-16 w-16 bg-gradient-to-br from-primary-500 to-secondary-500 rounded-2xl flex items-center justify-center shadow-lg transform rotate-3 hover:rotate-6 transition-transform duration-300">
-            <span className="text-3xl">🔐</span>
+          <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-2xl bg-rose-100 text-rose-500 shadow-[0_14px_35px_rgba(244,63,94,.18)] transition-transform duration-300 hover:rotate-3 dark:bg-rose-500/15">
+            <LockKeyhole className="h-8 w-8" />
           </div>
-          <h2 className="mt-6 text-3xl font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-primary-600 to-secondary-600 dark:from-primary-400 dark:to-secondary-400">
+          <h2 className="mt-6 bg-gradient-to-r from-rose-500 to-orange-500 bg-clip-text text-3xl font-black text-transparent">
             欢迎回来
           </h2>
-          <p className="mt-2 text-sm text-gray-600 dark:text-gray-300">
+          <p className="mt-2 text-sm font-medium text-slate-500 dark:text-slate-400">
             还没有账号？
-            <Link href="/auth/register" className="font-medium text-primary-600 hover:text-primary-500 transition-colors dark:text-primary-400 dark:hover:text-primary-300 ml-1">
+            <Link href="/auth/register" className="ml-1 font-bold text-rose-500 transition-colors hover:text-rose-600 dark:text-rose-300">
               立即注册
             </Link>
           </p>
-          <p className="mt-1 text-sm text-gray-600 dark:text-gray-300">
+          <p className="mt-1 text-sm font-medium text-slate-500 dark:text-slate-400">
             忘记密码？
-            <Link href="/auth/forgot-password" className="font-medium text-primary-600 hover:text-primary-500 transition-colors dark:text-primary-400 dark:hover:text-primary-300 ml-1">
+            <Link href="/auth/forgot-password" className="ml-1 font-bold text-rose-500 transition-colors hover:text-rose-600 dark:text-rose-300">
               重置密码
             </Link>
           </p>
@@ -221,7 +215,7 @@ const LoginPage: React.FC = () => {
                 id="email"
                 type="email"
                 autoComplete="email"
-                className={`block w-full px-5 py-4 bg-white/50 dark:bg-gray-800/50 border border-gray-200 dark:border-gray-700 rounded-xl placeholder-gray-400 text-gray-900 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent transition-all duration-200 backdrop-blur-sm dark:text-white ${errors.email ? 'border-red-500 focus:ring-red-500' : 'group-hover:border-primary-300 dark:group-hover:border-primary-700'}`}
+                className={`cw-input placeholder:text-slate-400 ${errors.email ? 'border-red-500 focus:ring-red-500' : ''}`}
                 placeholder="请输入邮箱"
                 {...register('email', { 
                   onChange: (e) => setEmailInput(e.target.value) 
@@ -238,7 +232,7 @@ const LoginPage: React.FC = () => {
                 id="password"
                 type="password"
                 autoComplete="current-password"
-                className={`block w-full px-5 py-4 bg-white/50 dark:bg-gray-800/50 border border-gray-200 dark:border-gray-700 rounded-xl placeholder-gray-400 text-gray-900 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent transition-all duration-200 backdrop-blur-sm dark:text-white ${errors.password ? 'border-red-500 focus:ring-red-500' : 'group-hover:border-primary-300 dark:group-hover:border-primary-700'}`}
+                className={`cw-input placeholder:text-slate-400 ${errors.password ? 'border-red-500 focus:ring-red-500' : ''}`}
                 placeholder="请输入密码"
                 {...register('password')}
               />
@@ -283,6 +277,7 @@ const LoginPage: React.FC = () => {
                   onError={handleCaptchaError}
                   onExpire={() => setCaptchaToken(null)}
                   onTimeout={() => setCaptchaToken(null)}
+                  resetSignal={captchaResetKey}
                 />
             )}
             {captchaError && (
@@ -304,18 +299,27 @@ const LoginPage: React.FC = () => {
           <button
             type="submit"
             disabled={loading || isSubmitting || loginAttemptInfo.isLocked}
-            className={`w-full flex justify-center py-4 px-6 border border-transparent text-base font-bold rounded-xl text-gray-800 dark:text-gray-300 bg-gradient-to-r from-primary-600 to-secondary-600 hover:from-primary-700 hover:to-secondary-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500 shadow-lg shadow-primary-500/30 transform hover:-translate-y-0.5 transition-all duration-200 ${(loading || isSubmitting || loginAttemptInfo.isLocked) ? 'opacity-70 cursor-wait' : ''}`}
+            className={`cw-primary-btn w-full text-base ${(loading || isSubmitting || loginAttemptInfo.isLocked) ? 'cursor-wait opacity-70' : ''}`}
           >
             {(loading || isSubmitting) ? (
               <div className="flex items-center gap-2">
                 <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
                 <span>登录中...</span>
               </div>
-            ) : loginAttemptInfo.isLocked ? '账号已锁定' : '登录'}
+            ) : loginAttemptInfo.isLocked ? '账号已锁定' : (
+              <span className="inline-flex items-center gap-2">
+                <LogIn className="h-5 w-5" />
+                登录
+              </span>
+            )}
           </button>
         </form>
 
         <SocialLoginButtons disabled={loading} loading={loading} />
+        <div className="flex items-center justify-center gap-2 text-xs font-semibold text-slate-400">
+          <ShieldCheck className="h-4 w-4" />
+          你的隐私会被温柔保护
+        </div>
       </div>
     </div>
   );

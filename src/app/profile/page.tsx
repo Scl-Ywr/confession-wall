@@ -9,6 +9,9 @@ import { profileService, ProfileUpdateData } from '@/services/profileService';
 import { Profile } from '@/types/confession';
 import MeteorShower from '@/components/MeteorShower';
 import { UserCircleIcon, PhotoIcon, ArrowLeftCircleIcon, TrashIcon } from '@heroicons/react/24/outline';
+import Navbar from '@/components/Navbar';
+import KawaiiDecor from '@/components/KawaiiDecor';
+import { CalendarDays, Heart, MapPin, Pencil, Star, ThumbsUp, UserRound } from 'lucide-react';
 
 const ProfilePage: React.FC = () => {
   const router = useRouter();
@@ -366,86 +369,26 @@ const ProfilePage: React.FC = () => {
     setDeleteLoading(true);
     try {
       const userId = user.id;
-      const errors: string[] = [];
 
-      // 1. 获取并删除用户的表白记录
-      const { data: confessions, error: getConfessionsError } = await supabase
-        .from('confessions')
-        .select('id')
-        .eq('user_id', userId);
-      
-      if (getConfessionsError) {
-        errors.push('获取表白记录失败');
-      } else if (confessions && confessions.length > 0) {
-        // 获取所有表白ID
-        const confessionIds = confessions.map(confession => confession.id);
-        
-        // 删除这些表白的图片记录
-        const { error: confessionImagesError } = await supabase
-          .from('confession_images')
-          .delete()
-          .in('confession_id', confessionIds);
-        
-        if (confessionImagesError) {
-          errors.push('删除表白图片记录失败');
-        }
+      const response = await fetch('/api/delete-user', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ userId }),
+      });
 
-        // 删除用户的表白记录
-        const { error: confessionsError } = await supabase
-          .from('confessions')
-          .delete()
-          .eq('user_id', userId);
-        if (confessionsError) {
-          errors.push('删除表白记录失败');
-        }
+      const result = await response.json().catch(() => ({} as { error?: string }));
+      if (!response.ok) {
+        throw new Error(result.error || '注销账号失败，请稍后重试');
       }
 
-      // 2. 删除用户的点赞记录
-      const { error: likesError } = await supabase
-        .from('likes')
-        .delete()
-        .eq('user_id', userId);
-      if (likesError) {
-        errors.push('删除点赞记录失败');
-      }
-
-      // 3. 删除用户的评论
-      const { error: commentsError } = await supabase
-        .from('comments')
-        .delete()
-        .eq('user_id', userId);
-      if (commentsError) {
-        errors.push('删除评论记录失败');
-      }
-
-      // 4. 尝试删除用户的个人资料
-      const { error: profileError } = await supabase
-        .from('profiles')
-        .delete()
-        .eq('id', userId);
-      if (profileError) {
-        // 不抛出错误，继续执行后续操作
-        errors.push('删除个人资料失败');
-      }
-
-      // 核心目标：确保用户被登出，即使某些步骤失败
-      // 5. 确保用户被登出，但不进行重定向
       await logout({ redirect: false });
-      
-      // 6. 显示注销成功提示
+
       setShowLogoutAfterDeletePrompt(false);
       setShowResetPasswordPrompt(true);
     } catch (error) {
-      // 即使发生异常，也要确保用户被登出
-      try {
-        await logout({ redirect: false });
-        setShowLogoutAfterDeletePrompt(false);
-        setShowResetPasswordPrompt(true);
-      } catch {
-        // 登出失败，静默处理
-      }
-      
-      alert('注销过程中遇到问题，但您已被成功登出：' + (error instanceof Error ? error.message : '未知错误'));
+      alert('注销失败：' + (error instanceof Error ? error.message : '未知错误'));
     } finally {
       setDeleteLoading(false);
       setShowDeleteConfirm(false);
@@ -461,8 +404,8 @@ const ProfilePage: React.FC = () => {
 
   if (authLoading || loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-50 dark:bg-gray-900">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary-600"></div>
+      <div className="cw-page flex min-h-screen items-center justify-center">
+        <div className="h-12 w-12 animate-spin rounded-full border-b-2 border-rose-500"></div>
       </div>
     );
   }
@@ -499,31 +442,35 @@ const ProfilePage: React.FC = () => {
     createDefaultProfile();
     
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-50 dark:bg-gray-900">
-        <div className="text-center p-8 glass rounded-2xl">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary-600 mx-auto mb-4"></div>
-          <p className="text-gray-600 dark:text-gray-300 mb-4">正在初始化您的个人资料...</p>
+      <div className="cw-page flex min-h-screen items-center justify-center">
+        <div className="cw-panel rounded-[2rem] p-8 text-center">
+          <div className="mx-auto mb-4 h-12 w-12 animate-spin rounded-full border-b-2 border-rose-500"></div>
+          <p className="mb-4 font-medium text-slate-600 dark:text-slate-300">正在初始化您的个人资料...</p>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen pb-20 relative overflow-hidden">
-      <MeteorShower className="opacity-30" />
-      
-      {/* Decorative blobs */}
-      <div className="absolute top-20 left-10 w-72 h-72 bg-purple-300/20 rounded-full mix-blend-multiply filter blur-3xl opacity-50 animate-blob dark:bg-purple-900/20"></div>
-      <div className="absolute bottom-20 right-10 w-80 h-80 bg-blue-300/20 rounded-full mix-blend-multiply filter blur-3xl opacity-50 animate-blob animation-delay-2000 dark:bg-blue-900/20"></div>
+    <div className="cw-page relative min-h-screen overflow-hidden pb-20">
+      <div className="cw-decor-grid" />
+      <MeteorShower className="opacity-15" />
+      <KawaiiDecor />
+      <Navbar />
 
-      <main className="w-full max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-8 relative z-10">
-        <div className="text-center mb-10 animate-fade-in">
-          <h1 className="text-4xl font-bold text-gray-900 dark:text-white mb-3 flex items-center justify-center gap-3">
-            <span className="text-4xl">👤</span> 个人资料
+      <main className="relative z-10 mx-auto w-full max-w-[1360px] px-4 py-8 sm:px-8 lg:px-12">
+        <div className="relative mb-8 flex items-center justify-center">
+          <button
+            onClick={() => router.back()}
+            className="cw-panel-sm absolute left-0 inline-flex items-center gap-2 rounded-full px-4 py-2 text-sm font-bold text-slate-700 transition-colors hover:text-rose-500 dark:text-slate-200"
+          >
+            <ArrowLeftCircleIcon className="h-5 w-5" />
+            返回
+          </button>
+          <h1 className="flex items-center justify-center gap-3 text-3xl font-black text-slate-800 dark:text-white sm:text-4xl">
+            <UserRound className="h-9 w-9 text-rose-500" />
+            用户资料
           </h1>
-          <p className="text-white dark:text-white">
-            管理你的个人信息，打造独特的你
-          </p>
         </div>
 
         {error && (
@@ -538,12 +485,12 @@ const ProfilePage: React.FC = () => {
           </div>
         )}
 
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+        <div className="grid grid-cols-1 gap-6 lg:grid-cols-[360px_1fr]">
           {/* Left Column: Avatar & Quick Stats */}
-          <div className="md:col-span-1 space-y-6">
-            <div className="glass-card p-6 rounded-2xl text-center animate-slide-up">
+          <div className="space-y-5">
+            <div className="cw-panel rounded-[2rem] p-6 text-center animate-slide-up">
               <div className="relative inline-block mb-4 group">
-                <div className="w-32 h-32 rounded-full overflow-hidden border-4 border-white/50 shadow-lg mx-auto relative">
+                <div className="relative mx-auto h-36 w-36 overflow-hidden rounded-full border-4 border-white/80 shadow-lg ring-2 ring-rose-100 dark:border-white/20 dark:ring-white/10">
                   {avatarPreview ? (
                     <Image
                       src={avatarPreview}
@@ -576,7 +523,7 @@ const ProfilePage: React.FC = () => {
                     </div>
                   )}
                 </div>
-                <label className="absolute bottom-0 right-0 bg-primary-600 text-white rounded-full p-2.5 cursor-pointer hover:bg-primary-700 transition-all shadow-lg transform hover:scale-110 hover:-rotate-12">
+                <label className="absolute bottom-1 right-1 cursor-pointer rounded-full bg-gradient-to-br from-rose-400 to-red-500 p-3 text-white shadow-lg transition-all hover:scale-110 hover:-rotate-12">
                   <PhotoIcon className="w-5 h-5" />
                   <input
                     type="file"
@@ -586,33 +533,33 @@ const ProfilePage: React.FC = () => {
                   />
                 </label>
               </div>
-              <h2 className="text-xl font-bold text-gray-900 dark:text-white mb-1">{profile?.oauth_username || profile?.display_name || '未设置'}</h2>
-              <p className="text-sm text-gray-600 dark:text-gray-300 mb-4 font-medium">@{profile?.username || '未设置'}</p>
+              <h2 className="mb-1 text-2xl font-black text-slate-900 dark:text-white">{profile?.oauth_username || profile?.display_name || '未设置'}</h2>
+              <p className="mb-4 text-sm font-semibold text-slate-500 dark:text-slate-400">@{profile?.username || '未设置'}</p>
               
-              <div className="pt-4 border-t border-gray-200 dark:border-gray-700/50">
-                <div className="flex justify-between text-sm mb-2">
-                  <span className="text-gray-600 dark:text-gray-300 font-medium">注册时间</span>
-                  <span className="font-bold text-gray-800 dark:text-gray-100">{profile && profile.created_at ? new Date(profile.created_at).toLocaleDateString('zh-CN') : '未知'}</span>
+              <div className="border-t border-slate-100 pt-5 dark:border-white/10">
+                <div className="mb-3 flex justify-between gap-4 text-sm">
+                  <span className="flex items-center gap-2 font-semibold text-slate-500 dark:text-slate-400"><CalendarDays className="h-4 w-4" />注册时间</span>
+                  <span className="font-bold text-slate-800 dark:text-slate-100">{profile && profile.created_at ? new Date(profile.created_at).toLocaleDateString('zh-CN') : '未知'}</span>
                 </div>
-                <div className="flex justify-between text-sm mb-2">
-                  <span className="text-gray-600 dark:text-gray-300 font-medium">邮箱</span>
-                  <span className="font-bold text-gray-800 dark:text-gray-100">{user.email}</span>
+                <div className="mb-3 flex justify-between gap-4 text-sm">
+                  <span className="font-semibold text-slate-500 dark:text-slate-400">邮箱</span>
+                  <span className="truncate font-bold text-slate-800 dark:text-slate-100">{user.email}</span>
                 </div>
-                <div className="flex justify-between text-sm mb-2">
-                  <span className="text-gray-600 dark:text-gray-300 font-medium">当前IP地址</span>
-                  <span className="font-bold text-gray-800 dark:text-gray-100" title={userIp || '未知'}>
+                <div className="mb-3 flex justify-between gap-4 text-sm">
+                  <span className="font-semibold text-slate-500 dark:text-slate-400">当前IP地址</span>
+                  <span className="truncate font-bold text-slate-800 dark:text-slate-100" title={userIp || '未知'}>
                     {ipLoading ? '获取中...' : userIp}
                   </span>
                 </div>
-                <div className="flex justify-between text-sm mb-2">
-                  <span className="text-gray-600 dark:text-gray-300 font-medium">所在省份</span>
-                  <span className="font-bold text-gray-800 dark:text-gray-100" title={userProvince || '未知'}>
+                <div className="mb-3 flex justify-between gap-4 text-sm">
+                  <span className="flex items-center gap-2 font-semibold text-slate-500 dark:text-slate-400"><MapPin className="h-4 w-4" />所在省份</span>
+                  <span className="font-bold text-slate-800 dark:text-slate-100" title={userProvince || '未知'}>
                     {ipLoading ? '获取中...' : userProvince}
                   </span>
                 </div>
-                <div className="flex justify-between text-sm mb-2">
-                  <span className="text-gray-600 dark:text-gray-300 font-medium">所在城市</span>
-                  <span className="font-bold text-gray-800 dark:text-gray-100" title={`${userCity || ''}, ${userCountry || ''}`}>
+                <div className="mb-3 flex justify-between gap-4 text-sm">
+                  <span className="font-semibold text-slate-500 dark:text-slate-400">所在城市</span>
+                  <span className="font-bold text-slate-800 dark:text-slate-100" title={`${userCity || ''}, ${userCountry || ''}`}>
                     {ipLoading ? '获取中...' : `${userCity || ''}, ${userCountry || ''}`}
                   </span>
                 </div>
@@ -639,12 +586,29 @@ const ProfilePage: React.FC = () => {
                     )}
                   </div>
                 )}
+                <div className="mt-5 grid grid-cols-3 gap-2 rounded-2xl bg-gradient-to-r from-rose-50 to-orange-50 p-3 dark:from-rose-500/10 dark:to-orange-500/10">
+                  <div className="text-center">
+                    <Heart className="mx-auto mb-1 h-5 w-5 fill-rose-400 text-rose-400" />
+                    <div className="text-lg font-black text-slate-800 dark:text-white">12</div>
+                    <div className="text-xs font-bold text-slate-500">表白</div>
+                  </div>
+                  <div className="text-center">
+                    <ThumbsUp className="mx-auto mb-1 h-5 w-5 fill-rose-400 text-rose-400" />
+                    <div className="text-lg font-black text-slate-800 dark:text-white">268</div>
+                    <div className="text-xs font-bold text-slate-500">获赞</div>
+                  </div>
+                  <div className="text-center">
+                    <Star className="mx-auto mb-1 h-5 w-5 fill-amber-400 text-amber-400" />
+                    <div className="text-lg font-black text-slate-800 dark:text-white">36</div>
+                    <div className="text-xs font-bold text-slate-500">收藏</div>
+                  </div>
+                </div>
               </div>
             </div>
 
             <button
               onClick={handleLogout}
-              className="w-full glass-card p-4 rounded-xl flex items-center justify-center gap-2 text-red-800 bg-red-50/50 hover:bg-red-100/80 dark:text-red-200 dark:bg-red-900/20 dark:hover:bg-red-900/40 transition-all group font-bold shadow-sm"
+              className="cw-panel-sm flex w-full items-center justify-center gap-2 rounded-2xl p-4 font-bold text-red-600 transition-all hover:bg-red-50 dark:text-red-200 dark:hover:bg-red-900/20"
             >
               <ArrowLeftCircleIcon className="w-5 h-5 group-hover:-translate-x-1 transition-transform" />
               <span>退出登录</span>
@@ -652,7 +616,7 @@ const ProfilePage: React.FC = () => {
 
             <button
               onClick={() => setShowDeleteConfirm(true)}
-              className="w-full glass-card p-4 rounded-xl flex items-center justify-center gap-2 text-red-800 bg-red-50/50 hover:bg-red-100/80 dark:text-red-200 dark:bg-red-900/20 dark:hover:bg-red-900/40 transition-all group font-bold shadow-sm"
+              className="cw-panel-sm flex w-full items-center justify-center gap-2 rounded-2xl p-4 font-bold text-red-600 transition-all hover:bg-red-50 dark:text-red-200 dark:hover:bg-red-900/20"
             >
               <TrashIcon className="w-5 h-5 group-hover:-translate-x-1 transition-transform" />
               <span>注销账号</span>
@@ -660,11 +624,19 @@ const ProfilePage: React.FC = () => {
           </div>
 
           {/* Right Column: Edit Form */}
-          <div className="md:col-span-2">
-            <div className="glass-card p-8 rounded-2xl animate-slide-up" style={{ animationDelay: '0.1s' }}>
-              <h3 className="text-xl font-bold text-gray-900 dark:text-white mb-6 flex items-center gap-2">
-                <UserCircleIcon className="w-6 h-6 text-primary-600" />
+          <div>
+            <div className="cw-panel rounded-[2rem] p-6 animate-slide-up sm:p-8" style={{ animationDelay: '0.1s' }}>
+              <h3 className="mb-6 flex items-center justify-between gap-3 text-2xl font-black text-slate-900 dark:text-white">
+                <span className="flex items-center gap-3">
+                  <span className="flex h-11 w-11 items-center justify-center rounded-full bg-rose-50 text-rose-500 dark:bg-rose-500/15">
+                    <UserCircleIcon className="h-6 w-6" />
+                  </span>
                 编辑资料
+                </span>
+                <span className="cw-secondary-btn min-h-11 px-4 text-sm">
+                  <Pencil className="h-4 w-4" />
+                  编辑资料
+                </span>
               </h3>
 
               <form className="space-y-6" onSubmit={handleSubmit}>
@@ -676,7 +648,7 @@ const ProfilePage: React.FC = () => {
                     <input
                       type="text"
                       id="username"
-                      className="w-full px-4 py-3 bg-white/50 dark:bg-gray-800/50 border border-gray-200 dark:border-gray-700 rounded-xl focus:ring-2 focus:ring-primary-500 focus:border-transparent transition-all backdrop-blur-sm dark:text-white font-medium text-gray-900"
+                      className="cw-input"
                       value={formData.username || ''}
                       onChange={(e) => setFormData(prev => ({ ...prev, username: e.target.value }))}
                       placeholder="输入用户名"
@@ -690,7 +662,7 @@ const ProfilePage: React.FC = () => {
                     <input
                       type="text"
                       id="display_name"
-                      className="w-full px-4 py-3 bg-white/50 dark:bg-gray-800/50 border border-gray-200 dark:border-gray-700 rounded-xl focus:ring-2 focus:ring-primary-500 focus:border-transparent transition-all backdrop-blur-sm dark:text-white font-medium text-gray-900"
+                      className="cw-input"
                       value={formData.display_name || ''}
                       onChange={(e) => setFormData(prev => ({ ...prev, display_name: e.target.value }))}
                       placeholder="输入显示名称"
@@ -705,7 +677,7 @@ const ProfilePage: React.FC = () => {
                   <textarea
                     id="bio"
                     rows={4}
-                    className="w-full px-4 py-3 bg-white/50 dark:bg-gray-800/50 border border-gray-200 dark:border-gray-700 rounded-xl focus:ring-2 focus:ring-primary-500 focus:border-transparent transition-all backdrop-blur-sm resize-none dark:text-white font-medium text-gray-900"
+                    className="cw-input min-h-28 resize-none"
                     value={formData.bio || ''}
                     onChange={(e) => setFormData(prev => ({ ...prev, bio: e.target.value }))}
                     placeholder="写一段关于你的介绍..."
@@ -716,14 +688,14 @@ const ProfilePage: React.FC = () => {
                   <button
                     type="button"
                     onClick={() => router.push('/')}
-                    className="w-full sm:w-auto px-6 py-3 border border-gray-400 dark:border-gray-500 rounded-xl text-gray-900 dark:text-white bg-white/50 hover:bg-white/80 dark:bg-gray-800/50 dark:hover:bg-gray-700/80 transition-all font-bold shadow-sm min-h-12 flex items-center justify-center"
+                    className="cw-secondary-btn w-full sm:w-auto"
                   >
                     取消
                   </button>
                   <button
                     type="submit"
                     disabled={formLoading}
-                    className={`w-full sm:w-auto px-8 py-3 bg-gradient-to-r from-primary-600 to-secondary-600 text-black dark:text-white rounded-xl font-bold shadow-lg shadow-primary-500/30 hover:shadow-primary-500/50 transform hover:-translate-y-0.5 transition-all min-h-12 flex items-center justify-center ${formLoading ? 'opacity-70 cursor-wait' : ''}`}
+                    className={`cw-primary-btn w-full sm:w-auto ${formLoading ? 'cursor-wait opacity-70' : ''}`}
                   >
                     {formLoading ? (
                       <div className="flex items-center gap-2">
@@ -828,13 +800,12 @@ const ProfilePage: React.FC = () => {
           <div className="glass-card rounded-2xl p-8 max-w-md w-full mx-4 animate-fade-in">
             <h3 className="text-2xl font-bold text-gray-900 dark:text-white mb-4">账号已成功注销</h3>
             <p className="text-gray-700 dark:text-gray-300 mb-6">
-              您的账号已成功注销，所有关联数据已被清理。如果您希望重新使用此邮箱登录，请重置您的密码。
+              您的账号已成功注销，所有关联数据已被清理。如果您希望继续使用此邮箱，请重新注册账号。
             </p>
             <div className="flex flex-col gap-4 mb-6">
               <p className="text-gray-600 dark:text-gray-400">
                 <span className="font-bold">注意：</span>
-                由于系统安全机制，您的账号并未被完全删除，而是被设置为注销状态。
-                您需要通过密码重置流程重新激活账号。
+                您的账号和关联内容已删除。如需继续使用，请重新注册账号。
               </p>
             </div>
             <div className="flex flex-col sm:flex-row items-center justify-end gap-3">
@@ -850,11 +821,11 @@ const ProfilePage: React.FC = () => {
               <button
                 onClick={() => {
                   setShowResetPasswordPrompt(false);
-                  router.push('/auth/forgot-password');
+                  router.push('/auth/register');
                 }}
                 className={`w-full sm:w-auto px-8 py-3 bg-gradient-to-r from-primary-600 to-secondary-600 text-black dark:text-white rounded-xl font-bold shadow-lg shadow-primary-500/30 hover:shadow-primary-500/50 transform hover:-translate-y-0.5 transition-all min-h-12 flex items-center justify-center`}
               >
-                前往密码重置页面
+                前往注册页面
               </button>
             </div>
           </div>

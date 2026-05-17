@@ -623,7 +623,7 @@ export default function CrossBrowserVideoPlayer({
       <div className="relative w-full h-full overflow-hidden rounded-lg sm:rounded-xl">
         <video
           ref={videoRef}
-          className="w-full h-full object-cover"
+          className="w-full h-full object-contain"
           poster={finalPosterUrl}
           preload={capabilities.isMobile ? "auto" : "metadata"}
           autoPlay={autoPlay}
@@ -646,8 +646,8 @@ export default function CrossBrowserVideoPlayer({
           style={{
             WebkitTapHighlightColor: 'transparent',
             backgroundColor: 'black',
-            // 确保视频填满容器，不出现空白
-            objectFit: 'cover',
+            // 保持视频原始比例，竖屏视频在卡片中自然缩小显示
+            objectFit: 'contain',
             // 移除可能影响显示的样式
             background: 'none',
             border: 'none',

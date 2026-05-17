@@ -13,6 +13,10 @@ export async function POST(req: NextRequest) {
     if (!imageId) {
       return NextResponse.json({ error: 'Missing imageId' }, { status: 400 });
     }
+
+    if (!['password', 'user', 'public'].includes(lockType)) {
+      return NextResponse.json({ error: 'Invalid lock type' }, { status: 400 });
+    }
     
     // Get supabase client for authenticated operations
     const supabase = await createSupabaseServerClient();
@@ -58,7 +62,7 @@ export async function POST(req: NextRequest) {
     // First, get the image to check existence and get confession_id
     const { data: images, error: getImageError } = await supabaseAdmin
       .from('confession_images')
-      .select('id, confession_id')
+      .select('id, confession_id, lock_password')
       .eq('id', imageId);
     
     if (getImageError) {
@@ -94,7 +98,7 @@ export async function POST(req: NextRequest) {
       is_locked: boolean;
       lock_type: 'password' | 'user' | 'public';
       locked_at: string | null;
-      lock_password?: string;
+      lock_password?: string | null;
     } = {
       // If lockType is 'public', media should not be locked regardless of isLocked parameter
       is_locked: lockType === 'public' ? false : isLocked,
@@ -103,11 +107,15 @@ export async function POST(req: NextRequest) {
     };
     
     // Handle password if provided
-    if (lockType === 'password' && password) {
-      updateData.lock_password = await hash(password, 10);
-    } else if (!isLocked) {
-      // Clear password when unlocking
-      updateData.lock_password = undefined;
+    if (lockType === 'password' && isLocked) {
+      const trimmedPassword = typeof password === 'string' ? password.trim() : '';
+      if (trimmedPassword) {
+        updateData.lock_password = await hash(trimmedPassword, 10);
+      } else if (!image.lock_password) {
+        return NextResponse.json({ error: 'Password is required for password lock' }, { status: 400 });
+      }
+    } else {
+      updateData.lock_password = null;
     }
     
     // Update the lock status - use the existing supabaseAdmin client

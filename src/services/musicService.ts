@@ -46,6 +46,7 @@ export interface MusicUrlResponse {
   url: string; // 音乐链接
   br: number; // 实际返回音质
   size: number; // 文件大小，单位为KB
+  message?: string; // 错误或提示信息
 }
 
 // 专辑图响应

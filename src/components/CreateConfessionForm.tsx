@@ -4,7 +4,7 @@ import React, { useState } from 'react';
 import Image from 'next/image';
 import { ConfessionFormData, Confession } from '@/types/confession';
 import { confessionService } from '@/services/confessionService';
-import { PhotoIcon, PaperAirplaneIcon, XMarkIcon, FilmIcon, PencilIcon } from '@heroicons/react/24/outline';
+import { PhotoIcon, PaperAirplaneIcon, XMarkIcon, FilmIcon, PencilIcon, LockClosedIcon } from '@heroicons/react/24/outline';
 import VideoUploader from './VideoUploader';
 import VideoPlayer from './VideoPlayer';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -184,27 +184,33 @@ export default function CreateConfessionForm({ onSuccess, user, groupId }: Creat
 
   if (!user) {
     return (
-      <div className="glass rounded-2xl p-8 mb-10 text-center animate-fade-in border border-white/20 shadow-xl">
-        <div className="bg-primary-50 w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4 dark:bg-primary-900/30">
-          <span className="text-3xl">🔒</span>
+      <div className="animate-fade-in rounded-[2rem] border border-white/70 bg-white/78 p-7 shadow-[0_24px_70px_rgba(31,41,55,.14)] backdrop-blur-2xl dark:border-white/10 dark:bg-white/10">
+        <div className="mb-5 flex items-center gap-4">
+          <div className="flex h-16 w-16 items-center justify-center rounded-full bg-rose-100 text-rose-500 shadow-[0_14px_35px_rgba(244,63,94,.18)] dark:bg-rose-500/15">
+            <LockClosedIcon className="h-8 w-8" />
+          </div>
+          <div className="text-left">
+            <h2 className="text-2xl font-black text-slate-900 dark:text-white">加入我们</h2>
+            <p className="mt-1 text-sm font-medium text-slate-500 dark:text-slate-400">登录后即可分享你的秘密，点赞他人的故事，并参与互动。</p>
+          </div>
         </div>
-        <h2 className="text-2xl font-bold text-gray-800 dark:text-white mb-3">加入我们</h2>
-        <p className="text-gray-600 dark:text-gray-300 mb-6 max-w-md mx-auto">
-          登录后即可分享你的秘密，点赞他人的故事，并参与互动。
-        </p>
-        <div className="flex justify-center gap-4">
+        <div className="grid grid-cols-2 gap-4">
           <a
             href="/auth/login"
-            className="px-6 py-2.5 bg-primary-600 text-black rounded-xl font-medium hover:bg-primary-700 transition-all shadow-lg shadow-primary-500/30 hover:shadow-primary-500/50 hover:-translate-y-0.5 dark:text-white"
+            className="flex h-14 items-center justify-center rounded-2xl bg-gradient-to-r from-rose-500 to-red-500 px-6 font-bold text-white shadow-[0_16px_30px_rgba(244,63,94,.25)] transition-all hover:-translate-y-0.5 hover:from-rose-600 hover:to-red-600"
           >
             登录
           </a>
           <a
             href="/auth/register"
-            className="px-6 py-2.5 bg-white text-gray-700 border border-gray-200 rounded-xl font-medium hover:bg-gray-50 transition-all hover:-translate-y-0.5 dark:bg-gray-800 dark:text-gray-200 dark:border-gray-700 dark:hover:bg-gray-700"
+            className="flex h-14 items-center justify-center rounded-2xl border border-rose-200 bg-white/60 px-6 font-bold text-rose-500 transition-all hover:-translate-y-0.5 hover:bg-white dark:border-rose-300/30 dark:bg-white/5 dark:text-rose-200"
           >
             注册
           </a>
+        </div>
+        <div className="mt-5 flex items-center gap-2 text-sm font-medium text-slate-500 dark:text-slate-400">
+          <LockClosedIcon className="h-4 w-4 text-slate-400" />
+          我们保护你的隐私，所有内容将匿名发布
         </div>
       </div>
     );
@@ -212,21 +218,24 @@ export default function CreateConfessionForm({ onSuccess, user, groupId }: Creat
 
   return (
     <motion.div 
-      className="glass rounded-xl sm:rounded-2xl p-4 sm:p-6 md:p-8 mb-8 sm:mb-10 shadow-xl border border-white/20 relative overflow-hidden"
+      className="relative overflow-hidden rounded-[2rem] border border-white/70 bg-white/80 p-5 shadow-[0_24px_70px_rgba(31,41,55,.14)] backdrop-blur-2xl dark:border-white/10 dark:bg-white/10 sm:p-6 md:p-7"
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.5, ease: "easeOut" }}
     >
       {/* Decorative elements */}
-      <div className="absolute top-0 right-0 w-32 h-32 bg-gradient-to-br from-primary-500/10 to-secondary-500/10 rounded-bl-full -z-10"></div>
+      <div className="absolute right-0 top-0 -z-10 h-32 w-32 rounded-bl-full bg-gradient-to-br from-rose-400/14 to-orange-300/14"></div>
       
       <motion.h2 
-        className="text-xl sm:text-2xl font-bold text-gray-800 dark:text-white mb-4 sm:mb-6 flex items-center gap-2"
+        className="mb-4 flex items-center gap-3 text-xl font-black text-slate-900 dark:text-white sm:mb-6 sm:text-2xl"
         initial={{ opacity: 0, x: -20 }}
         animate={{ opacity: 1, x: 0 }}
         transition={{ duration: 0.5, delay: 0.2, ease: "easeOut" }}
       >
-        <span className="text-2xl sm:text-3xl">✨</span> 写下你的秘密
+        <span className="flex h-10 w-10 items-center justify-center rounded-2xl bg-gradient-to-br from-amber-300 to-orange-400 text-white shadow-lg shadow-orange-300/30">
+          <PencilIcon className="h-5 w-5" />
+        </span>
+        写下你的秘密
       </motion.h2>
       
       <form onSubmit={handleSubmit} className="space-y-4 sm:space-y-6">

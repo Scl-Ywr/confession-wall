@@ -427,12 +427,13 @@ const ChatListPage = () => {
   }
 
   return (
-    <div className="min-h-screen">
+    <div className="cw-page relative min-h-screen overflow-hidden">
+      <div className="cw-decor-grid" />
       <Navbar />
       {!user ? (
-        <main className="w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-[calc(100vh-120px)] flex items-center justify-center">
+        <main className="relative z-10 mx-auto flex h-[calc(100vh-120px)] w-full max-w-7xl items-center justify-center px-4 sm:px-6 lg:px-8">
           {/* 登录提示框 */}
-          <div className="bg-yellow-50 dark:bg-yellow-900/20 border-l-4 border-yellow-400 p-6 rounded-lg max-w-md w-full shadow-lg">
+          <div className="cw-panel w-full max-w-md rounded-[2rem] p-7">
             <div className="flex items-center gap-3">
               <div className="text-yellow-500">
                 <svg className="w-6 h-6" fill="currentColor" viewBox="0 0 20 20">
@@ -440,8 +441,8 @@ const ChatListPage = () => {
                 </svg>
               </div>
               <div className="flex-1">
-                <h3 className="font-medium text-yellow-800 dark:text-yellow-300 text-lg">请登录</h3>
-                <p className="text-sm text-yellow-700 dark:text-yellow-400 mt-2">
+                <h3 className="text-lg font-black text-slate-900 dark:text-white">请登录</h3>
+                <p className="mt-2 text-sm font-medium text-slate-500 dark:text-slate-400">
                   您需要登录才能使用聊天功能
                 </p>
               </div>
@@ -449,7 +450,7 @@ const ChatListPage = () => {
             <div className="mt-4 flex justify-center">
               <Link
                 href="/auth/login"
-                className="bg-yellow-500 hover:bg-yellow-600 text-white px-6 py-3 rounded-lg text-sm font-medium transition-colors shadow-md hover:shadow-lg"
+                className="cw-primary-btn text-sm"
               >
                 去登录
               </Link>
@@ -457,10 +458,12 @@ const ChatListPage = () => {
           </div>
         </main>
       ) : (
-        <main className="w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        <main className="relative z-10 mx-auto w-full max-w-[1360px] px-4 py-8 sm:px-8 lg:px-12">
           <div className="mb-6">
-            <h1 className="text-2xl font-bold text-gray-800 dark:text-white flex items-center gap-2">
-              <MessageCircleIcon className="h-6 w-6 text-primary-500" />
+            <h1 className="flex items-center gap-3 text-3xl font-black text-slate-900 dark:text-white">
+              <span className="flex h-12 w-12 items-center justify-center rounded-2xl bg-gradient-to-br from-rose-400 to-red-500 text-white shadow-lg shadow-rose-300/30">
+                <MessageCircleIcon className="h-6 w-6" />
+              </span>
               聊天
             </h1>
           </div>
@@ -468,23 +471,23 @@ const ChatListPage = () => {
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
           {/* 好友列表和群聊列表 */}
           <div className="md:col-span-1">
-            <div className="glass-card rounded-2xl p-6 flex flex-col h-[calc(100vh-200px)]">
+            <div className="cw-panel flex h-[calc(100vh-200px)] flex-col rounded-[2rem] p-6">
                   {/* 创建群聊按钮 */}
                   <div className="flex justify-between items-center mb-4 gap-3 flex-wrap">
-                    <h2 className="text-lg font-semibold text-gray-800 dark:text-white whitespace-nowrap">
+                    <h2 className="whitespace-nowrap text-lg font-black text-slate-900 dark:text-white">
                       聊天
                     </h2>
                     <div className="flex gap-1.5 items-center">
                       <button
                         onClick={() => setShowCreateGroupModal(true)}
-                        className="flex items-center gap-1 bg-gradient-to-r from-pink-400 to-purple-500 text-white px-2.5 py-1.25 rounded-lg text-xs hover:from-pink-500 hover:to-purple-600 transition-all duration-300 shadow-sm hover:shadow-md whitespace-nowrap"
+                        className="flex items-center gap-1 rounded-xl bg-gradient-to-r from-rose-400 to-red-500 px-3 py-2 text-xs font-bold text-white shadow-sm transition-all duration-300 hover:from-rose-500 hover:to-red-600 hover:shadow-md"
                       >
                         <PlusIcon className="h-3 w-3" />
                         <span>创建群聊</span>
                       </button>
                       <Link
                         href="/chat/search"
-                        className="flex items-center gap-1 text-primary-600 hover:text-primary-700 dark:text-primary-400 dark:hover:text-primary-300 transition-all duration-300 whitespace-nowrap"
+                        className="flex items-center gap-1 whitespace-nowrap text-rose-500 transition-all duration-300 hover:text-rose-600 dark:text-rose-300"
                       >
                         <UserSearchIcon className="h-4 w-4" />
                         <span className="text-xs font-medium">查找用户</span>
@@ -743,17 +746,17 @@ const ChatListPage = () => {
 
           {/* 聊天预览/默认消息 */}
           <div className="md:col-span-2">
-            <div className="glass-card rounded-2xl p-6 h-[calc(100vh-200px)] flex flex-col items-center justify-center text-center">
-              <MessageCircleIcon className="h-16 w-16 text-gray-300 dark:text-gray-600 mb-4" />
-              <h2 className="text-xl font-bold text-gray-800 dark:text-white mb-2">
+            <div className="cw-panel flex h-[calc(100vh-200px)] flex-col items-center justify-center rounded-[2rem] p-6 text-center">
+              <MessageCircleIcon className="mb-4 h-16 w-16 text-rose-200 dark:text-rose-300/40" />
+              <h2 className="mb-2 text-xl font-black text-slate-900 dark:text-white">
                 选择一个好友开始聊天
               </h2>
-              <p className="text-gray-500 dark:text-gray-400 max-w-md">
+              <p className="max-w-md font-medium text-slate-500 dark:text-slate-400">
                 从左侧选择一个好友，或者使用搜索功能查找并添加新好友
               </p>
               <Link
                 href="/chat/search"
-                className="mt-6 inline-flex items-center gap-2 px-5 py-2.5 bg-gradient-to-r from-yellow-400 to-blue-500 text-white font-semibold rounded-xl shadow-sm hover:shadow-md transition-all duration-300 hover:from-yellow-500 hover:to-blue-600"
+                className="cw-primary-btn mt-6"
               >
                 <UserSearchIcon className="h-4 w-4" />
                 查找用户

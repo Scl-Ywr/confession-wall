@@ -53,14 +53,30 @@ function checkRateLimit(ip: string): boolean {
   return true;
 }
 
-// Download a confession image or video with authorization checks
 export async function GET(req: NextRequest) {
+  const url = new URL(req.url);
+  return handleDownloadRequest(req, url.searchParams.get('imageId'), null);
+}
+
+export async function POST(req: NextRequest) {
+  const body = await req.json().catch(() => ({} as { imageId?: unknown; password?: unknown }));
+  return handleDownloadRequest(
+    req,
+    typeof body.imageId === 'string' ? body.imageId : null,
+    typeof body.password === 'string' ? body.password : null
+  );
+}
+
+function getClientIp(req: NextRequest): string {
+  return req.headers.get('cf-connecting-ip') ||
+    req.headers.get('x-real-ip') ||
+    req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ||
+    'unknown';
+}
+
+// Download a confession image or video with authorization checks
+async function handleDownloadRequest(req: NextRequest, imageId: string | null, password: string | null) {
   try {
-    // Get query parameters
-    const url = new URL(req.url);
-    const imageId = url.searchParams.get('imageId');
-    const password = url.searchParams.get('password');
-    
     if (!imageId) {
       return NextResponse.json({ error: 'Missing imageId' }, { status: 400 });
     }
@@ -135,7 +151,7 @@ export async function GET(req: NextRequest) {
           
         case 'public':
           // Get client IP for rate limiting
-          const clientIpPublic = req.headers.get('x-forwarded-for') || 'unknown';
+          const clientIpPublic = getClientIp(req);
           
           // Check rate limit for public locked media
           if (!checkRateLimit(clientIpPublic)) {
@@ -154,7 +170,7 @@ export async function GET(req: NextRequest) {
     // Apply rate limiting for all public downloads (even if not locked)
     if (!image.is_locked) {
       // Get client IP for rate limiting
-      const clientIpPublic = req.headers.get('x-forwarded-for') || 'unknown';
+      const clientIpPublic = getClientIp(req);
       
       // Check rate limit for public downloads
       if (!checkRateLimit(clientIpPublic)) {

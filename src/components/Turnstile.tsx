@@ -36,6 +36,7 @@ interface TurnstileProps {
   theme?: 'light' | 'dark' | 'auto';
   size?: 'normal' | 'compact';
   testMode?: boolean;
+  resetSignal?: number | string;
 }
 
 const Turnstile: React.FC<TurnstileProps> = ({
@@ -47,12 +48,14 @@ const Turnstile: React.FC<TurnstileProps> = ({
   theme = 'auto',
   size = 'normal',
   testMode = false,
+  resetSignal,
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const widgetIdRef = useRef<string | null>(null);
   const isRenderingRef = useRef(false);
   const mountedRef = useRef(true);
   const scriptLoadedRef = useRef(false);
+  const lastResetSignalRef = useRef(resetSignal);
 
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -101,7 +104,6 @@ const Turnstile: React.FC<TurnstileProps> = ({
         sitekey: siteKey,
         callback: (token: string) => {
           if (mountedRef.current) {
-            console.log('Turnstile callback received token:', token);
             setError(null);
             setIsLoading(false);
             onSuccessRef.current(token);
@@ -110,23 +112,21 @@ const Turnstile: React.FC<TurnstileProps> = ({
         'error-callback': () => {
           if (mountedRef.current) {
             console.error('Turnstile error callback triggered. Widget ID:', widgetIdRef.current);
-            // 自动重试，最多3次
+            onErrorRef.current?.();
             if (widgetIdRef.current && window.turnstile) {
               try {
                 console.log('Automatically resetting Turnstile widget...');
                 window.turnstile.reset(widgetIdRef.current);
-                setError(null);
-                setIsLoading(true);
+                setError('验证已刷新，请重新完成验证');
+                setIsLoading(false);
               } catch (e) {
                 console.warn('Failed to reset widget automatically, showing error:', e);
                 setError('验证失败，请检查网络连接或点击重试');
                 setIsLoading(false);
-                onErrorRef.current?.();
               }
             } else {
               setError('验证失败，请点击重试');
               setIsLoading(false);
-              onErrorRef.current?.();
             }
           }
         },
@@ -219,7 +219,7 @@ const Turnstile: React.FC<TurnstileProps> = ({
       if (!existingScript) {
         // 动态加载脚本
         const script = document.createElement('script');
-        script.src = 'https://challenges.cloudflare.com/turnstile/v0/api.js?onload=onTurnstileLoad';
+        script.src = 'https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit&onload=onTurnstileLoad';
         script.async = true;
         script.defer = true;
         // 添加错误处理
@@ -273,6 +273,7 @@ const Turnstile: React.FC<TurnstileProps> = ({
   const handleRetry = useCallback(() => {
     setError(null);
     setIsLoading(true);
+    onErrorRef.current?.();
     if (widgetIdRef.current && window.turnstile) {
       try {
         window.turnstile.reset(widgetIdRef.current);
@@ -284,6 +285,33 @@ const Turnstile: React.FC<TurnstileProps> = ({
       renderWidget();
     }
   }, [renderWidget]);
+
+  useEffect(() => {
+    if (lastResetSignalRef.current === resetSignal) {
+      return;
+    }
+
+    lastResetSignalRef.current = resetSignal;
+    if (resetSignal === undefined) {
+      return;
+    }
+
+    setError(null);
+    setIsLoading(true);
+    onExpireRef.current?.();
+
+    if (widgetIdRef.current && window.turnstile) {
+      try {
+        window.turnstile.reset(widgetIdRef.current);
+        setIsLoading(false);
+      } catch (error) {
+        console.warn('Failed to reset Turnstile from resetSignal:', error);
+        renderWidget();
+      }
+    } else {
+      renderWidget();
+    }
+  }, [resetSignal, renderWidget]);
 
   if (testMode) {
     return (
@@ -299,12 +327,11 @@ const Turnstile: React.FC<TurnstileProps> = ({
     <div className="flex flex-col items-center gap-2">
       <div 
         ref={containerRef} 
-        className="w-full flex justify-center min-h-[65px]" 
-        id="turnstile-container"
+        className="flex min-h-[65px] w-full justify-center overflow-hidden rounded-2xl"
       />
       {isLoading && !error && (
-        <div className="text-sm text-gray-500 flex items-center gap-2">
-          <div className="w-4 h-4 border-2 border-gray-300 border-t-primary-500 rounded-full animate-spin"></div>
+        <div className="flex items-center gap-2 text-sm font-medium text-slate-500 dark:text-slate-400">
+          <div className="h-4 w-4 animate-spin rounded-full border-2 border-slate-200 border-t-rose-500"></div>
           正在加载验证...
         </div>
       )}

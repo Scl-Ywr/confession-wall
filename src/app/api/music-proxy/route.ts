@@ -15,6 +15,42 @@ export const runtime = 'edge';
 // API 格式类型
 type APIFormat = 'third-party' | 'official';
 
+type OfficialSearchSong = {
+  id: number | string;
+  name: string;
+  fee?: number;
+  ar?: Array<{ name: string }>;
+  artists?: Array<{ name: string }>;
+  al?: { name?: string; picUrl?: string };
+  album?: { name?: string; picUrl?: string };
+};
+
+type OfficialSearchResponse = {
+  result?: {
+    songs?: OfficialSearchSong[];
+  };
+};
+
+type OfficialUrlResponse = {
+  data?: Array<{
+    url?: string;
+    br?: number;
+    size?: number;
+    code?: number;
+  }>;
+};
+
+type OfficialPicResponse = {
+  songs?: Array<{
+    al?: { picUrl?: string };
+  }>;
+};
+
+type OfficialLyricResponse = {
+  lrc?: { lyric?: string };
+  tlyric?: { lyric?: string };
+};
+
 // 获取音乐 API URL 列表
 const getMusicAPIUrls = (): string[] => {
   const envUrls = process.env.MUSIC_API_URLS;
@@ -94,14 +130,15 @@ function convertToOfficialFormat(searchParams: URLSearchParams): { endpoint: str
 /**
  * 转换官方 API 响应为统一格式
  */
-function convertOfficialResponse(types: string, data: any): any {
+function convertOfficialResponse(types: string, data: unknown): unknown {
   switch (types) {
-    case 'search':
-      if (data.result?.songs) {
-        return data.result.songs.map((song: any) => ({
+    case 'search': {
+      const searchData = data as OfficialSearchResponse;
+      if (searchData.result?.songs) {
+        return searchData.result.songs.map((song) => ({
           id: String(song.id),
           name: song.name,
-          artist: song.ar?.map((a: any) => a.name) || song.artists?.map((a: any) => a.name) || ['未知艺术家'],
+          artist: song.ar?.map((a) => a.name) || song.artists?.map((a) => a.name) || ['未知艺术家'],
           album: song.al?.name || song.album?.name || '',
           pic_id: String(song.id), // 使用歌曲 ID，方便后续获取详情
           pic_url: (song.al?.picUrl || song.album?.picUrl || '').replace('http://', 'https://'), // 转换为 HTTPS
@@ -113,10 +150,12 @@ function convertOfficialResponse(types: string, data: any): any {
         }));
       }
       return [];
+    }
 
-    case 'url':
-      if (data.data?.[0]) {
-        const urlData = data.data[0];
+    case 'url': {
+      const urlResponse = data as OfficialUrlResponse;
+      if (urlResponse.data?.[0]) {
+        const urlData = urlResponse.data[0];
         // 检查是否有播放权限
         const hasUrl = !!urlData.url;
         const code = urlData.code || 200;
@@ -137,21 +176,26 @@ function convertOfficialResponse(types: string, data: any): any {
         code: 404,
         message: '未找到歌曲信息'
       };
+    }
 
-    case 'pic':
-      if (data.songs?.[0]) {
-        const picUrl = data.songs[0].al?.picUrl || '';
+    case 'pic': {
+      const picResponse = data as OfficialPicResponse;
+      if (picResponse.songs?.[0]) {
+        const picUrl = picResponse.songs[0].al?.picUrl || '';
         return {
           url: picUrl.replace('http://', 'https://') // 转换为 HTTPS
         };
       }
       return { url: '' };
+    }
 
-    case 'lyric':
+    case 'lyric': {
+      const lyricResponse = data as OfficialLyricResponse;
       return {
-        lyric: data.lrc?.lyric || '',
-        tlyric: data.tlyric?.lyric || ''
+        lyric: lyricResponse.lrc?.lyric || '',
+        tlyric: lyricResponse.tlyric?.lyric || ''
       };
+    }
 
     default:
       return data;

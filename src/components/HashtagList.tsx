@@ -4,6 +4,7 @@ import React, { useState, useEffect } from 'react';
 import { Hashtag } from '@/types/confession';
 import { motion } from 'framer-motion';
 import { useRouter } from 'next/navigation';
+import { ChevronRight, Flame } from 'lucide-react';
 
 interface HashtagListProps {
   limit?: number;
@@ -51,13 +52,13 @@ export function HashtagList({ limit = 10, showTitle = true, className = '' }: Ha
 
   if (loading) {
     return (
-      <div className={`bg-white dark:bg-gray-800 rounded-xl p-4 shadow-sm ${className}`}>
-        {showTitle && <h3 className="text-lg font-semibold mb-3 text-gray-800 dark:text-white">热门话题</h3>}
-        <div className="flex flex-wrap gap-2">
-          {Array.from({ length: 6 }).map((_, i) => (
+      <div className={`rounded-[1.75rem] border border-white/70 bg-white/80 p-6 shadow-[0_18px_55px_rgba(31,41,55,.10)] backdrop-blur-xl dark:border-white/10 dark:bg-white/10 ${className}`}>
+        {showTitle && <h3 className="mb-5 flex items-center gap-3 text-2xl font-black text-slate-900 dark:text-white"><Flame className="h-6 w-6 text-rose-500" />热门话题</h3>}
+        <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
+          {Array.from({ length: 4 }).map((_, i) => (
             <div
               key={i}
-              className="h-8 w-20 bg-gray-200 dark:bg-gray-700 rounded-full animate-pulse"
+              className="h-20 rounded-2xl bg-slate-100/80 animate-pulse dark:bg-white/10"
             />
           ))}
         </div>
@@ -67,17 +68,35 @@ export function HashtagList({ limit = 10, showTitle = true, className = '' }: Ha
 
   if (hashtags.length === 0) {
     return (
-      <div className={`bg-white dark:bg-gray-800 rounded-xl p-4 shadow-sm ${className}`}>
-        {showTitle && <h3 className="text-lg font-semibold mb-3 text-gray-800 dark:text-white">热门话题</h3>}
-        <p className="text-gray-500 dark:text-gray-400 text-sm">暂无热门话题</p>
+      <div className={`rounded-[1.75rem] border border-white/70 bg-white/80 p-6 shadow-[0_18px_55px_rgba(31,41,55,.10)] backdrop-blur-xl dark:border-white/10 dark:bg-white/10 ${className}`}>
+        {showTitle && <h3 className="mb-5 flex items-center gap-3 text-2xl font-black text-slate-900 dark:text-white"><Flame className="h-6 w-6 text-rose-500" />热门话题</h3>}
+        <p className="text-sm font-medium text-slate-500 dark:text-slate-400">暂无热门话题</p>
       </div>
     );
   }
 
+  const tagThemes = [
+    'from-rose-50 to-red-50 text-rose-500 border-rose-100 dark:from-rose-500/15 dark:to-red-500/10 dark:text-rose-200 dark:border-rose-400/20',
+    'from-fuchsia-50 to-violet-50 text-violet-500 border-violet-100 dark:from-violet-500/15 dark:to-fuchsia-500/10 dark:text-violet-200 dark:border-violet-400/20',
+    'from-amber-50 to-orange-50 text-orange-500 border-orange-100 dark:from-orange-500/15 dark:to-amber-500/10 dark:text-orange-200 dark:border-orange-400/20',
+    'from-emerald-50 to-teal-50 text-teal-600 border-teal-100 dark:from-teal-500/15 dark:to-emerald-500/10 dark:text-teal-200 dark:border-teal-400/20',
+  ];
+
   return (
-    <div className={`bg-white dark:bg-gray-800 rounded-xl p-4 shadow-sm ${className}`}>
-      {showTitle && <h3 className="text-lg font-semibold mb-3 text-gray-800 dark:text-white">热门话题</h3>}
-      <div className="flex flex-wrap gap-2">
+    <div className={`rounded-[1.75rem] border border-white/70 bg-white/80 p-6 shadow-[0_18px_55px_rgba(31,41,55,.10)] backdrop-blur-xl dark:border-white/10 dark:bg-white/10 ${className}`}>
+      {showTitle && (
+        <div className="mb-5 flex items-center justify-between gap-4">
+          <h3 className="flex items-center gap-3 text-2xl font-black text-slate-900 dark:text-white">
+            <Flame className="h-6 w-6 fill-rose-100 text-rose-500" />
+            热门话题
+          </h3>
+          <button className="inline-flex items-center gap-1 text-sm font-semibold text-slate-500 transition-colors hover:text-rose-500 dark:text-slate-400">
+            查看更多
+            <ChevronRight className="h-4 w-4" />
+          </button>
+        </div>
+      )}
+      <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
         {hashtags.map((hashtag, index) => (
           <motion.button
             key={hashtag.id}
@@ -85,11 +104,11 @@ export function HashtagList({ limit = 10, showTitle = true, className = '' }: Ha
             animate={{ opacity: 1, scale: 1 }}
             transition={{ duration: 0.3, delay: index * 0.05 }}
             onClick={() => handleHashtagClick(hashtag.tag)}
-            className="inline-flex items-center px-3 py-1.5 rounded-full text-sm font-medium bg-gradient-to-r from-blue-50 to-indigo-50 dark:from-blue-900/20 dark:to-indigo-900/20 text-blue-700 dark:text-blue-300 hover:from-blue-100 hover:to-indigo-100 dark:hover:from-blue-800/30 dark:hover:to-indigo-800/30 transition-all duration-200 cursor-pointer border border-blue-200 dark:border-blue-800"
+            className={`flex h-20 min-h-20 flex-col items-center justify-center overflow-hidden rounded-2xl border bg-gradient-to-br px-4 text-center transition-all duration-200 hover:-translate-y-0.5 hover:shadow-lg ${tagThemes[index % tagThemes.length]}`}
           >
-            <span>{hashtag.tag}</span>
-            <span className="ml-1.5 text-xs bg-blue-100 dark:bg-blue-800/50 text-blue-800 dark:text-blue-200 px-1.5 py-0.5 rounded-full">
-              {hashtag.usage_count}
+            <span className="w-full truncate text-base font-black">{hashtag.tag}</span>
+            <span className="mt-1 w-full truncate text-sm font-semibold text-slate-500 dark:text-slate-400">
+              {hashtag.usage_count} 条内容
             </span>
           </motion.button>
         ))}

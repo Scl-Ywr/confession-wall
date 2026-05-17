@@ -1,6 +1,6 @@
 // Redis客户端实例
 // 注意：此模块只在服务器端使用
-import type { Redis } from 'ioredis';
+import type { Redis, RedisOptions } from 'ioredis';
 
 // 定义Redis类型
 let redis: Redis | undefined;
@@ -12,12 +12,10 @@ if (typeof window === 'undefined') {
       // 动态导入ioredis，避免ESLint错误
       const RedisModule = await import('ioredis');
       const Redis = RedisModule.default || RedisModule;
-      
-      redis = new Redis({
+
+      const redisOptions: RedisOptions = {
         host: process.env.REDIS_HOST || 'localhost',
         port: parseInt(process.env.REDIS_PORT || '6379'),
-        username: process.env.REDIS_USERNAME || 'default',
-        password: process.env.REDIS_PASSWORD || '',
         db: 0,
         // 连接选项
         connectTimeout: 10000, // 连接超时时间（毫秒）
@@ -40,7 +38,17 @@ if (typeof window === 'undefined') {
         maxRetriesPerRequest: 3, // 每个请求的最大重试次数
         enableReadyCheck: true, // 启用就绪检查
         maxLoadingRetryTime: 10000, // 加载时的最大重试时间
-      });
+      };
+
+      if (process.env.REDIS_USERNAME?.trim()) {
+        redisOptions.username = process.env.REDIS_USERNAME.trim();
+      }
+
+      if (process.env.REDIS_PASSWORD?.trim()) {
+        redisOptions.password = process.env.REDIS_PASSWORD.trim();
+      }
+
+      redis = new Redis(redisOptions);
 
       // 监听连接事件 - 只在开发环境输出
       if (process.env.NODE_ENV === 'development') {

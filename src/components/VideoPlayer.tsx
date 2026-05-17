@@ -22,6 +22,7 @@ export default function VideoPlayer({ id, videoUrl, className = '', posterUrl }:
   const [isPaused, setIsPaused] = useState(true);
   const [isMuted, setIsMuted] = useState(false);
   const [aspectRatio, setAspectRatio] = useState<string>('16/9'); // 视频宽高比，默认为16/9
+  const [isPortraitVideo, setIsPortraitVideo] = useState(false);
   const playerRef = useRef<HTMLVideoElement | null>(null);
 
   // 监听当前播放视频变化 - 实现互斥播放
@@ -49,7 +50,7 @@ export default function VideoPlayer({ id, videoUrl, className = '', posterUrl }:
     <ResponsiveVideoContainer
         aspectRatio={aspectRatio}
         className={className}
-        maxWidth="800px"
+        maxWidth={isPortraitVideo ? "420px" : "800px"}
       >
       {/* 视频切换过渡遮罩 */}
       <motion.div 
@@ -88,6 +89,7 @@ export default function VideoPlayer({ id, videoUrl, className = '', posterUrl }:
             const height = videoElement.videoHeight;
             if (width && height) {
               setAspectRatio(`${width}/${height}`);
+              setIsPortraitVideo(height > width);
             }
           }
         }}

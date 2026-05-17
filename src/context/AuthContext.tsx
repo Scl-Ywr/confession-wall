@@ -766,11 +766,19 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     setState(prev => ({ ...prev, loading: true, error: null }));
     
     try {
+      let loginIpAddress = 'unknown';
+      try {
+        const ipLocation = await getClientIpAndLocation();
+        loginIpAddress = ipLocation.ip || 'unknown';
+      } catch (ipError) {
+        console.error('Failed to get login IP before rate-limit check:', ipError);
+      }
+
       // 1. 检查登录尝试限制
       const { data: attemptCheck, error: checkError } = await supabase
         .rpc('check_login_attempts', { 
           p_email: email, 
-          p_ip_address: 'unknown'
+          p_ip_address: loginIpAddress
         });
       
       if (checkError) {
@@ -799,7 +807,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       }
 
       // 3. 登录成功后，获取IP地址和地理位置
-      let ipLocation = { ip: 'unknown', city: '未知城市', province: '未知省份', country: '未知国家' };
+      let ipLocation = { ip: loginIpAddress, city: '未知城市', province: '未知省份', country: '未知国家' };
       try {
         ipLocation = await getClientIpAndLocation();
       } catch (error) {

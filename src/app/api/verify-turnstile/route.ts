@@ -15,12 +15,18 @@ export async function POST(request: NextRequest) {
     const isDevelopment = process.env.NODE_ENV === 'development';
 
     if (!secretKey) {
-      console.warn('TURNSTILE_SECRET_KEY not configured, skipping verification as per user configuration');
-      
-      // 用户已在Supabase后端配置了Secret Key，本地无需验证，直接返回成功
+      if (!isDevelopment) {
+        console.error('TURNSTILE_SECRET_KEY is missing in production');
+        return NextResponse.json(
+          { success: false, error: '验证服务未配置，请联系管理员' },
+          { status: 503 }
+        );
+      }
+
+      console.warn('TURNSTILE_SECRET_KEY not configured; skipping local verification in development only');
       return NextResponse.json({
         success: true,
-        warning: 'Validation skipped - no local secret key configured (handled by Supabase backend)'
+        warning: 'Validation skipped in development because TURNSTILE_SECRET_KEY is not configured'
       });
     }
     // 调用Cloudflare API验证token

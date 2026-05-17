@@ -1,4 +1,5 @@
 import { Redis } from 'ioredis';
+import type { RedisOptions } from 'ioredis';
 
 // 消息类型枚举
 export enum MessageType {
@@ -58,17 +59,25 @@ class RedisQueueService {
       const RedisModule = await import('ioredis');
       const Redis = RedisModule.default;
 
-      this.redis = new Redis({
+      const redisOptions: RedisOptions = {
         host: process.env.REDIS_HOST || 'localhost',
         port: parseInt(process.env.REDIS_PORT || '6379'),
-        username: process.env.REDIS_USERNAME || 'default',
-        password: process.env.REDIS_PASSWORD || '',
         db: 0,
         retryStrategy(times: number) {
           const delay = Math.min(times * 50, 2000);
           return delay;
         },
-      });
+      };
+
+      if (process.env.REDIS_USERNAME?.trim()) {
+        redisOptions.username = process.env.REDIS_USERNAME.trim();
+      }
+
+      if (process.env.REDIS_PASSWORD?.trim()) {
+        redisOptions.password = process.env.REDIS_PASSWORD.trim();
+      }
+
+      this.redis = new Redis(redisOptions);
 
       // 监听连接事件
       this.redis.on('connect', () => {

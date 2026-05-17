@@ -6,12 +6,13 @@ import { confessionService } from '@/services/confessionService';
 import ConfessionCard from '@/components/ConfessionCard';
 import { useAuth } from '@/context/AuthContext';
 import { useRouter } from 'next/navigation';
-import { ArrowLeftIcon } from '@heroicons/react/24/outline';
 import { motion } from 'framer-motion';
 import Modal from '@/components/AnimatedModal';
 import toast from 'react-hot-toast';
 import { usePageRefresh } from '@/hooks/usePageRefresh';
 import PageLoader from '@/components/PageLoader';
+import Navbar from '@/components/Navbar';
+import { ArrowLeft, FolderOpen } from 'lucide-react';
 
 interface CategoryConfessionsClientProps {
   categoryId: string;
@@ -139,8 +140,8 @@ export default function CategoryConfessionsClient({ categoryId }: CategoryConfes
   };
 
   return (
-    <motion.div 
-      className="min-h-screen pb-20"
+    <motion.div
+      className="cw-page relative min-h-screen overflow-hidden pb-20"
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
@@ -178,44 +179,51 @@ export default function CategoryConfessionsClient({ categoryId }: CategoryConfes
           </div>
         </div>
       </Modal>
-      <div className="sticky top-0 z-10 bg-white/90 dark:bg-gray-900/90 backdrop-blur-md border-b border-gray-200 dark:border-gray-700 shadow-sm">
-        <div className="w-full mx-auto px-4 sm:px-6 lg:px-8 py-4">
-          <div className="flex items-center gap-3">
-            <motion.button
-              onClick={() => router.back()}
-              className="p-2 rounded-full hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors duration-200"
-              whileHover={{ scale: 1.1 }}
-              whileTap={{ scale: 0.95 }}
-            >
-              <ArrowLeftIcon className="w-5 h-5 text-gray-600 dark:text-gray-300" />
-            </motion.button>
-            <div className="flex items-center gap-2">
-              <motion.div 
-                className="w-8 h-8 rounded-full flex items-center justify-center"
-                style={{ backgroundColor: `${category?.color}20` || '#f3f4f6' }}
-                animate={{ rotate: [0, 5, -5, 0] }}
-                transition={{ duration: 2, repeat: Infinity, repeatDelay: 3 }}
+      <div className="cw-decor-grid" />
+      <Navbar />
+
+      <main className="relative z-10 mx-auto w-full max-w-[1760px] px-4 py-8 sm:px-8 lg:px-14">
+        <section className="cw-panel mb-8 rounded-[2rem] p-6 sm:p-8">
+          <div className="flex flex-col gap-5 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex items-center gap-4">
+              <motion.button
+                onClick={() => router.back()}
+                className="app-btn shrink-0"
+                whileHover={{ scale: 1.03 }}
+                whileTap={{ scale: 0.97 }}
+                aria-label="返回"
               >
-                <span className="text-lg" style={{ color: category?.color || '#6b7280' }}>
-                  {category?.icon || '📂'}
-                </span>
-              </motion.div>
-              <div>
-                <h1 className="text-xl font-bold text-gray-900 dark:text-white">
-                  {category?.name || '分类'}
-                </h1>
-                {category?.description && (
-                  <p className="text-xs text-gray-500 dark:text-gray-400">
-                    {category.description}
+                <ArrowLeft className="h-5 w-5" />
+              </motion.button>
+              <div className="flex items-center gap-4">
+                <div
+                  className="flex h-16 w-16 items-center justify-center rounded-2xl text-3xl shadow-lg"
+                  style={{ backgroundColor: `${category?.color}18` || 'rgba(255, 241, 242, .95)' }}
+                >
+                  <span style={{ color: category?.color || '#fb7185' }}>{category?.icon || '📂'}</span>
+                </div>
+                <div>
+                  <p className="mb-1 flex items-center gap-2 text-sm font-bold text-rose-500">
+                    <FolderOpen className="h-4 w-4" />
+                    分类浏览
                   </p>
-                )}
+                  <h1 className="text-3xl font-black text-slate-900 dark:text-white sm:text-4xl">
+                    {category?.name || '分类'}
+                  </h1>
+                  {category?.description && (
+                    <p className="mt-2 text-sm font-medium text-slate-500 dark:text-slate-400">
+                      {category.description}
+                    </p>
+                  )}
+                </div>
               </div>
             </div>
+            <div className="rounded-2xl bg-white/60 px-5 py-3 text-sm font-bold text-slate-500 shadow-inner dark:bg-white/10 dark:text-slate-300">
+              已收录 <span className="text-2xl text-rose-500">{confessions.length}</span> 条心声
+            </div>
           </div>
-        </div>
-      </div>
+        </section>
 
-      <main className="w-full mx-auto px-4 sm:px-6 lg:px-8 py-6">
         {loading && confessions.length === 0 ? (
           <PageLoader 
             type="content" 
@@ -223,8 +231,8 @@ export default function CategoryConfessionsClient({ categoryId }: CategoryConfes
             className="py-8"
           />
         ) : error ? (
-          <motion.div 
-            className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-xl p-6 text-center"
+          <motion.div
+            className="cw-panel rounded-[2rem] p-8 text-center"
             initial={{ opacity: 0, scale: 0.9 }}
             animate={{ opacity: 1, scale: 1 }}
             transition={{ duration: 0.3 }}
@@ -237,7 +245,7 @@ export default function CategoryConfessionsClient({ categoryId }: CategoryConfes
                 setLoading(true);
                 loadConfessions(1, false);
               }}
-              className="px-6 py-2 bg-red-600 text-white rounded-lg font-medium hover:bg-red-700 transition-colors"
+              className="cw-primary-btn"
               whileHover={{ scale: 1.05 }}
               whileTap={{ scale: 0.95 }}
             >
@@ -246,7 +254,7 @@ export default function CategoryConfessionsClient({ categoryId }: CategoryConfes
           </motion.div>
         ) : !category ? (
           <motion.div 
-            className="text-center py-20"
+            className="cw-panel rounded-[2rem] py-20 text-center"
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.4 }}
@@ -269,7 +277,7 @@ export default function CategoryConfessionsClient({ categoryId }: CategoryConfes
             </p>
             <motion.button
               onClick={() => router.push('/')}
-              className="px-6 py-3 bg-gradient-to-r from-blue-600 to-blue-700 text-white rounded-xl font-medium hover:from-blue-700 hover:to-blue-800 transition-all shadow-md hover:shadow-lg"
+              className="cw-primary-btn"
               whileHover={{ scale: 1.05 }}
               whileTap={{ scale: 0.95 }}
             >
@@ -278,7 +286,7 @@ export default function CategoryConfessionsClient({ categoryId }: CategoryConfes
           </motion.div>
         ) : confessions.length === 0 ? (
           <motion.div 
-            className="text-center py-20"
+            className="cw-panel rounded-[2rem] py-20 text-center"
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.4 }}
@@ -302,7 +310,7 @@ export default function CategoryConfessionsClient({ categoryId }: CategoryConfes
             </p>
             <motion.button
               onClick={() => router.push('/')}
-              className="px-8 py-4 bg-gradient-to-r from-blue-600 to-blue-700 text-white rounded-xl font-medium hover:from-blue-700 hover:to-blue-800 transition-all shadow-lg hover:shadow-xl"
+              className="cw-primary-btn"
               whileHover={{ scale: 1.05 }}
               whileTap={{ scale: 0.95 }}
             >
@@ -316,8 +324,8 @@ export default function CategoryConfessionsClient({ categoryId }: CategoryConfes
             animate={{ opacity: 1 }}
             transition={{ duration: 0.3 }}
           >
-            <motion.div 
-              className="text-center mb-8 p-4 bg-gradient-to-r from-blue-50 to-purple-50 dark:from-blue-900/20 dark:to-purple-900/20 rounded-xl"
+            <motion.div
+              className="mb-8 rounded-[1.75rem] border border-white/70 bg-white/70 p-5 text-center shadow-[0_12px_35px_rgba(31,41,55,.08)] backdrop-blur-xl dark:border-white/10 dark:bg-white/10"
               initial={{ opacity: 0, y: -10 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.4 }}
@@ -339,7 +347,7 @@ export default function CategoryConfessionsClient({ categoryId }: CategoryConfes
               </div>
             </motion.div>
             
-            <div className="grid gap-6">
+            <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-3">
               {confessions.map((confession, index) => (
                 <motion.div
                   key={confession.id}
@@ -366,7 +374,7 @@ export default function CategoryConfessionsClient({ categoryId }: CategoryConfes
                 <motion.button
                   onClick={handleLoadMore}
                   disabled={loading}
-                  className="px-8 py-3 bg-gradient-to-r from-blue-600 to-blue-700 text-white rounded-xl font-medium hover:from-blue-700 hover:to-blue-800 transition-all shadow-md hover:shadow-lg disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="cw-primary-btn disabled:cursor-not-allowed disabled:opacity-50"
                   whileHover={{ scale: loading ? 1 : 1.05 }}
                   whileTap={{ scale: loading ? 1 : 0.95 }}
                 >

@@ -123,20 +123,18 @@ export default function ConfessionCard({
   const [isLocking, setIsLocking] = useState<boolean>(false);
 
   // Handle lock toggle
-  const handleToggleLock = async (imageId: string, isLocked: boolean) => {
-    if (!isLocked) {
-      // If currently unlocked, show modal to set lock type and password
+  const handleToggleLock = async (imageId: string, shouldLock: boolean) => {
+    if (shouldLock) {
       setSelectedImageId(imageId);
       setIsLocking(true);
       setLockType('password');
       setLockPassword('');
       setShowLockModal(true);
     } else {
-      // If currently locked, show modal to modify lock settings
       setSelectedImageId(imageId);
-      setIsLocking(true); // Keep as true to show lock settings
-      setLockType('password'); // Default to password type
-      setLockPassword(''); // Empty password field for modification
+      setIsLocking(false);
+      setLockType('public');
+      setLockPassword('');
       setShowLockModal(true);
     }
   };
@@ -171,7 +169,7 @@ export default function ConfessionCard({
       } else {
         const errorData = await response.json();
         console.error('Failed to toggle lock:', errorData);
-        toast.error('切换锁定状态失败，请重试', {
+        toast.error(errorData.error || '切换锁定状态失败，请重试', {
           duration: 3000,
           position: 'top-right',
         });
@@ -232,14 +230,6 @@ export default function ConfessionCard({
           setShowPasswordModal(true);
           return;
         }
-        // User lock: check if user is logged in
-        else if (media.lock_type === 'user') {
-          toast.error('请先登录才能下载此媒体', {
-            duration: 3000,
-            position: 'top-right',
-          });
-          return;
-        }
       }
       
       // Show download confirmation modal for all media
@@ -260,11 +250,13 @@ export default function ConfessionCard({
     try {
       // Use the download API endpoint with proper authorization
       // Let the API handle all other validation (user lock, ownership, etc.)
-      const response = await fetch(`/api/download-media?imageId=${imageId}`, {
-        method: 'GET',
+      const response = await fetch('/api/download-media', {
+        method: 'POST',
         headers: {
+          'Content-Type': 'application/json',
           ...(session && { Authorization: `Bearer ${session.access_token}` }),
         },
+        body: JSON.stringify({ imageId }),
       });
 
       if (response.ok) {
@@ -360,11 +352,16 @@ export default function ConfessionCard({
       const { data: { session } } = await supabase.auth.getSession();
       
       // Use the download API endpoint with password
-      const response = await fetch(`/api/download-media?imageId=${downloadImageId}&password=${encodeURIComponent(passwordForDownload)}`, {
-        method: 'GET',
+      const response = await fetch('/api/download-media', {
+        method: 'POST',
         headers: {
+          'Content-Type': 'application/json',
           ...(session && { Authorization: `Bearer ${session.access_token}` }),
         },
+        body: JSON.stringify({
+          imageId: downloadImageId,
+          password: passwordForDownload,
+        }),
       });
       
       if (response.ok) {
@@ -403,8 +400,8 @@ export default function ConfessionCard({
   };
   
   return (
-    <motion.div 
-      className="glass-card rounded-xl sm:rounded-2xl md:rounded-3xl p-4 sm:p-5 md:p-7 mb-4 sm:mb-6 md:mb-8 card-hover gpu-accelerated border border-white/30"
+    <motion.article
+      className="h-fit rounded-[1.75rem] border border-white/75 bg-white/80 p-5 shadow-[0_18px_55px_rgba(31,41,55,.10)] backdrop-blur-xl transition-all duration-300 dark:border-white/10 dark:bg-white/10 sm:p-6"
       initial={{ opacity: 0, y: 30, scale: 0.95 }}
       animate={{ opacity: 1, y: 0, scale: 1 }}
       exit={{ opacity: 0, y: -20, scale: 0.95 }}
@@ -412,34 +409,34 @@ export default function ConfessionCard({
         duration: 0.5, 
         ease: [0.25, 0.1, 0.25, 1] 
       }}
-      whileHover={{ 
+      whileHover={{
         y: -4,
-        boxShadow: '0 20px 40px -10px rgba(0, 0, 0, 0.15), 0 10px 20px -6px rgba(0, 0, 0, 0.08)'
+        boxShadow: '0 24px 65px -24px rgba(244, 63, 94, 0.35), 0 16px 45px -24px rgba(15, 23, 42, 0.28)'
       }}
     >
-      <div className="flex justify-between items-start mb-4">
+      <div className="mb-5 flex items-start justify-between">
         <div className="flex items-center">
           {confession.is_anonymous ? (
-            <div className="w-12 h-12 sm:w-14 sm:h-14 bg-gradient-to-br from-warm-100 to-warm-200 rounded-full flex items-center justify-center mr-3 sm:mr-4 shadow-lg dark:from-warm-900/40 dark:to-warm-800/40">
-              <span className="text-warm-600 font-bold text-lg sm:text-xl dark:text-warm-300">?</span>
+            <div className="mr-3 flex h-14 w-14 items-center justify-center rounded-full bg-gradient-to-br from-rose-100 to-orange-100 shadow-md ring-4 ring-white/70 dark:from-rose-500/20 dark:to-orange-500/20 dark:ring-white/10">
+              <span className="text-lg font-black text-rose-500 dark:text-rose-200">?</span>
             </div>
           ) : (
             <div 
-              className="w-12 h-12 sm:w-14 sm:h-14 rounded-full overflow-hidden mr-3 sm:mr-4 border-2 sm:border-3 border-white/60 shadow-md dark:border-gray-700/60 cursor-pointer hover:scale-110 transition-transform duration-300"
+              className="relative mr-3 h-14 w-14 cursor-pointer overflow-hidden rounded-full border-2 border-white/80 bg-gradient-to-br from-slate-100 to-slate-200 shadow-md ring-4 ring-white/55 transition-transform duration-300 hover:scale-105 dark:border-white/20 dark:from-slate-700 dark:to-slate-800 dark:ring-white/10"
               onClick={handleProfileClick}
             >
               {confession.profile?.avatar_url ? (
                 <Image
                   src={confession.profile.avatar_url}
                   alt={confession.profile.display_name}
-                  width={56}
-                  height={56}
-                  className="w-full h-full object-cover"
+                  fill
+                  sizes="56px"
+                  className="object-cover"
                   loading="lazy"
                 />
               ) : (
-                <div className="w-full h-full bg-gradient-to-br from-secondary-100 to-secondary-200 flex items-center justify-center dark:from-secondary-900/40 dark:to-secondary-800/40">
-                  <span className="text-secondary-600 font-bold text-lg sm:text-xl dark:text-secondary-300">
+                <div className="flex h-full w-full items-center justify-center bg-gradient-to-br from-pink-100 to-orange-100 dark:from-pink-500/20 dark:to-orange-500/20">
+                  <span className="text-lg font-black text-rose-500 dark:text-rose-200">
                     {confession.profile?.display_name?.[0] || 'U'}
                   </span>
                 </div>
@@ -448,19 +445,19 @@ export default function ConfessionCard({
           )}
           <div>
             <h3 
-              className="font-bold text-gray-900 dark:text-white text-base sm:text-lg md:text-xl cursor-pointer hover:text-warm-600 dark:hover:text-warm-400 transition-colors duration-300"
+              className="cursor-pointer text-base font-black text-slate-950 transition-colors duration-300 hover:text-rose-500 dark:text-white dark:hover:text-rose-300 sm:text-lg"
               onClick={handleProfileClick}
             >
               {confession.is_anonymous ? '匿名用户' : confession.profile?.display_name || '未知用户'}
             </h3>
-            <p className="text-xs text-gray-500 dark:text-gray-400 font-medium tracking-wide mt-1">
+            <p className="mt-1 text-sm font-medium tracking-normal text-slate-500 dark:text-slate-400">
               {formatDate(confession.created_at)}
             </p>
           </div>
         </div>
       </div>
 
-      <div className="mb-5 sm:mb-7">
+      <div className="mb-5">
         {isEditing ? (
           <div className="space-y-2">
             <textarea
@@ -492,17 +489,17 @@ export default function ConfessionCard({
             </div>
           </div>
         ) : (
-          <div className="prose prose-sm sm:prose-base dark:prose-invert max-w-none">
+          <div className="prose prose-sm max-w-none text-slate-700 prose-p:leading-7 dark:prose-invert dark:text-slate-200 sm:prose-base">
             <MarkdownRenderer content={confession.content} />
           </div>
         )}
       </div>
 
       {confession.category && (
-        <div className="mb-4 sm:mb-5">
+        <div className="mb-4">
           <button
             onClick={() => router.push(`/category/${confession.category!.id}`)}
-            className="inline-flex items-center gap-2 px-3 sm:px-4 py-1.5 sm:py-2 rounded-full text-xs sm:text-sm font-medium border transition-all duration-300 cursor-pointer hover:shadow-lg hover:scale-105"
+            className="inline-flex cursor-pointer items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-bold transition-all duration-300 hover:scale-105 hover:shadow-lg sm:text-sm"
             style={{ 
               backgroundColor: `${confession.category.color}20` || '#f3f4f6',
               borderColor: confession.category.color || '#d1d5db',
@@ -516,12 +513,12 @@ export default function ConfessionCard({
       )}
 
       {confession.hashtags && confession.hashtags.length > 0 && (
-        <div className="mb-4 sm:mb-5 flex flex-wrap gap-2">
+        <div className="mb-4 flex flex-wrap gap-2">
           {confession.hashtags.map((confessionHashtag) => (
             <button
               key={confessionHashtag.id}
               onClick={() => router.push(`/hashtag/${encodeURIComponent(confessionHashtag.hashtag!.tag.substring(1))}`)}
-              className="inline-flex items-center gap-1 sm:gap-1.5 px-2.5 sm:px-3 py-1 sm:py-1.5 rounded-full text-xs font-medium bg-blue-50/80 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 hover:bg-blue-100 dark:hover:bg-blue-900/50 transition-all duration-300 cursor-pointer border border-blue-200/60 dark:border-blue-800/60 hover:shadow-md hover:scale-105"
+              className="inline-flex cursor-pointer items-center gap-1 rounded-full border border-rose-100 bg-rose-50/80 px-2.5 py-1 text-xs font-bold text-rose-500 transition-all duration-300 hover:scale-105 hover:bg-rose-100 hover:shadow-md dark:border-rose-400/20 dark:bg-rose-500/10 dark:text-rose-200"
             >
               <TagIcon className="w-3 h-3 sm:w-3.5 sm:h-3.5" />
               <span>{confessionHashtag.hashtag?.tag}</span>
@@ -532,11 +529,13 @@ export default function ConfessionCard({
 
       {confession.images && confession.images.length > 0 && (
           <PhotoProvider>
-            <div className="mb-3 sm:mb-4 md:mb-6 grid grid-cols-1 sm:grid-cols-2 gap-2 sm:gap-3 md:gap-4">
+            <div className="mb-5 grid grid-cols-1 gap-3">
               {confession.images.map((media) => (
                 <div
                   key={media.id}
-                  className={`relative w-full rounded-lg sm:rounded-xl border border-gray-100 dark:border-gray-700 shadow-sm transition-all duration-500 ease-in-out overflow-hidden group`}
+                  className={`group relative w-full overflow-hidden rounded-2xl border border-white/80 shadow-sm transition-all duration-500 ease-in-out dark:border-white/10 ${
+                    media.file_type === 'image' ? 'aspect-[16/9]' : 'flex justify-center bg-black/95'
+                  }`}
                 >
                     {media.file_type === 'image' ? (
                       <PhotoView src={media.image_url}>
@@ -553,7 +552,7 @@ export default function ConfessionCard({
                       <VideoPlayer
                         id={`${confession.id}-${media.id}`}
                         videoUrl={media.image_url}
-                        className="w-full h-full cursor-pointer"
+                        className="w-full cursor-pointer"
                       />
                     ) : (
                       <div className="w-full h-full flex items-center justify-center bg-gray-900">
@@ -566,8 +565,8 @@ export default function ConfessionCard({
           </PhotoProvider>
         )}
 
-      <div className="flex flex-col sm:flex-row items-center justify-between pt-2 sm:pt-3 md:pt-4 border-t border-gray-100 dark:border-gray-700/50 space-y-2 sm:space-y-0">
-        <div className="flex items-center space-x-2 sm:space-x-3 md:space-x-6">
+      <div className="flex flex-col items-center justify-between gap-3 border-t border-slate-100 pt-4 dark:border-white/10 sm:flex-row">
+        <div className="flex items-center space-x-3 md:space-x-5">
           <LikeButton
             confessionId={confession.id}
             initialLikesCount={Math.max(0, Number(confession.likes_count) || 0)}
@@ -849,7 +848,7 @@ export default function ConfessionCard({
         )}
       </div>
 
-      <div className="mt-6">
+      <div className="mt-5">
         <CommentSection confessionId={confession.id} />
       </div>
       
@@ -865,6 +864,6 @@ export default function ConfessionCard({
         confirmColor="green"
       />
 
-    </motion.div>
+    </motion.article>
   );
 }

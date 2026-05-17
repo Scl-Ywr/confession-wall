@@ -8,7 +8,7 @@ export interface User {
   username?: string;
   avatar_url?: string;
   is_admin?: boolean;
-  auth_provider?: 'supabase' | 'google' | 'github' | 'wechat' | 'qq' | 'logto';
+  auth_provider?: 'supabase' | 'google' | 'github' | 'wechat' | 'qq';
   oauth_provider?: string;
   oauth_avatar_url?: string;
   oauth_username?: string;
@@ -18,7 +18,7 @@ export interface AuthState {
   user: User | null;
   loading: boolean;
   error: string | null;
-  authProvider?: 'supabase' | 'logto' | null;
+  authProvider?: 'supabase' | null;
 }
 
 export interface RegisterFormData {
@@ -32,12 +32,3 @@ export interface LoginFormData {
   password: string;
 }
 
-export interface LogtoUserInfo {
-  id: string;
-  email: string;
-  name?: string;
-  picture?: string;
-  username?: string;
-  provider: string;
-  raw: Record<string, unknown>;
-}

@@ -14,7 +14,8 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "test": "jest"
+    "test": "jest",
+    "check-env": "node scripts/check-env.js"
   },
   "dependencies": {
     "@ebay/nice-modal-react": "^1.2.13",
@@ -22,7 +23,6 @@
     "@emotion/styled": "^11.14.1",
     "@heroicons/react": "^2.2.0",
     "@hookform/resolvers": "^5.2.2",
-    "@logto/next": "^4.2.8",
     "@marsidev/react-turnstile": "^1.4.1",
     "@mui/icons-material": "^7.3.6",
     "@mui/material": "^7.3.6",

@@ -86,7 +86,9 @@ const ResponsiveVideoContainer = React.forwardRef<HTMLDivElement, Omit<Responsiv
   // 计算容器样式
   const getContainerStyle = () => {
     const [aspectWidth, aspectHeight] = aspectRatio.split('/').map(Number);
-    const aspectRatioValue = aspectWidth / aspectHeight;
+    const safeAspectWidth = Number.isFinite(aspectWidth) && aspectWidth > 0 ? aspectWidth : 16;
+    const safeAspectHeight = Number.isFinite(aspectHeight) && aspectHeight > 0 ? aspectHeight : 9;
+    const aspectRatioValue = safeAspectWidth / safeAspectHeight;
     
     let width = containerSize.width;
     let height = containerSize.width / aspectRatioValue;
@@ -126,6 +128,7 @@ const ResponsiveVideoContainer = React.forwardRef<HTMLDivElement, Omit<Responsiv
     return {
       width: fluid ? '100%' : `${width}px`,
       height: fluid ? 'auto' : `${height}px`,
+      aspectRatio: fluid ? `${safeAspectWidth} / ${safeAspectHeight}` : undefined,
       maxWidth: fluid ? maxWidth : `${width}px`,
       position: 'relative' as const,
       overflow: 'hidden' as const,

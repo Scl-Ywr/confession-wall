@@ -7,12 +7,16 @@ interface ProfileVideoPlayerProps {
   videoUrl: string;
   posterUrl?: string;
   className?: string;
+  objectFit?: 'cover' | 'contain';
+  autoSize?: boolean;
 }
 
 export default function ProfileVideoPlayer({ 
   videoUrl, 
   posterUrl,
-  className = '' 
+  className = '',
+  objectFit = 'cover',
+  autoSize = false,
 }: ProfileVideoPlayerProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const [error, setError] = useState<string | null>(null);
@@ -56,8 +60,7 @@ export default function ProfileVideoPlayer({
 
   return (
     <div 
-      className={`relative bg-black rounded-lg overflow-hidden ${className}`}
-      style={{ aspectRatio: '16/9' }}
+      className={`relative w-full bg-black rounded-lg overflow-hidden ${autoSize ? '' : 'h-full'} ${className}`}
       onKeyDown={handleKeyDown}
       tabIndex={0}
     >
@@ -73,7 +76,7 @@ export default function ProfileVideoPlayer({
       {/* 视频元素 - 优化iOS兼容性 */}
       <video
         ref={videoRef}
-        className="w-full h-full object-contain"
+        className={`${autoSize ? 'h-auto w-full' : 'h-full w-full'} ${objectFit === 'cover' ? 'object-cover' : 'object-contain'}`}
         poster={posterUrl}
         preload="metadata"
         playsInline

@@ -5,6 +5,28 @@ import { profileService } from './profileService';
 import { cacheKeyManager } from '@/lib/redis/cache-key-manager';
 import { cacheManager } from '@/lib/redis/cache-manager';
 import { MODULE_EXPIRY } from '@/lib/redis/cache.config';
+
+type ConfessionListRow = {
+  id: string;
+  content: string;
+  is_anonymous: boolean;
+  user_id: string | null;
+  created_at: string;
+  likes_count: number;
+  category_id: string | null;
+  category: {
+    id: string;
+    name: string;
+    icon: string;
+    color: string;
+  } | Array<{
+    id: string;
+    name: string;
+    icon: string;
+    color: string;
+  }> | null;
+};
+
 export const confessionService = {
   // 获取表白列表
   getConfessions: async (page: number = 1, limit: number = 10): Promise<Confession[]> => {
@@ -61,8 +83,8 @@ export const confessionService = {
       }
 
       // 6. 优化查询，包含likes_count字段
-      let confessions: any[] = [];
-      let confessionsError: any = null;
+      let confessions: ConfessionListRow[] = [];
+      let confessionsError: Error | null = null;
       try {
         const result = await supabase
           .from('confessions')
@@ -79,10 +101,10 @@ export const confessionService = {
           .order('created_at', { ascending: false })
           .range((page - 1) * limit, page * limit - 1);
         confessions = result.data || [];
-        confessionsError = result.error;
+        confessionsError = result.error ? new Error(result.error.message) : null;
       } catch (error) {
         console.error('Error fetching confessions:', error);
-        confessionsError = error;
+        confessionsError = error instanceof Error ? error : new Error(String(error));
       }
 
       if (confessionsError) {

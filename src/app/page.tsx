@@ -20,6 +20,13 @@ import Modal from '@/components/AnimatedModal';
 import toast from 'react-hot-toast';
 import { usePageRefresh } from '@/hooks/usePageRefresh';
 import PageLoader from '@/components/PageLoader';
+import {
+  Heart,
+  LockKeyhole,
+  Search,
+  ShieldCheck,
+  Sparkles,
+} from 'lucide-react';
 
 export default function Home() {
   const router = useRouter();
@@ -246,16 +253,19 @@ export default function Home() {
   }
 
   return (
-    <motion.div 
-      className="min-h-screen pb-20 smooth-scroll"
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 1 }}
-      exit={{ opacity: 0 }}
-      transition={{ duration: 0.4, ease: [0.25, 0.1, 0.25, 1] }}
-    >
-      <Navbar />
-      
-      {/* 删除确认模态框 */}
+    <div className="min-h-screen overflow-x-hidden pb-16 text-slate-800 dark:text-slate-100">
+      <div className="fixed inset-0 -z-20 bg-[radial-gradient(circle_at_8%_12%,rgba(255,187,204,0.55),transparent_24%),radial-gradient(circle_at_82%_10%,rgba(255,222,181,0.58),transparent_22%),linear-gradient(180deg,#fff8f7_0%,#fffaf4_45%,#f3f6fb_100%)] dark:bg-[radial-gradient(circle_at_8%_12%,rgba(127,29,29,0.28),transparent_24%),radial-gradient(circle_at_82%_10%,rgba(120,53,15,0.26),transparent_22%),linear-gradient(180deg,#160f14_0%,#16131c_52%,#111827_100%)]" />
+      <div className="fixed inset-0 -z-10 opacity-70 [background-image:linear-gradient(rgba(255,255,255,.45)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,.45)_1px,transparent_1px)] [background-size:72px_72px] dark:opacity-10" />
+
+      <div className="pointer-events-none fixed left-8 top-36 -z-10 hidden h-20 w-20 rotate-[-18deg] rounded-[36%] bg-pink-300/30 blur-sm md:block" />
+      <div className="pointer-events-none fixed right-16 top-72 -z-10 hidden h-24 w-24 rotate-12 rounded-[36%] bg-rose-300/30 blur-sm md:block" />
+      <div className="pointer-events-none fixed left-12 top-[33vh] -z-10 hidden text-4xl text-amber-200/80 md:block">✦</div>
+      <div className="pointer-events-none fixed right-28 top-44 -z-10 hidden text-3xl text-amber-200/80 md:block">✧</div>
+
+      <div className="relative z-10">
+        <Navbar />
+
+        {/* 删除确认模态框 */}
       <Modal
         isOpen={showDeleteModal}
         onClose={cancelDelete}
@@ -290,47 +300,52 @@ export default function Home() {
       
       {/* 登录提示组件 */}
       {showLoginPrompt && <LoginPrompt />}
-      
-      <main className="w-full mx-auto px-3 sm:px-6 lg:px-8 py-6 sm:py-8 md:py-12">
-        <motion.div 
-          className="text-center mb-8 sm:mb-12 md:mb-20 pt-6 sm:pt-10 md:pt-14"
-          initial={{ opacity: 0, y: 30 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.8, ease: [0.25, 0.1, 0.25, 1] }}
-        >
-          <motion.h1 
-            className="text-3xl sm:text-4xl md:text-5xl lg:text-6xl xl:text-8xl font-bold mb-4 sm:mb-6 md:mb-8 gradient-text drop-shadow-lg"
-            initial={{ opacity: 0, scale: 0.9 }}
-            animate={{ opacity: 1, scale: 1 }}
-            transition={{ duration: 0.6, delay: 0.2, ease: [0.34, 1.56, 0.64, 1] }}
+
+      <main className="relative z-10 mx-auto w-full max-w-[1760px] px-4 py-8 sm:px-8 lg:px-14">
+        <section className="grid items-center gap-8 pb-8 pt-4 lg:grid-cols-[1.15fr_.85fr] lg:gap-14 lg:pb-10 lg:pt-10">
+          <motion.div
+            initial={{ opacity: 0, y: 18 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.55, ease: [0.25, 0.1, 0.25, 1] }}
+            className="relative"
           >
-            Confession Wall
-          </motion.h1>
-          <motion.p 
-            className="text-base sm:text-lg md:text-xl lg:text-2xl text-gray-700 dark:text-gray-300 max-w-3xl mx-auto leading-relaxed font-light px-2"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            transition={{ duration: 0.6, delay: 0.4, ease: [0.25, 0.1, 0.25, 1] }}
+            <div className="mb-5 flex flex-wrap items-center gap-3 text-sm font-semibold text-slate-600 dark:text-slate-300">
+              <span className="inline-flex items-center gap-2 rounded-full bg-white/70 px-3 py-2 shadow-[0_12px_35px_rgba(255,92,122,.12)] ring-1 ring-white/70 backdrop-blur-xl dark:bg-white/10 dark:ring-white/10">
+                <ShieldCheck className="h-4 w-4 text-rose-500" />
+                匿名
+              </span>
+              <span className="h-1 w-1 rounded-full bg-rose-200" />
+              <span className="inline-flex items-center gap-2 rounded-full bg-white/70 px-3 py-2 shadow-[0_12px_35px_rgba(255,92,122,.12)] ring-1 ring-white/70 backdrop-blur-xl dark:bg-white/10 dark:ring-white/10">
+                <LockKeyhole className="h-4 w-4 text-rose-500" />
+                安全
+              </span>
+              <span className="h-1 w-1 rounded-full bg-rose-200" />
+              <span className="inline-flex items-center gap-2 rounded-full bg-white/70 px-3 py-2 shadow-[0_12px_35px_rgba(255,92,122,.12)] ring-1 ring-white/70 backdrop-blur-xl dark:bg-white/10 dark:ring-white/10">
+                <Heart className="h-4 w-4 fill-rose-100 text-rose-500" />
+                免费
+              </span>
+            </div>
+
+            <h1 className="text-balance-wrap max-w-5xl text-5xl font-black leading-[.96] tracking-normal sm:text-7xl xl:text-8xl">
+              <span className="relative inline-block bg-gradient-to-r from-rose-500 via-pink-500 to-orange-500 bg-clip-text text-transparent drop-shadow-[0_16px_28px_rgba(248,90,103,.24)]">
+                Confession Wall
+                <span className="absolute -right-8 -top-2 text-3xl text-rose-400">♥</span>
+                <span className="absolute bottom-1 left-[70%] h-1.5 w-44 max-w-[34vw] rounded-full bg-gradient-to-r from-transparent via-rose-400 to-transparent" />
+              </span>
+            </h1>
+            <p className="text-balance-wrap mt-8 max-w-3xl text-xl font-medium leading-8 text-slate-600 dark:text-slate-300 sm:text-2xl">
+              一个倾诉秘密、表达爱意或发泄情绪的安全空间。
+            </p>
+          </motion.div>
+
+          <motion.div
+            initial={{ opacity: 0, y: 18 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.55, delay: 0.12, ease: [0.25, 0.1, 0.25, 1] }}
+            className="min-w-0"
           >
-            一个倾诉秘密、表达爱意或发泄情绪的安全空间。
-            <motion.span 
-              className="block mt-2 sm:mt-3 md:mt-4 font-medium text-warm-600 dark:text-warm-400"
-              initial={{ opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.6, delay: 0.6, ease: [0.25, 0.1, 0.25, 1] }}
-            >
-              匿名 · 安全 · 免费
-            </motion.span>
-          </motion.p>
-        </motion.div>
-        
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.5, delay: 0.3, ease: [0.25, 0.1, 0.25, 1] }}
-        >
-          <CreateConfessionForm 
-            onSuccess={(newConfession) => {
+            <CreateConfessionForm
+              onSuccess={(newConfession) => {
               console.log('onSuccess called with newConfession:', newConfession);
               
               if (!newConfession) {
@@ -423,48 +438,48 @@ export default function Home() {
               
               // 使缓存失效，确保数据同步
               queryClient.invalidateQueries({ queryKey: ['confessions'] });
-            }} 
-            user={user} 
-          />
-        </motion.div>
-        
-        <motion.div 
-          className="grid grid-cols-1 sm:grid-cols-2 gap-4 sm:gap-6 mb-6 sm:mb-8"
+            }}
+              user={user}
+            />
+          </motion.div>
+        </section>
+
+        <motion.div
+          className="grid grid-cols-1 gap-5 lg:grid-cols-[.9fr_1fr] xl:grid-cols-[.85fr_1fr] mb-8"
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.5, delay: 0.4, ease: [0.25, 0.1, 0.25, 1] }}
         >
-          <HashtagList limit={8} />
+          <HashtagList limit={4} />
           <CategoryList />
         </motion.div>
         
         <div className="space-y-8">
           <motion.div 
-            className="space-y-6 mb-8"
+            className="mb-8 space-y-5"
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.5, delay: 0.5, ease: [0.25, 0.1, 0.25, 1] }}
           >
-            <h2 className="text-2xl font-bold text-gray-800 dark:text-white flex items-center gap-2">
-              <motion.span 
-                className="text-3xl inline-block"
-                animate={{ rotate: [0, 10, -10, 0] }}
-                transition={{ duration: 2, repeat: Infinity, repeatDelay: 3 }}
-              >
-                🌟
-              </motion.span> 
-              最新表白
-            </h2>
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-end">
+              <h2 className="flex items-center gap-3 text-3xl font-black tracking-normal text-slate-900 dark:text-white">
+                <span className="flex h-12 w-12 items-center justify-center rounded-2xl bg-gradient-to-br from-amber-300 to-orange-400 text-white shadow-lg shadow-orange-300/40">
+                  <Sparkles className="h-6 w-6" />
+                </span>
+                最新表白
+              </h2>
+              <p className="text-base font-medium text-slate-500 dark:text-slate-400 sm:pb-2">发现最新的心声</p>
+            </div>
             
             <form 
               onSubmit={(e) => {
                 e.preventDefault();
                 refetchSearch();
               }}
-              className="w-full flex flex-col gap-3"
+              className="w-full"
             >
-              <div className="w-full flex flex-col sm:flex-row gap-3">
-                <div className="w-full sm:w-32">
+              <div className="flex w-full flex-col gap-3 sm:flex-row">
+                <div className="w-full sm:w-44">
                   <CustomSelect
                     options={[
                       { value: 'content', label: '表白内容' },
@@ -479,14 +494,14 @@ export default function Home() {
                   <input
                     type="text"
                     placeholder="搜索表白..."
-                    className="w-full px-4 py-3 rounded-xl border border-gray-200 dark:border-gray-700 bg-white/80 dark:bg-gray-800/80 backdrop-blur-md focus:ring-2 focus:ring-primary-500 focus:outline-none transition-all duration-300 hover:border-primary-300 dark:hover:border-primary-600 shadow-sm hover:shadow-md text-sm input-focus-ring"
+                    className="h-16 w-full min-w-0 rounded-3xl border border-white/80 bg-white/85 px-7 text-base font-medium text-slate-700 shadow-[0_10px_30px_rgba(31,41,55,.10)] outline-none backdrop-blur-xl transition-all duration-300 placeholder:text-slate-400 hover:border-rose-200 focus:ring-4 focus:ring-rose-200/60 dark:border-white/10 dark:bg-white/10 dark:text-white dark:placeholder:text-slate-500"
                     value={searchKeyword}
                     onChange={(e) => setSearchKeyword(e.target.value)}
                   />
                 </div>
                 <motion.button
                   type="submit"
-                  className="w-full sm:w-auto px-6 py-3 bg-gradient-to-r from-primary-500 to-primary-600 text-white font-semibold rounded-xl shadow-sm hover:shadow-md transition-all duration-300 hover:from-primary-600 hover:to-primary-700 disabled:opacity-50 disabled:cursor-not-allowed disabled:from-primary-400 disabled:to-primary-500 flex items-center justify-center gap-2 min-w-12 btn-hover-lift btn-press ripple-effect"
+                  className="flex h-16 w-full min-w-32 shrink-0 items-center justify-center gap-2 rounded-3xl bg-gradient-to-r from-rose-500 to-red-500 px-8 text-base font-bold text-white shadow-[0_18px_35px_rgba(244,63,94,.30)] transition-all duration-300 hover:from-rose-600 hover:to-red-600 disabled:cursor-not-allowed disabled:opacity-50 sm:w-auto"
                   disabled={isLoading}
                   whileHover={{ scale: 1.02 }}
                   whileTap={{ scale: 0.98 }}
@@ -506,10 +521,12 @@ export default function Home() {
                     </motion.div>
                   ) : (
                     <motion.span 
+                      className="inline-flex items-center gap-2"
                       initial={{ opacity: 0, scale: 0.9 }}
                       animate={{ opacity: 1, scale: 1 }}
                       transition={{ duration: 0.2, ease: [0.34, 1.56, 0.64, 1] }}
                     >
+                      <Search className="h-5 w-5" />
                       搜索
                     </motion.span>
                   )}
@@ -526,7 +543,7 @@ export default function Home() {
             />
           ) : isError ? (
             <motion.div 
-              className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-xl p-6 text-center"
+              className="rounded-3xl border border-red-200 bg-red-50/90 p-6 text-center shadow-lg dark:border-red-800 dark:bg-red-900/20"
               initial={{ opacity: 0, scale: 0.9 }}
               animate={{ opacity: 1, scale: 1 }}
               transition={{ duration: 0.4, ease: [0.34, 1.56, 0.64, 1] }}
@@ -543,7 +560,7 @@ export default function Home() {
             </motion.div>
           ) : displayConfessions.length === 0 ? (
             <motion.div 
-              className="glass rounded-2xl p-12 text-center"
+              className="rounded-[2rem] border border-white/70 bg-white/80 p-12 text-center shadow-[0_18px_60px_rgba(31,41,55,.10)] backdrop-blur-xl dark:border-white/10 dark:bg-white/10"
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.5, ease: [0.25, 0.1, 0.25, 1] }}
@@ -557,7 +574,7 @@ export default function Home() {
               </motion.p>
             </motion.div>
           ) : (
-            <FadeInStagger key={forceRenderKey} className="grid gap-6">
+            <FadeInStagger key={forceRenderKey} className="grid gap-5 md:grid-cols-2 xl:grid-cols-3">
               {displayConfessions.map((confession) => (
                 <ConfessionCard
                   key={confession.id}
@@ -579,18 +596,19 @@ export default function Home() {
               />
             )}
             {!hasNextPage && confessions.length > 0 && !searchKeyword.trim() && (
-              <motion.p 
-                className="text-gray-400 dark:text-gray-500 text-sm"
+              <motion.p
+                className="text-sm text-slate-400 dark:text-slate-500"
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
                 transition={{ duration: 0.5 }}
               >
-                你已经到达世界的尽头了 🌍
+                你已经到达世界的尽头了
               </motion.p>
             )}
           </motion.div>
         </div>
       </main>
-    </motion.div>
+      </div>
+    </div>
   );
 }

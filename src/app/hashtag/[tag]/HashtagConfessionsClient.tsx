@@ -6,10 +6,11 @@ import { confessionService } from '@/services/confessionService';
 import ConfessionCard from '@/components/ConfessionCard';
 import { useAuth } from '@/context/AuthContext';
 import { useRouter } from 'next/navigation';
-import { ArrowLeftIcon, HashtagIcon } from '@heroicons/react/24/outline';
 import Modal from '@/components/AnimatedModal';
 import toast from 'react-hot-toast';
 import PageLoader from '@/components/PageLoader';
+import Navbar from '@/components/Navbar';
+import { ArrowLeft, Hash } from 'lucide-react';
 
 interface HashtagConfessionsClientProps {
   tag: string;
@@ -110,7 +111,8 @@ export default function HashtagConfessionsClient({ tag }: HashtagConfessionsClie
   };
 
   return (
-    <div className="min-h-screen pb-20">
+    <div className="cw-page relative min-h-screen overflow-hidden pb-20">
+      <div className="cw-decor-grid" />
       {/* 删除确认模态框 */}
       <Modal
         isOpen={showDeleteModal}
@@ -140,26 +142,36 @@ export default function HashtagConfessionsClient({ tag }: HashtagConfessionsClie
         </div>
       </Modal>
       
-      <div className="sticky top-0 z-10 bg-white/90 dark:bg-gray-900/90 backdrop-blur-md border-b border-gray-200 dark:border-gray-700">
-        <div className="w-full mx-auto px-4 sm:px-6 lg:px-8 py-4">
-          <div className="flex items-center gap-3">
-            <button
-              onClick={() => router.back()}
-              className="p-2 rounded-full hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors duration-200"
-            >
-              <ArrowLeftIcon className="w-5 h-5 text-gray-600 dark:text-gray-300" />
-            </button>
-            <div className="flex items-center gap-2">
-              <HashtagIcon className="w-5 h-5 text-blue-500" />
-              <h1 className="text-xl font-bold text-gray-900 dark:text-white">
-                #{tag}
-              </h1>
+      <Navbar />
+
+      <main className="relative z-10 mx-auto w-full max-w-[1760px] px-4 py-8 sm:px-8 lg:px-14">
+        <section className="cw-panel mb-8 rounded-[2rem] p-6 sm:p-8">
+          <div className="flex flex-col gap-5 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex items-center gap-4">
+              <button onClick={() => router.back()} className="app-btn shrink-0" aria-label="返回">
+                <ArrowLeft className="h-5 w-5" />
+              </button>
+              <div className="flex items-center gap-4">
+                <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-rose-50 text-rose-500 shadow-lg dark:bg-rose-500/15 dark:text-rose-200">
+                  <Hash className="h-8 w-8" />
+                </div>
+                <div>
+                  <p className="mb-1 text-sm font-bold text-rose-500">话题聚合</p>
+                  <h1 className="text-3xl font-black text-slate-900 dark:text-white sm:text-4xl">
+                    #{tag}
+                  </h1>
+                  <p className="mt-2 text-sm font-medium text-slate-500 dark:text-slate-400">
+                    所有与这个话题相关的表白都会汇聚在这里。
+                  </p>
+                </div>
+              </div>
+            </div>
+            <div className="rounded-2xl bg-white/60 px-5 py-3 text-sm font-bold text-slate-500 shadow-inner dark:bg-white/10 dark:text-slate-300">
+              已收录 <span className="text-2xl text-rose-500">{confessions.length}</span> 条心声
             </div>
           </div>
-        </div>
-      </div>
+        </section>
 
-      <main className="w-full mx-auto px-4 sm:px-6 lg:px-8 py-6">
         {loading && confessions.length === 0 ? (
           <PageLoader 
             type="content" 
@@ -167,7 +179,7 @@ export default function HashtagConfessionsClient({ tag }: HashtagConfessionsClie
             className="py-20"
           />
         ) : error ? (
-          <div className="bg-red-50 border border-red-200 rounded-xl p-6 text-center">
+          <div className="cw-panel rounded-[2rem] p-8 text-center">
             <p className="text-red-600 mb-4">{error}</p>
             <button
               onClick={() => {
@@ -175,13 +187,13 @@ export default function HashtagConfessionsClient({ tag }: HashtagConfessionsClie
                 setLoading(true);
                 loadConfessions(1, false);
               }}
-              className="text-blue-600 hover:text-blue-700 font-medium"
+              className="cw-primary-btn"
             >
               重试
             </button>
           </div>
         ) : confessions.length === 0 ? (
-          <div className="text-center py-20">
+          <div className="cw-panel rounded-[2rem] py-20 text-center">
             <div className="text-6xl mb-4">🔍</div>
             <h2 className="text-2xl font-bold text-gray-800 dark:text-white mb-2">
               话题 #{tag} 下还没有表白
@@ -191,20 +203,20 @@ export default function HashtagConfessionsClient({ tag }: HashtagConfessionsClie
             </p>
             <button
               onClick={() => router.push('/')}
-              className="px-6 py-3 bg-blue-600 text-white rounded-xl font-medium hover:bg-blue-700 transition-colors"
+              className="cw-primary-btn"
             >
               返回首页
             </button>
           </div>
         ) : (
           <div className="space-y-6">
-            <div className="text-center mb-6">
-              <p className="text-gray-600 dark:text-gray-300">
+            <div className="mb-6 rounded-[1.75rem] border border-white/70 bg-white/70 p-5 text-center shadow-[0_12px_35px_rgba(31,41,55,.08)] backdrop-blur-xl dark:border-white/10 dark:bg-white/10">
+              <p className="font-medium text-slate-600 dark:text-slate-300">
                 话题 #{tag} 下共有 {confessions.length} 条表白
               </p>
             </div>
             
-            <div className="grid gap-6">
+            <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-3">
               {confessions.map((confession) => (
                 <ConfessionCard
                   key={confession.id}
@@ -220,7 +232,7 @@ export default function HashtagConfessionsClient({ tag }: HashtagConfessionsClie
                 <button
                   onClick={handleLoadMore}
                   disabled={loading}
-                  className="px-6 py-3 bg-blue-600 text-white rounded-xl font-medium hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="cw-primary-btn disabled:cursor-not-allowed disabled:opacity-50"
                 >
                   {loading ? '加载中...' : '加载更多'}
                 </button>

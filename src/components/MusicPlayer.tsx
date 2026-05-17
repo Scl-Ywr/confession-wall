@@ -445,7 +445,7 @@ const MusicPlayer: React.FC<MusicPlayerProps> = () => {
       const musicUrl = await musicService.getUrl(item.id, 320, item.source);
       if (!musicUrl.url) {
         // Use message from API if available
-        const errorMsg = (musicUrl as any).message || '无法获取音乐播放链接，请尝试其他歌曲';
+        const errorMsg = musicUrl.message || '无法获取音乐播放链接，请尝试其他歌曲';
         alert(errorMsg);
         setIsAddingToPlaylist(null);
         return;
