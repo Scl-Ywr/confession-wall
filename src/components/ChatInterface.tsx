@@ -797,15 +797,14 @@ export function ChatInterface({ otherUserId, otherUserProfile: initialOtherUserP
       >
         <div className="flex items-end gap-2">
           {!isCurrentUser && (
-            <div className="w-8 h-8 aspect-square rounded-full bg-gray-200 dark:bg-gray-700 flex items-center justify-center overflow-hidden flex-shrink-0">
+            <div className="relative flex h-8 w-8 flex-shrink-0 items-center justify-center overflow-hidden rounded-full bg-gray-200 dark:bg-gray-700">
               {otherUserProfile.avatar_url ? (
                 <Image
                   src={otherUserProfile.avatar_url}
                   alt={otherUserProfile.display_name || otherUserProfile.username}
-                  className="w-full h-full object-cover"
-                  width={32}
-                  height={32}
-                  objectFit="cover"
+                  fill
+                  sizes="32px"
+                  className="object-cover"
                   loading="lazy"
                 />
               ) : (
@@ -894,15 +893,14 @@ export function ChatInterface({ otherUserId, otherUserProfile: initialOtherUserP
       {/* 聊天头部 */}
       <div className="flex items-center justify-between p-4 border-b border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800">
         <div className="flex items-center gap-3 flex-shrink-0">
-          <div className="w-10 h-10 rounded-full bg-gray-200 dark:bg-gray-700 flex items-center justify-center overflow-hidden flex-shrink-0">
+          <div className="relative flex h-10 w-10 flex-shrink-0 items-center justify-center overflow-hidden rounded-full bg-gray-200 dark:bg-gray-700">
             {otherUserProfile.avatar_url ? (
               <Image
                 src={otherUserProfile.avatar_url}
                 alt={otherUserProfile.display_name || otherUserProfile.username}
-                className="w-full h-full object-cover"
-                width={40}
-                height={40}
-                style={{ objectFit: 'cover' }}
+                fill
+                sizes="40px"
+                className="object-cover"
                 loading="lazy"
               />
             ) : (

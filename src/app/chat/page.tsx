@@ -14,7 +14,7 @@ import { supabase } from '@/lib/supabase/client';
 import { usePageRefresh } from '@/hooks/usePageRefresh';
 
 const ChatListPage = () => {
-  const { user } = useAuth();
+  const { user, loading: authLoading } = useAuth();
   const [friends, setFriends] = useState<Friendship[]>([]);
   const [groups, setGroups] = useState<Group[]>([]);
   const [loading, setLoading] = useState(true);
@@ -31,7 +31,12 @@ const ChatListPage = () => {
 
   // 获取好友列表和群聊列表
   const fetchFriendsAndGroups = useCallback(async () => {
-    if (!user) return;
+    if (!user) {
+      setFriends([]);
+      setGroups([]);
+      setLoading(false);
+      return;
+    }
 
     try {
       setLoading(true);
@@ -155,12 +160,21 @@ const ChatListPage = () => {
   // 初始加载消息和检查好友关系
   useEffect(() => {
     const loadData = async () => {
+      if (authLoading) return;
+
+      if (!user) {
+        setFriends([]);
+        setGroups([]);
+        setLoading(false);
+        return;
+      }
+
       await fetchFriendsAndGroups();
       // 在获取好友和群聊列表后，立即刷新未读计数
       await refreshUnreadCounts();
     };
     loadData();
-  }, [user, fetchFriendsAndGroups, refreshUnreadCounts]);
+  }, [authLoading, user, fetchFriendsAndGroups, refreshUnreadCounts]);
 
   // 监听未读消息变化的事件和实时订阅
   useEffect(() => {
@@ -415,7 +429,7 @@ const ChatListPage = () => {
     }
   };
 
-  if (loading) {
+  if (authLoading || loading) {
     return (
       <PageLoader 
         type="spinner" 
@@ -522,14 +536,14 @@ const ChatListPage = () => {
                             className="flex items-center gap-3 p-3 rounded-xl hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors group"
                           >
                             <div className="relative">
-                              <div className="w-12 h-12 rounded-full overflow-hidden border-2 border-white dark:border-gray-700 shadow-sm">
+                              <div className="relative h-12 w-12 overflow-hidden rounded-full border-2 border-white shadow-sm dark:border-gray-700">
                                 {group.avatar_url ? (
                                   <Image
                                     src={group.avatar_url}
                                     alt={group.name}
-                                    width={44}
-                                    height={44}
-                                    className="object-cover w-full h-full"
+                                    fill
+                                    sizes="48px"
+                                    className="object-cover"
                                   />
                                 ) : (
                                   <div className="w-full h-full bg-gradient-to-br from-purple-200 to-pink-300 dark:from-purple-700 dark:to-pink-800 flex items-center justify-center">
@@ -610,14 +624,14 @@ const ChatListPage = () => {
                                 className="flex items-center gap-3 flex-1"
                               >
                                 <div className="relative">
-                                  <div className="w-12 h-12 rounded-full overflow-hidden border-2 border-white dark:border-gray-700 shadow-sm">
+                                  <div className="relative h-12 w-12 overflow-hidden rounded-full border-2 border-white shadow-sm dark:border-gray-700">
                                     {friend?.avatar_url ? (
                                       <Image
                                         src={friend.avatar_url}
                                         alt={friend.display_name || friend.username || '好友'}
-                                        width={44}
-                                        height={44}
-                                        className="object-cover w-full h-full"
+                                        fill
+                                        sizes="48px"
+                                        className="object-cover"
                                       />
                                     ) : (
                                       <div className="w-full h-full bg-gradient-to-br from-gray-200 to-gray-300 dark:from-gray-700 dark:to-gray-800 flex items-center justify-center">

@@ -67,6 +67,7 @@ const getMusicAPIUrls = (): string[] => {
 };
 
 const MUSIC_API_URLS = getMusicAPIUrls();
+const MUSIC_API_TIMEOUT_MS = Number(process.env.MUSIC_API_TIMEOUT_MS || 4500);
 
 /**
  * 检测 API 格式
@@ -236,7 +237,7 @@ async function fetchFromMusicAPI(apiUrl: string, searchParams: URLSearchParams):
       'Accept': 'application/json, text/plain, */*',
       'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8',
     },
-    signal: AbortSignal.timeout(25000),
+    signal: AbortSignal.timeout(MUSIC_API_TIMEOUT_MS),
   });
 }
 
@@ -261,8 +262,17 @@ export async function GET(request: NextRequest) {
         response = await fetchFromMusicAPI(apiUrl, searchParams);
 
         if (response.ok) {
-          console.log(`[Music Proxy] ✓ 成功从 ${apiUrl} 获取数据，状态码: ${response.status}`);
-          break;
+          const contentType = response.headers.get('content-type');
+          if (contentType?.includes('application/json')) {
+            console.log(`[Music Proxy] ✓ 成功从 ${apiUrl} 获取数据，状态码: ${response.status}`);
+            break;
+          }
+
+          const responseText = await response.text();
+          console.error(`[Music Proxy] ✗ ${apiUrl} 返回非JSON响应: ${contentType || 'unknown'}`);
+          console.error(`[Music Proxy] 响应片段: ${responseText.substring(0, 200)}`);
+          lastError = new Error(`API返回非JSON响应: ${contentType || 'unknown'}`);
+          response = null;
         } else {
           const errorText = await response.text();
           console.error(`[Music Proxy] ✗ ${apiUrl} 返回错误: ${response.status}`);

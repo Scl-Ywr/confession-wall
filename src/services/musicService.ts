@@ -1,6 +1,7 @@
 // 音乐API服务
 // API基础URL - 使用Next.js API代理避免Cloudflare拦截
 const API_BASE_URL = '/api/music-proxy';
+const MUSIC_PROXY_TIMEOUT_MS = 18000;
 
 // 音乐源类型
 export type MusicSource = 'netease' | 'kuwo' | 'joox' | 'tencent' | 'tidal' | 'spotify' | 'ytmusic' | 'qobuz' | 'deezer' | 'migu' | 'kugou' | 'ximalaya' | 'apple';
@@ -60,6 +61,38 @@ export interface MusicLyricResponse {
   tlyric?: string; // LRC格式的中文翻译歌词
 }
 
+const fetchMusicProxy = async (url: string): Promise<Response> => {
+  const controller = new AbortController();
+  const timeoutId = window.setTimeout(() => controller.abort(), MUSIC_PROXY_TIMEOUT_MS);
+
+  try {
+    return await fetch(url, { signal: controller.signal });
+  } finally {
+    window.clearTimeout(timeoutId);
+  }
+};
+
+const readJsonResponse = async <T>(response: Response, context: string): Promise<T | null> => {
+  const contentType = response.headers.get('content-type');
+  if (!contentType?.includes('application/json')) {
+    const responseText = await response.text();
+    console.error(`${context}失败，响应不是JSON:`, {
+      status: response.status,
+      statusText: response.statusText,
+      contentType,
+      sample: responseText.substring(0, 300),
+    });
+    return null;
+  }
+
+  try {
+    return (await response.json()) as T;
+  } catch (error) {
+    console.error(`${context}失败，JSON解析错误:`, error);
+    return null;
+  }
+};
+
 /**
  * 搜索音乐
  * @param keyword 搜索关键词
@@ -83,18 +116,11 @@ export const searchMusic = async (
       pages: page.toString()
     });
 
-    const response = await fetch(`${API_BASE_URL}?${params.toString()}`);
-
-    // 检查响应是否为JSON格式
-    const contentType = response.headers.get('content-type');
-    if (!contentType || !contentType.includes('application/json')) {
-      // 如果不是JSON，获取响应文本并记录错误
-      const responseText = await response.text();
-      console.error('搜索音乐失败，响应不是JSON:', responseText);
+    const response = await fetchMusicProxy(`${API_BASE_URL}?${params.toString()}`);
+    const data = await readJsonResponse<unknown>(response, '搜索音乐');
+    if (!data) {
       return [];
     }
-
-    const data = await response.json();
 
     // 检查响应格式并转换为标准格式
     if (Array.isArray(data)) {
@@ -180,29 +206,22 @@ export const getMusicUrl = async (
       br: br.toString()
     });
 
-    const response = await fetch(`${API_BASE_URL}?${params.toString()}`);
-    
-    // 检查响应是否为JSON格式
-    const contentType = response.headers.get('content-type');
-    if (!contentType || !contentType.includes('application/json')) {
-      // 如果不是JSON，获取响应文本并记录错误
-      const responseText = await response.text();
-      console.error('获取音乐URL失败，响应不是JSON:', responseText);
-      // 返回空URL而不是抛出错误
+    const response = await fetchMusicProxy(`${API_BASE_URL}?${params.toString()}`);
+    const data = await readJsonResponse<Record<string, unknown>>(response, '获取音乐URL');
+    if (!data) {
       return {
         url: '',
         br: br,
         size: 0
       };
     }
-    
-    const data = await response.json();
 
-    if (data.url) {
+    if (typeof data.url === 'string' && data.url) {
       return {
         url: data.url,
-        br: data.br || br,
-        size: data.size || 0
+        br: typeof data.br === 'number' ? data.br : br,
+        size: typeof data.size === 'number' ? data.size : 0,
+        message: typeof data.message === 'string' ? data.message : undefined
       };
     }
 
@@ -244,23 +263,15 @@ export const getAlbumPic = async (
       size: size.toString()
     });
 
-    const response = await fetch(`${API_BASE_URL}?${params.toString()}`);
-    
-    // 检查响应是否为JSON格式
-    const contentType = response.headers.get('content-type');
-    if (!contentType || !contentType.includes('application/json')) {
-      // 如果不是JSON，获取响应文本并记录错误
-      const responseText = await response.text();
-      console.error('获取专辑图片失败，响应不是JSON:', responseText);
-      // 返回默认图片URL
+    const response = await fetchMusicProxy(`${API_BASE_URL}?${params.toString()}`);
+    const data = await readJsonResponse<Record<string, unknown>>(response, '获取专辑图片');
+    if (!data) {
       return {
         url: `https://via.placeholder.com/${size}x${size}?text=No+Cover`
       };
     }
-    
-    const data = await response.json();
 
-    if (data.url) {
+    if (typeof data.url === 'string' && data.url) {
       // Strip query parameters that may interfere with Next.js image optimization
       const cleanUrl = data.url.split('?')[0];
       return {
@@ -298,26 +309,18 @@ export const getMusicLyric = async (
       id: lyricId
     });
 
-    const response = await fetch(`${API_BASE_URL}?${params.toString()}`);
-    
-    // 检查响应是否为JSON格式
-    const contentType = response.headers.get('content-type');
-    if (!contentType || !contentType.includes('application/json')) {
-      // 如果不是JSON，获取响应文本并记录错误
-      const responseText = await response.text();
-      console.error('获取歌词失败，响应不是JSON:', responseText);
-      // 返回空歌词对象，而不是抛出错误
+    const response = await fetchMusicProxy(`${API_BASE_URL}?${params.toString()}`);
+    const data = await readJsonResponse<Record<string, unknown>>(response, '获取歌词');
+    if (!data) {
       return {
         lyric: '',
         tlyric: undefined
       };
     }
-    
-    const data = await response.json();
 
     return {
-      lyric: data.lyric || '',
-      tlyric: data.tlyric
+      lyric: typeof data.lyric === 'string' ? data.lyric : '',
+      tlyric: typeof data.tlyric === 'string' ? data.tlyric : undefined
     };
   } catch (error) {
     console.error('获取歌词失败:', error);

@@ -1280,14 +1280,14 @@ const GroupChatPage = ({ params }: { params: Promise<{ groupId: string }> }) => 
                 <XIcon className="h-5 w-5 text-gray-600 dark:text-gray-300" />
               </Link>
               <div className="flex items-center gap-3 flex-shrink-0">
-                <div className="w-10 h-10 rounded-full overflow-hidden border-2 border-white dark:border-gray-700 shadow-sm flex-shrink-0">
+                <div className="relative h-10 w-10 flex-shrink-0 overflow-hidden rounded-full border-2 border-white shadow-sm dark:border-gray-700">
                   {group.avatar_url ? (
                     <Image
                       src={group.avatar_url}
                       alt={group.name}
-                      width={40}
-                      height={40}
-                      className="object-cover w-full h-full"
+                      fill
+                      sizes="40px"
+                      className="object-cover"
                     />
                   ) : (
                     <div className="w-full h-full bg-gradient-to-br from-purple-200 to-pink-300 dark:from-purple-700 dark:to-pink-800 flex items-center justify-center">
@@ -1481,17 +1481,16 @@ const GroupChatPage = ({ params }: { params: Promise<{ groupId: string }> }) => 
                         <div className="flex items-start gap-2 max-w-[90%] sm:max-w-[80%]">
                           {/* 头像 */}
                           <div 
-                            className="w-8 h-8 aspect-square rounded-full bg-gray-200 dark:bg-gray-700 flex items-center justify-center overflow-hidden cursor-pointer mt-1 flex-shrink-0"
+                            className="relative mt-1 flex h-8 w-8 flex-shrink-0 cursor-pointer items-center justify-center overflow-hidden rounded-full bg-gray-200 dark:bg-gray-700"
                             onClick={() => handleAvatarClick(senderInfo!)}
                           >
                             {senderAvatar ? (
                               <Image
                                 src={senderAvatar}
                                 alt="用户头像"
-                                width={32}
-                                height={32}
-                                className="w-full h-full object-cover"
-                                objectFit="cover"
+                                fill
+                                sizes="32px"
+                                className="object-cover"
                               />
                             ) : (
                               <span className="text-sm font-medium text-gray-600 dark:text-gray-300">
@@ -2200,14 +2199,14 @@ const GroupChatPage = ({ params }: { params: Promise<{ groupId: string }> }) => 
               </div>
               
               <div className="flex flex-col items-center mb-6">
-                <div className="w-20 h-20 rounded-full bg-gray-200 dark:bg-gray-700 flex items-center justify-center overflow-hidden mb-4">
+                <div className="relative mb-4 flex h-20 w-20 items-center justify-center overflow-hidden rounded-full bg-gray-200 dark:bg-gray-700">
                   {selectedUser?.avatar_url ? (
                     <Image
                       src={selectedUser.avatar_url}
                       alt="用户头像"
-                      width={80}
-                      height={80}
-                      className="w-full h-full object-cover"
+                      fill
+                      sizes="80px"
+                      className="object-cover"
                     />
                   ) : (
                     <span className="text-xl font-medium text-gray-600 dark:text-gray-300">
@@ -2298,22 +2297,22 @@ const GroupChatPage = ({ params }: { params: Promise<{ groupId: string }> }) => 
               </div>
               
               <div className="flex flex-col items-center mb-6">
-                <div className="w-20 h-20 rounded-full bg-gray-200 dark:bg-gray-700 flex items-center justify-center overflow-hidden mb-4">
+                <div className="relative mb-4 flex h-20 w-20 items-center justify-center overflow-hidden rounded-full bg-gray-200 dark:bg-gray-700">
                   {avatarPreview ? (
                     <Image
                       src={avatarPreview}
                       alt="群内头像预览"
-                      width={80}
-                      height={80}
-                      className="w-full h-full object-cover"
+                      fill
+                      sizes="80px"
+                      className="object-cover"
                     />
                   ) : groupAvatar ? (
                     <Image
                       src={groupAvatar}
                       alt="群内头像"
-                      width={80}
-                      height={80}
-                      className="w-full h-full object-cover"
+                      fill
+                      sizes="80px"
+                      className="object-cover"
                     />
                   ) : user?.display_name ? (
                     <span className="text-xl font-medium text-gray-600 dark:text-gray-300">
@@ -2397,22 +2396,22 @@ const GroupChatPage = ({ params }: { params: Promise<{ groupId: string }> }) => 
               </div>
               
               <div className="flex flex-col items-center mb-6">
-                <div className="w-20 h-20 rounded-full bg-gray-200 dark:bg-gray-700 flex items-center justify-center overflow-hidden mb-4">
+                <div className="relative mb-4 flex h-20 w-20 items-center justify-center overflow-hidden rounded-full bg-gray-200 dark:bg-gray-700">
                   {groupAvatarPreview ? (
                     <Image
                       src={groupAvatarPreview}
                       alt="群头像预览"
-                      width={80}
-                      height={80}
-                      className="w-full h-full object-cover"
+                      fill
+                      sizes="80px"
+                      className="object-cover"
                     />
                   ) : group?.avatar_url ? (
                     <Image
                       src={group.avatar_url}
                       alt="群头像"
-                      width={80}
-                      height={80}
-                      className="w-full h-full object-cover"
+                      fill
+                      sizes="80px"
+                      className="object-cover"
                     />
                   ) : (
                     <div className="w-full h-full bg-gradient-to-br from-purple-200 to-pink-300 dark:from-purple-700 dark:to-pink-800 flex items-center justify-center">
@@ -2587,22 +2586,22 @@ const GroupChatPage = ({ params }: { params: Promise<{ groupId: string }> }) => 
                     return (
                       <div key={member.user_id} className="flex items-center justify-between gap-3 p-3 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors">
                         <div className="flex items-center gap-3">
-                          <div className="w-10 h-10 rounded-full bg-gray-200 dark:bg-gray-700 flex items-center justify-center overflow-hidden">
+                          <div className="relative flex h-10 w-10 items-center justify-center overflow-hidden rounded-full bg-gray-200 dark:bg-gray-700">
                             {member.group_avatar_url ? (
                               <Image
                                 src={member.group_avatar_url}
                                 alt="群内头像"
-                                width={40}
-                                height={40}
-                                className="w-full h-full object-cover"
+                                fill
+                                sizes="40px"
+                                className="object-cover"
                               />
                             ) : originalAvatar ? (
                               <Image
                                 src={originalAvatar}
                                 alt="用户头像"
-                                width={40}
-                                height={40}
-                                className="w-full h-full object-cover"
+                                fill
+                                sizes="40px"
+                                className="object-cover"
                               />
                             ) : (
                               <div className="w-full h-full bg-gradient-to-br from-purple-200 to-pink-300 dark:from-purple-700 dark:to-pink-800 flex items-center justify-center">
