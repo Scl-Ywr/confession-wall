@@ -16,6 +16,30 @@ import { MessageCircleIcon, UsersIcon, PlusIcon, XIcon, TrashIcon, SendIcon, Ima
 import { supabase } from '@/lib/supabase/client';
 import VoiceRecorder from '@/components/VoiceRecorder';
 
+type ProfileRealtimePayload = {
+  new: Partial<Profile> & {
+    id: string;
+    username?: string | null;
+    display_name?: string | null;
+    email?: string | null;
+    avatar_url?: string | null;
+    online_status?: Profile['online_status'];
+    last_seen?: string | null;
+    bio?: string | null;
+    created_at?: string;
+    updated_at?: string;
+    is_admin?: boolean | null;
+  };
+};
+
+type ChatMessageRealtimePayload = {
+  new: ChatMessage & {
+    id: string;
+    group_id?: string | null;
+    sender_id: string;
+  };
+};
+
 const GroupChatPage = ({ params }: { params: Promise<{ groupId: string }> }) => {
   const { user, loading: authLoading } = useAuth();
   const resolvedParams = React.use(params);
@@ -246,7 +270,7 @@ const GroupChatPage = ({ params }: { params: Promise<{ groupId: string }> }) => 
         table: 'profiles',
         filter: `online_status=in.('online','offline','away')` // 监听在线状态变化
       },
-      async (payload) => {
+      async (payload: ProfileRealtimePayload) => {
         try {
           // 直接更新本地状态，避免重新获取整个成员列表
           setGroupMembers(prevMembers => {
@@ -327,7 +351,7 @@ const GroupChatPage = ({ params }: { params: Promise<{ groupId: string }> }) => 
         table: 'profiles',
         filter: `last_seen=not.is.null` // 监听last_seen字段变化
       },
-      async (payload) => {
+      async (payload: ProfileRealtimePayload) => {
         try {
           // 直接更新本地状态，避免重新获取整个成员列表
           setGroupMembers(prevMembers => {
@@ -485,7 +509,7 @@ const GroupChatPage = ({ params }: { params: Promise<{ groupId: string }> }) => 
           schema: 'public',
           table: 'chat_messages'
         },
-        async (payload) => {
+        async (payload: ChatMessageRealtimePayload) => {
           // 只处理当前群组的消息
           if (payload.new.group_id === groupId) {
             try {
@@ -539,7 +563,7 @@ const GroupChatPage = ({ params }: { params: Promise<{ groupId: string }> }) => 
           }
         }
       )
-      .subscribe((status) => {
+      .subscribe((status: string) => {
         console.log('Group channel', channelName, 'status:', status);
       });
 

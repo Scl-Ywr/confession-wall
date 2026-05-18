@@ -13,7 +13,7 @@ export interface Confession {
   user_id: string;
   content: string;
   is_anonymous: boolean;
-  status: string;
+  status: 'approved' | 'rejected' | 'pending';
   rejection_reason: string | null;
   moderator_id: string | null;
   moderated_at: string | null;
@@ -55,6 +55,69 @@ export interface UserRole {
   role_id: string;
   created_at: string;
 }
+
+type PermissionIdRow = { permission_id: string };
+type RoleIdRow = { role_id: string };
+type RoleInheritanceRow = { child_role_id: string; parent_role_id: string };
+type AdminUserRow = {
+  id: string;
+  username: string | null;
+  display_name: string | null;
+  email: string | null;
+  avatar_url: string | null;
+  online_status: string | null;
+  created_at: string;
+};
+type AdminMessageRow = {
+  id: string;
+  sender_id: string;
+  receiver_id: string | null;
+  group_id: string | null;
+  content: string;
+  type: string;
+  is_read: boolean;
+  created_at: string;
+  updated_at: string;
+  [key: string]: unknown;
+};
+type AdminProfileLite = { id: string; username: string; display_name: string | null; avatar_url: string | null };
+type AdminGroupLite = { id: string; name: string; description: string | null; avatar_url: string | null };
+type LikeRow = { id: string; user_id: string; created_at: string; [key: string]: unknown };
+type CommentRow = {
+  id: string;
+  user_id: string | null;
+  content: string | null;
+  confession_id: string;
+  likes_count: number;
+  comments_count: number;
+  created_at: string;
+  is_anonymous: boolean;
+  status: 'approved' | 'rejected' | 'pending';
+  moderator_id: string | null;
+  moderated_at: string | null;
+  rejection_reason: string | null;
+  is_published?: boolean;
+  [key: string]: unknown;
+};
+type FriendshipRow = {
+  id: string;
+  user_id: string;
+  friend_id: string;
+  created_at: string;
+  updated_at: string;
+};
+type ProfileNameRow = { id: string; username: string; display_name: string | null };
+type LogRow = {
+  id: string;
+  user_id: string;
+  action: string;
+  resource_type: string;
+  resource_id: string | null;
+  details: Record<string, unknown>;
+  ip_address: string | null;
+  user_agent: string | null;
+  created_at: string;
+};
 
 // 系统统计数据接口
 interface AdminStats {
@@ -361,7 +424,7 @@ export async function getRolePermissions(roleId: string) {
       .eq('role_id', roleId)
       .throwOnError();
 
-    return (data || []).map(item => item.permission_id);
+    return ((data || []) as Array<{ permission_id: string }>).map((item) => item.permission_id);
   } catch (error) {
     console.error('获取角色权限失败:', error);
     if (error instanceof Error) {
@@ -430,7 +493,7 @@ export async function getUserRoles(userId: string) {
       .eq('user_id', userId)
       .throwOnError();
 
-    return (data || []).map(item => item.role_id);
+    return ((data || []) as Array<{ role_id: string }>).map((item) => item.role_id);
   } catch (error) {
     console.error('获取用户角色失败:', error);
     if (error instanceof Error) {
@@ -552,7 +615,8 @@ export async function getUserPermissions(userId: string) {
     }
 
     // 2. 获取这些角色对应的所有权限
-    const roleIds = userRoles.map(ur => ur.role_id);
+    const typedUserRoles = userRoles as RoleIdRow[];
+    const roleIds = typedUserRoles.map((ur) => ur.role_id);
     const { data: rolePermissions, error: rolePermissionsError } = await supabase
       .from('role_permissions')
       .select('permission_id')
@@ -567,7 +631,8 @@ export async function getUserPermissions(userId: string) {
     }
 
     // 3. 去重并获取权限详情
-    const permissionIds = [...new Set(rolePermissions.map(rp => rp.permission_id))];
+    const typedRolePermissions = rolePermissions as PermissionIdRow[];
+    const permissionIds = [...new Set(typedRolePermissions.map((rp) => rp.permission_id))];
     const { data: permissions, error: permissionsError } = await supabase
       .from('permissions')
       .select('id, name, description')
@@ -642,13 +707,16 @@ async function getRolesWithPermission(permissionId: string): Promise<Array<{ rol
     .select('child_role_id, parent_role_id')
     .throwOnError();
 
-  if (!roleInheritances || roleInheritances.length === 0) {
-    return directRolePermissions || [];
+  const typedDirectRolePermissions = (directRolePermissions || []) as RoleIdRow[];
+  const typedRoleInheritances = (roleInheritances || []) as RoleInheritanceRow[];
+
+  if (typedRoleInheritances.length === 0) {
+    return typedDirectRolePermissions;
   }
 
   // 构建继承关系图
   const inheritanceMap = new Map<string, string[]>();
-  roleInheritances.forEach(inheritance => {
+  typedRoleInheritances.forEach((inheritance) => {
     if (!inheritanceMap.has(inheritance.parent_role_id)) {
       inheritanceMap.set(inheritance.parent_role_id, []);
     }
@@ -656,14 +724,14 @@ async function getRolesWithPermission(permissionId: string): Promise<Array<{ rol
   });
 
   // 获取所有继承了直接拥有权限角色的子角色
-  const directRoleIds = new Set((directRolePermissions || []).map(item => item.role_id));
+  const directRoleIds = new Set(typedDirectRolePermissions.map((item) => item.role_id));
   const inheritedRoleIds = new Set<string>();
 
   // 递归查找所有继承的角色
   function findInheritedRoles(roleId: string) {
     const children = inheritanceMap.get(roleId);
     if (children) {
-      children.forEach(childRoleId => {
+      children.forEach((childRoleId) => {
         if (!inheritedRoleIds.has(childRoleId)) {
           inheritedRoleIds.add(childRoleId);
           findInheritedRoles(childRoleId);
@@ -673,7 +741,7 @@ async function getRolesWithPermission(permissionId: string): Promise<Array<{ rol
   }
 
   // 对每个直接拥有权限的角色，查找其所有继承角色
-  directRoleIds.forEach(roleId => {
+  directRoleIds.forEach((roleId) => {
     findInheritedRoles(roleId);
   });
 
@@ -696,7 +764,7 @@ export async function detectPermissionConflicts(roleId: string, permissionIds: s
 
     if (roleInheritances && roleInheritances.length > 0) {
       // 获取所有父角色ID
-      const parentRoleIds = roleInheritances.map(inheritance => inheritance.parent_role_id);
+      const parentRoleIds = (roleInheritances as Array<{ parent_role_id: string }>).map((inheritance) => inheritance.parent_role_id);
       
       // 获取所有父角色拥有的权限
       const { data: parentPermissions } = await supabase
@@ -707,8 +775,8 @@ export async function detectPermissionConflicts(roleId: string, permissionIds: s
 
       // 检查是否有重复分配的权限（已通过继承获得）
       if (parentPermissions && parentPermissions.length > 0) {
-        const parentPermissionIds = new Set(parentPermissions.map(item => item.permission_id));
-        permissionIds.forEach(permissionId => {
+        const parentPermissionIds = new Set((parentPermissions as PermissionIdRow[]).map((item) => item.permission_id));
+        permissionIds.forEach((permissionId) => {
           if (parentPermissionIds.has(permissionId)) {
             conflicts.push({
               permission_id: permissionId,
@@ -922,13 +990,13 @@ export async function getTrendData(days: number = 7): Promise<TrendData[]> {
       const { data: profiles, count } = await query.throwOnError();
 
       // 确保返回的数据格式正确
-      const users = (profiles || []).map(user => ({
+      const users = ((profiles || []) as AdminUserRow[]).map((user) => ({
         id: user.id,
         username: user.username,
         display_name: user.display_name,
         avatar_url: user.avatar_url,
         email: user.email || '未知邮箱',
-        online_status: user.online_status,
+        online_status: user.online_status || 'offline',
         created_at: user.created_at
       }));
 
@@ -997,7 +1065,8 @@ export async function getConfessions(params: {
 
     // 优化：获取所有相关点赞和评论，然后在客户端聚合，减少API请求次数
     // 只需要两个API请求：一个获取所有相关点赞，一个获取所有相关评论
-    const confessionIds = confessions.map(confession => confession.id);
+    const typedConfessions = confessions as Confession[];
+    const confessionIds = typedConfessions.map((confession) => confession.id);
 
     // 获取所有相关点赞
     let likesData: Array<{ confession_id: string }> = [];
@@ -1007,7 +1076,7 @@ export async function getConfessions(params: {
         .select('confession_id')
         .in('confession_id', confessionIds)
         .throwOnError();
-      likesData = allLikes || [];
+      likesData = (allLikes || []) as Array<{ confession_id: string }>;
     } catch (error) {
       console.error('获取点赞数据失败:', error);
       likesData = [];
@@ -1021,7 +1090,7 @@ export async function getConfessions(params: {
         .select('confession_id')
         .in('confession_id', confessionIds)
         .throwOnError();
-      commentsData = allComments || [];
+      commentsData = (allComments || []) as Array<{ confession_id: string }>;
     } catch (error) {
       console.error('获取评论数据失败:', error);
       commentsData = [];
@@ -1029,20 +1098,20 @@ export async function getConfessions(params: {
 
     // 在客户端聚合点赞数
     const likesCountMap = new Map<string, number>();
-    likesData.forEach(like => {
+    likesData.forEach((like) => {
       const confessionId = like.confession_id;
       likesCountMap.set(confessionId, (likesCountMap.get(confessionId) || 0) + 1);
     });
 
     // 在客户端聚合评论数
     const commentsCountMap = new Map<string, number>();
-    commentsData.forEach(comment => {
+    commentsData.forEach((comment) => {
       const confessionId = comment.confession_id;
       commentsCountMap.set(confessionId, (commentsCountMap.get(confessionId) || 0) + 1);
     });
 
     // 将点赞数和评论数与表白数据匹配
-    const confessionsWithCounts = confessions.map(confession => ({
+    const confessionsWithCounts = typedConfessions.map((confession) => ({
       ...confession,
       likes_count: likesCountMap.get(confession.id) || 0,
       comments_count: commentsCountMap.get(confession.id) || 0
@@ -1522,7 +1591,8 @@ export async function getChatMessages(params: {
     // 获取所有相关用户的ID和群聊ID
     const userIds = new Set<string>();
     const groupIds = new Set<string>();
-    messagesData.forEach(message => {
+    const typedMessagesData = messagesData as AdminMessageRow[];
+    typedMessagesData.forEach((message) => {
       userIds.add(message.sender_id);
       if (message.receiver_id) {
         userIds.add(message.receiver_id);
@@ -1549,19 +1619,19 @@ export async function getChatMessages(params: {
     ]);
 
     // 将用户信息转换为Map，方便查询
-    const profilesMap = new Map<string, { id: string; username: string; display_name: string | null; avatar_url: string | null }>();
-    (profilesData.data || []).forEach(profile => {
+    const profilesMap = new Map<string, AdminProfileLite>();
+    ((profilesData.data || []) as AdminProfileLite[]).forEach((profile) => {
       profilesMap.set(profile.id, profile);
     });
 
     // 将群聊信息转换为Map，方便查询
-    const groupsMap = new Map<string, { id: string; name: string; description: string | null; avatar_url: string | null }>();
-    (groupsData.data || []).forEach(group => {
+    const groupsMap = new Map<string, AdminGroupLite>();
+    ((groupsData.data || []) as AdminGroupLite[]).forEach((group) => {
       groupsMap.set(group.id, group);
     });
 
     // 合并消息数据、用户信息和群聊信息
-    const messagesWithUserInfo = messagesData.map(message => ({
+    const messagesWithUserInfo = typedMessagesData.map((message) => ({
       ...message,
       sender: profilesMap.get(message.sender_id),
       receiver: message.receiver_id ? profilesMap.get(message.receiver_id) : null,
@@ -1736,7 +1806,8 @@ export async function getLikes(params: {
     }
 
     // 获取所有点赞用户的ID
-    const userIds = likesData.map(like => like.user_id);
+    const typedLikesData = likesData as LikeRow[];
+    const userIds = typedLikesData.map((like) => like.user_id);
 
     // 获取用户信息
     const { data: profilesData } = await supabase
@@ -1747,12 +1818,12 @@ export async function getLikes(params: {
 
     // 将用户信息转换为Map，方便查询
     const profilesMap = new Map<string, Profile>();
-    (profilesData || []).forEach(profile => {
+    ((profilesData || []) as Profile[]).forEach((profile) => {
       profilesMap.set(profile.id, profile as Profile);
     });
 
     // 合并点赞数据和用户信息
-    const likesWithUserInfo = likesData.map(like => ({
+    const likesWithUserInfo = typedLikesData.map((like) => ({
       ...like,
       profiles: profilesMap.get(like.user_id)
     }));
@@ -1824,9 +1895,10 @@ export async function getComments(params: {
     }
 
     // 获取所有评论用户的ID
-    const userIds = commentsData
-      .filter(comment => !comment.is_anonymous)
-      .map(comment => comment.user_id);
+    const typedCommentsData = commentsData as CommentRow[];
+    const userIds = typedCommentsData
+      .filter((comment) => !comment.is_anonymous)
+      .map((comment) => comment.user_id);
 
     // 获取用户信息
     const { data: profilesData } = await supabase
@@ -1837,14 +1909,14 @@ export async function getComments(params: {
 
     // 将用户信息转换为Map，方便查询
     const profilesMap = new Map<string, Profile>();
-    (profilesData || []).forEach(profile => {
+    ((profilesData || []) as Profile[]).forEach((profile) => {
       profilesMap.set(profile.id, profile as Profile);
     });
 
     // 合并评论数据和用户信息
-    const commentsWithUserInfo = commentsData.map(comment => ({
+    const commentsWithUserInfo = typedCommentsData.map((comment) => ({
       ...comment,
-      profiles: !comment.is_anonymous ? profilesMap.get(comment.user_id) : null
+      profiles: !comment.is_anonymous && comment.user_id ? profilesMap.get(comment.user_id) : null
     }));
 
     return {
@@ -2009,7 +2081,8 @@ export async function getFriendships(params: {
 
     // 步骤2: 收集所有相关的用户ID
     const userIds = new Set<string>();
-    friendshipsData.forEach(friendship => {
+    const typedFriendshipsData = friendshipsData as FriendshipRow[];
+    typedFriendshipsData.forEach((friendship) => {
       userIds.add(friendship.user_id);
       userIds.add(friendship.friend_id);
     });
@@ -2022,8 +2095,8 @@ export async function getFriendships(params: {
       .throwOnError();
 
     // 步骤4: 将用户信息转换为Map，方便查询
-    const profilesMap = new Map<string, { id: string; username: string; display_name: string | null }>();
-    (profilesData || []).forEach(profile => {
+    const profilesMap = new Map<string, ProfileNameRow>();
+    ((profilesData || []) as ProfileNameRow[]).forEach((profile) => {
       profilesMap.set(profile.id, {
         id: profile.id,
         username: profile.username,
@@ -2032,7 +2105,7 @@ export async function getFriendships(params: {
     });
 
     // 步骤5: 关联用户信息到好友关系
-    const friendships = friendshipsData.map(friendship => ({
+    const friendships = typedFriendshipsData.map((friendship) => ({
       id: friendship.id,
       user_id: friendship.user_id,
       friend_id: friendship.friend_id,
@@ -2299,7 +2372,8 @@ export async function getLogs(params: {
 
     // 获取所有相关用户的ID
     const userIds = new Set<string>();
-    logsData.forEach(log => {
+    const typedLogsData = logsData as LogRow[];
+    typedLogsData.forEach((log) => {
       if (log.user_id) {
         userIds.add(log.user_id);
       }
@@ -2313,13 +2387,13 @@ export async function getLogs(params: {
       .throwOnError();
 
     // 将用户信息转换为Map，方便查询
-    const profilesMap = new Map<string, { id: string; username: string; display_name: string | null; avatar_url: string | null }>();
-    (profilesData || []).forEach(profile => {
+    const profilesMap = new Map<string, AdminProfileLite>();
+    ((profilesData || []) as AdminProfileLite[]).forEach((profile) => {
       profilesMap.set(profile.id, profile);
     });
 
     // 合并日志数据和用户信息
-    const logsWithUserInfo = logsData.map(log => ({
+    const logsWithUserInfo = typedLogsData.map((log) => ({
       ...log,
       user: profilesMap.get(log.user_id)
     }));

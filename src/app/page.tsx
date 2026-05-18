@@ -253,14 +253,14 @@ export default function Home() {
   }
 
   return (
-    <div className="min-h-screen overflow-x-hidden pb-16 text-slate-800 dark:text-slate-100">
-      <div className="fixed inset-0 -z-20 bg-[radial-gradient(circle_at_8%_12%,rgba(255,187,204,0.55),transparent_24%),radial-gradient(circle_at_82%_10%,rgba(255,222,181,0.58),transparent_22%),linear-gradient(180deg,#fff8f7_0%,#fffaf4_45%,#f3f6fb_100%)] dark:bg-[radial-gradient(circle_at_8%_12%,rgba(127,29,29,0.28),transparent_24%),radial-gradient(circle_at_82%_10%,rgba(120,53,15,0.26),transparent_22%),linear-gradient(180deg,#160f14_0%,#16131c_52%,#111827_100%)]" />
-      <div className="fixed inset-0 -z-10 opacity-70 [background-image:linear-gradient(rgba(255,255,255,.45)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,.45)_1px,transparent_1px)] [background-size:72px_72px] dark:opacity-10" />
+    <div className="cw-page min-h-screen overflow-x-hidden pb-16 text-slate-800 dark:text-slate-100">
+      <div className="theme-scene-backdrop fixed inset-0 -z-20" />
+      <div className="cw-decor-grid -z-10" />
 
-      <div className="pointer-events-none fixed left-8 top-36 -z-10 hidden h-20 w-20 rotate-[-18deg] rounded-[36%] bg-pink-300/30 blur-sm md:block" />
-      <div className="pointer-events-none fixed right-16 top-72 -z-10 hidden h-24 w-24 rotate-12 rounded-[36%] bg-rose-300/30 blur-sm md:block" />
-      <div className="pointer-events-none fixed left-12 top-[33vh] -z-10 hidden text-4xl text-amber-200/80 md:block">✦</div>
-      <div className="pointer-events-none fixed right-28 top-44 -z-10 hidden text-3xl text-amber-200/80 md:block">✧</div>
+      <div className="pointer-events-none fixed left-8 top-36 -z-10 hidden h-20 w-20 rotate-[-18deg] rounded-[36%] blur-sm md:block" style={{ background: 'var(--theme-accent-wash)' }} />
+      <div className="pointer-events-none fixed right-16 top-72 -z-10 hidden h-24 w-24 rotate-12 rounded-[36%] blur-sm md:block" style={{ background: 'var(--theme-accent-wash)' }} />
+      <div className="theme-motif pointer-events-none fixed left-12 top-[33vh] -z-10 hidden text-4xl opacity-70 md:block" />
+      <div className="theme-motif pointer-events-none fixed right-28 top-44 -z-10 hidden text-3xl opacity-60 md:block" />
 
       <div className="relative z-10">
         <Navbar />

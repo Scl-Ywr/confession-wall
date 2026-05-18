@@ -737,8 +737,9 @@ const Navbar = () => {
               transition={{ duration: 0.3 }}
               className="fixed top-4 right-4 z-50"
             >
-              <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl p-4 w-80"
-                style={{ backgroundColor: 'var(--color-surface)' }}>
+              <div
+                className="cw-panel max-h-[calc(100vh-2rem)] w-[min(38rem,calc(100vw-2rem))] overflow-y-auto p-5"
+              >
                 <div className="flex items-center justify-between mb-4">
                   <h3 className="text-lg font-bold" style={{ color: 'var(--color-text)' }}>
                     主题设置
@@ -757,27 +758,57 @@ const Navbar = () => {
                     <label className="block text-sm font-medium mb-2" style={{ color: 'var(--color-text-secondary)' }}>
                       当前主题
                     </label>
-                    <div className="grid grid-cols-2 gap-2">
+                    <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
                       {themes.map((t) => (
                         <button
                           key={t.id}
                           onClick={() => {
                             setTheme(t.id);
-                            setShowThemeSwitcher(false);
                           }}
-                          className={`relative p-3 rounded-xl border-2 transition-all ${
-                            theme.id === t.id
-                              ? 'border-blue-500 bg-blue-50 dark:bg-blue-900/20'
-                              : 'border-gray-200 dark:border-gray-700 hover:border-gray-300 dark:hover:border-gray-600'
-                          }`}
+                          className="group relative min-h-[8.75rem] overflow-hidden rounded-2xl border-2 p-0 text-left transition-all duration-300 hover:-translate-y-0.5 focus:outline-none focus-visible:ring-4"
+                          style={{
+                            borderColor: theme.id === t.id ? t.colors.primary : 'var(--color-border)',
+                            background: theme.id === t.id ? t.gradients.background : 'var(--color-surface)',
+                            boxShadow: theme.id === t.id ? t.effects.glow : 'var(--effect-shadow)',
+                          }}
                         >
-                          <div className="text-2xl mb-1">{t.emoji}</div>
-                          <div className="text-sm font-medium" style={{ color: 'var(--color-text)' }}>
-                            {t.name}
+                          <div
+                            className="absolute inset-x-0 top-0 h-16 opacity-95 transition-transform duration-300 group-hover:scale-105"
+                            style={{ background: t.gradients.background }}
+                          />
+                          <div
+                            className="absolute inset-x-0 top-0 h-16 opacity-50"
+                            style={{
+                              backgroundImage: 'linear-gradient(rgba(255,255,255,.38) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,.38) 1px, transparent 1px)',
+                              backgroundSize: '18px 18px',
+                            }}
+                          />
+                          <div className="relative flex h-full flex-col justify-end gap-2 p-3 pt-16">
+                            <div className="absolute left-3 top-8 flex h-12 w-12 -translate-y-1/2 items-center justify-center rounded-2xl bg-white/75 text-2xl shadow-lg backdrop-blur-md dark:bg-black/25">
+                              {t.emoji}
+                            </div>
+                            <div className="flex items-center gap-1.5">
+                              {[t.colors.primary, t.colors.secondary, t.colors.accent].map((color) => (
+                                <span
+                                  key={color}
+                                  className="h-3 w-3 rounded-full ring-2 ring-white/70"
+                                  style={{ backgroundColor: color }}
+                                />
+                              ))}
+                            </div>
+                            <div className="text-sm font-bold" style={{ color: 'var(--color-text)' }}>
+                              {t.name}
+                            </div>
+                            <div className="line-clamp-2 text-xs leading-5" style={{ color: 'var(--color-text-secondary)' }}>
+                              {t.description}
+                            </div>
                           </div>
                           {theme.id === t.id && (
-                            <div className="absolute top-2 right-2 w-3 h-3 bg-blue-500 rounded-full flex items-center justify-center">
-                              <svg className="w-2 h-2 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <div
+                              className="absolute right-2 top-2 flex h-6 w-6 items-center justify-center rounded-full text-white shadow-lg"
+                              style={{ backgroundColor: t.colors.primary }}
+                            >
+                              <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
                               </svg>
                             </div>
@@ -789,7 +820,7 @@ const Navbar = () => {
                 </div>
 
                 <div className="border-t pt-3" style={{ borderColor: 'var(--color-border)' }}>
-                  <p className="text-xs text-center" style={{ color: 'var(--color-text-secondary)' }}>
+                  <p className="text-sm text-center" style={{ color: 'var(--color-text-secondary)' }}>
                     {theme.description}
                   </p>
                 </div>

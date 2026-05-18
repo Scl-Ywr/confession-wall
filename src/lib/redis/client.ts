@@ -4,12 +4,23 @@ import type { Redis, RedisOptions } from 'ioredis';
 
 // 定义Redis类型
 let redis: Redis | undefined;
+let redisInitPromise: Promise<Redis | undefined> | null = null;
 
-// 只在服务器端初始化Redis客户端
-if (typeof window === 'undefined') {
-  (async () => {
+export async function getRedis(): Promise<Redis | undefined> {
+  if (typeof window !== 'undefined') {
+    return undefined;
+  }
+
+  if (redis) {
+    return redis;
+  }
+
+  if (redisInitPromise) {
+    return redisInitPromise;
+  }
+
+  redisInitPromise = (async () => {
     try {
-      // 动态导入ioredis，避免ESLint错误
       const RedisModule = await import('ioredis');
       const Redis = RedisModule.default || RedisModule;
 
@@ -17,27 +28,18 @@ if (typeof window === 'undefined') {
         host: process.env.REDIS_HOST || 'localhost',
         port: parseInt(process.env.REDIS_PORT || '6379'),
         db: 0,
-        // 连接选项
-        connectTimeout: 10000, // 连接超时时间（毫秒）
-        keepAlive: 300, // 保持连接的时间（秒）
+        connectTimeout: 10000,
+        keepAlive: 300,
         retryStrategy(times: number) {
-          // 优化重连策略，避免频繁重连
-          const delay = Math.min(times * 100, 5000); // 延迟时间：100ms, 200ms, 300ms, ..., 5000ms
-          return delay;
+          return Math.min(times * 100, 5000);
         },
         reconnectOnError(err: Error) {
-          // 处理更多类型的错误，包括ECONNRESET
           const errorMessages = ['READONLY', 'ECONNRESET', 'ETIMEDOUT', 'EAI_AGAIN'];
-          if (errorMessages.some(msg => err.message.includes(msg))) {
-            // 重新连接
-            return true;
-          }
-          return false;
+          return errorMessages.some(msg => err.message.includes(msg));
         },
-        // 连接池配置
-        maxRetriesPerRequest: 3, // 每个请求的最大重试次数
-        enableReadyCheck: true, // 启用就绪检查
-        maxLoadingRetryTime: 10000, // 加载时的最大重试时间
+        maxRetriesPerRequest: 3,
+        enableReadyCheck: true,
+        maxLoadingRetryTime: 10000,
       };
 
       if (process.env.REDIS_USERNAME?.trim()) {
@@ -50,7 +52,6 @@ if (typeof window === 'undefined') {
 
       redis = new Redis(redisOptions);
 
-      // 监听连接事件 - 只在开发环境输出
       if (process.env.NODE_ENV === 'development') {
         redis.on('connect', () => {
           console.log('Redis connected');
@@ -72,7 +73,11 @@ if (typeof window === 'undefined') {
       console.error('Failed to initialize Redis client:', error);
       redis = undefined;
     }
+
+    return redis;
   })();
+
+  return redisInitPromise;
 }
 
 export { redis };

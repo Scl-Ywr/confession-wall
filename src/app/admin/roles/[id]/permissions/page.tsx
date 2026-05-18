@@ -39,7 +39,7 @@ export default function RolePermissionsPage() {
 
         setRole(roleData);
         setPermissions(permissionsData);
-        setSelectedPermissions(rolePermsData.map(p => p.id));
+        setSelectedPermissions(rolePermsData as string[]);
       } catch (err) {
         setError('加载数据失败');
         console.error('加载数据失败:', err);
@@ -55,7 +55,7 @@ export default function RolePermissionsPage() {
     if (!roleId) return;
     try {
       const userPermissions = await getRolePermissions(roleId);
-      setSelectedPermissions(userPermissions.map(p => p.id));
+      setSelectedPermissions(userPermissions as string[]);
     } catch (err) {
       console.error('加载权限失败:', err);
     }

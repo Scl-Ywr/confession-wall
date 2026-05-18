@@ -3,7 +3,7 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { chatService } from '@/services/chatService';
 import { chatBackgroundService } from '@/services/chatBackgroundService';
-import { ChatMessage, Profile } from '@/types/chat';
+import { ChatMessage, OnlineStatus, Profile } from '@/types/chat';
 import { MessageSquare, Send, Smile, Trash2, Search, Image as ImageIcon, Upload, X, Palette, Clock } from 'lucide-react';
 import Image from 'next/image';
 import { useAuth } from '@/context/AuthContext';
@@ -17,6 +17,20 @@ import { showToast } from '@/utils/toast';
 type ChatInterfaceProps = {
   otherUserId: string;
   otherUserProfile: Profile;
+};
+
+type ChatMessageRealtimePayload = {
+  new: ChatMessage & {
+    id: string;
+    sender_id: string;
+  };
+};
+
+type ProfileRealtimePayload = {
+  new: {
+    online_status?: OnlineStatus;
+    last_seen?: string;
+  };
 };
 
 export function ChatInterface({ otherUserId, otherUserProfile: initialOtherUserProfile }: ChatInterfaceProps) {
@@ -318,7 +332,7 @@ export function ChatInterface({ otherUserId, otherUserProfile: initialOtherUserP
           // 使用精确的服务器端过滤条件
           filter: `(sender_id.eq.${currentUserId}.and.receiver_id.eq.${otherUserId}).or(sender_id.eq.${otherUserId}.and.receiver_id.eq.${currentUserId})`
         },
-        async (payload) => {
+        async (payload: ChatMessageRealtimePayload) => {
           console.log(`[ChatInterface] New message received:`, payload.new);
           
           try {
@@ -385,7 +399,7 @@ export function ChatInterface({ otherUserId, otherUserProfile: initialOtherUserP
           table: 'profiles',
           filter: `id.eq.${otherUserId}`
         },
-        async (payload) => {
+        async (payload: ProfileRealtimePayload) => {
           console.log(`[ChatInterface] Profile update received for ${otherUserId}:`, payload.new);
           
           // 只更新在线状态和最后活跃时间相关字段
@@ -409,7 +423,7 @@ export function ChatInterface({ otherUserId, otherUserProfile: initialOtherUserP
           }
         }
       )
-      .subscribe((status) => {
+      .subscribe((status: string) => {
         console.log(`[ChatInterface] Channel status changed to: ${status}`);
         switch (status) {
           case 'SUBSCRIBED':

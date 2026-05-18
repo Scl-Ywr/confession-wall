@@ -75,7 +75,7 @@ export default function UserRolesPage() {
 
         setUser(userData);
         setRoles((rolesData as RolesResponse).roles);
-        setSelectedRoles(userRolesData.map(r => r.id));
+        setSelectedRoles(userRolesData as string[]);
       } catch (err) {
         setError('加载数据失败');
         console.error('加载数据失败:', err);
@@ -125,7 +125,7 @@ export default function UserRolesPage() {
   const handleCancel = () => {
     if (!userId) return;
     getUserRoles(userId).then(userRoles => {
-      setSelectedRoles(userRoles.map(r => r.id));
+      setSelectedRoles(userRoles as string[]);
     });
     setIsDirty(false);
   };

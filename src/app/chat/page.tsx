@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '@/context/AuthContext';
 import { chatService } from '@/services/chatService';
-import { Friendship, Group } from '@/types/chat';
+import { Friendship, Group, OnlineStatus } from '@/types/chat';
 import Link from 'next/link';
 import Image from 'next/image';
 import Navbar from '@/components/Navbar';
@@ -12,6 +12,22 @@ import PageLoader from '@/components/PageLoader';
 import { MessageCircleIcon, UserSearchIcon, UsersIcon, TrashIcon, PlusIcon, UsersRoundIcon } from 'lucide-react';
 import { supabase } from '@/lib/supabase/client';
 import { usePageRefresh } from '@/hooks/usePageRefresh';
+
+type PrivateUnreadMessage = {
+  sender_id: string;
+};
+
+type GroupMembership = {
+  group_id: string;
+};
+
+type ProfileStatusPayload = {
+  new: {
+    id: string;
+    online_status?: OnlineStatus;
+    last_seen?: string;
+  };
+};
 
 const ChatListPage = () => {
   const { user, loading: authLoading } = useAuth();
@@ -87,7 +103,7 @@ const ChatListPage = () => {
       // 计算每个好友的未读消息数量
       const friendUnreadCounts: Record<string, number> = {};
       if (privateUnreadMessages) {
-        privateUnreadMessages.forEach(message => {
+        (privateUnreadMessages as PrivateUnreadMessage[]).forEach((message) => {
           const senderId = message.sender_id;
           friendUnreadCounts[senderId] = (friendUnreadCounts[senderId] || 0) + 1;
         });
@@ -107,9 +123,10 @@ const ChatListPage = () => {
       
       // 计算每个群聊的未读消息数量
       const groupUnreadCounts: Record<string, number> = {};
-      if (groupMemberships && groupMemberships.length > 0) {
+      const memberships = (groupMemberships || []) as GroupMembership[];
+      if (memberships.length > 0) {
         // 为每个群聊获取未读消息数量
-        for (const membership of groupMemberships) {
+        for (const membership of memberships) {
           const groupId = membership.group_id;
           try {
             const { count, error } = await supabase
@@ -225,7 +242,7 @@ const ChatListPage = () => {
           table: 'profiles',
           filter: `id=in.(${friendIds})`
         },
-        (payload) => {
+        (payload: ProfileStatusPayload) => {
           // 更新好友列表中的在线状态
           setFriends(prev => prev.map(friendship => {
             if (friendship.friend_id === payload.new.id && friendship.friend_profile) {

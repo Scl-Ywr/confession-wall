@@ -3,7 +3,7 @@
 import React, { useEffect, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { supabase } from '@/lib/supabase/client';
-import type { EmailOtpType } from '@supabase/supabase-js';
+import type { EmailOtpType, User as SupabaseUser } from '@supabase/supabase-js';
 
 // 错误信息翻译函数，将英文错误转换为中文
 const translateError = (error: Error): string => {
@@ -57,15 +57,16 @@ const VerifyEmailPage: React.FC = () => {
         }
         
         // 3. 检查是否已经通过URL fragment自动登录（PKCE流程）
-        let user = null;
+        let user: SupabaseUser | null = null;
         let getUserError: Error | null = null;
         
         // 首先尝试获取会话，触发Supabase自动处理fragment中的令牌
         try {
           const { data: sessionData } = await supabase.auth.getSession();
-          if (sessionData.session) {
-            user = sessionData.session.user;
-            console.log('Found existing session:', user.id);
+          const sessionUser = sessionData.session?.user;
+          if (sessionUser) {
+            user = sessionUser;
+            console.log('Found existing session:', sessionUser.id);
           }
         } catch {
           console.log('No existing session found');

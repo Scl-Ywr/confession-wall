@@ -1,0 +1,267 @@
+Error getting user in proxy: Error [AuthSessionMissingError]: Auth session missing!
+    at ignore-listed frames {
+  __isAuthError: true,
+  status: 400,
+  code: undefined
+}
+Error getting user in proxy: Error [AuthSessionMissingError]: Auth session missing!
+    at ignore-listed frames {
+  __isAuthError: true,
+  status: 400,
+  code: undefined
+}
+Error getting user in proxy: Error [AuthSessionMissingError]: Auth session missing!
+    at ignore-listed frames {
+  __isAuthError: true,
+  status: 400,
+  code: undefined
+}
+Error getting user in proxy: Error [AuthSessionMissingError]: Auth session missing!
+    at ignore-listed frames {
+  __isAuthError: true,
+  status: 400,
+  code: undefined
+}
+Error getting user in proxy: Error [AuthSessionMissingError]: Auth session missing!
+    at ignore-listed frames {
+  __isAuthError: true,
+  status: 400,
+  code: undefined
+}
+⨯ upstream image https://ltbacrfoksjzfszpsmow.supabase.co/storage/v1/object/public/confession_images/avatars/5143fe9d-a935-4d6a-ba30-354e3e7daff2/1764424508005.png resolved to private ip ["198.18.0.100"]
+Error: "url" parameter is not allowed
+    at ignore-listed frames {
+  statusCode: 400
+}
+⨯ upstream image https://ltbacrfoksjzfszpsmow.supabase.co/storage/v1/object/public/confession_images/confession_images/cd969754-9c02-4d32-9895-fc4b8b09bca7/1764729038751.png resolved to private ip ["198.18.0.100"]
+Error: "url" parameter is not allowed
+    at ignore-listed frames {
+  statusCode: 400
+}
+⨯ upstream image https://ltbacrfoksjzfszpsmow.supabase.co/storage/v1/object/public/confession_images/confession_images/734adb98-42ff-46d7-961d-dbf79029b824/1764257514309.jpg resolved to private ip ["198.18.0.100"]
+Error: "url" parameter is not allowed
+    at ignore-listed frames {
+  statusCode: 400
+}
+⨯ upstream image https://ltbacrfoksjzfszpsmow.supabase.co/storage/v1/object/public/confession_images/confession_images/fc2a93d0-65a9-4815-8c45-7440c0de29f2/1764253493167.png resolved to private ip ["198.18.0.100"]
+Error: "url" parameter is not allowed
+    at ignore-listed frames {
+  statusCode: 400
+}
+Error getting user in proxy: Error [AuthSessionMissingError]: Auth session missing!
+    at ignore-listed frames {
+  __isAuthError: true,
+  status: 400,
+  code: undefined
+}
+Error getting user in proxy: Error [AuthSessionMissingError]: Auth session missing!
+    at ignore-listed frames {
+  __isAuthError: true,
+  status: 400,
+  code: undefined
+}
+Error getting user in proxy: Error [AuthSessionMissingError]: Auth session missing!
+    at ignore-listed frames {
+  __isAuthError: true,
+  status: 400,
+  code: undefined
+}
+⚠ Fast Refresh had to perform a full reload when ./src/lib/supabase/client.ts changed. Read more: https://nextjs.org/docs/messages/fast-refresh-reload
+Error getting user in proxy: Error [AuthSessionMissingError]: Auth session missing!
+    at ignore-listed frames {
+  __isAuthError: true,
+  status: 400,
+  code: undefined
+}
+Error getting user in proxy: Error [AuthSessionMissingError]: Auth session missing!
+    at ignore-listed frames {
+  __isAuthError: true,
+  status: 400,
+  code: undefined
+}
+Error getting user in proxy: Error [AuthSessionMissingError]: Auth session missing!
+    at ignore-listed frames {
+  __isAuthError: true,
+  status: 400,
+  code: undefined
+}
+⚠ Fast Refresh had to perform a full reload when ./src/lib/redis/client.ts changed. Read more: https://nextjs.org/docs/messages/fast-refresh-reload
+Error getting user in proxy: Error [AuthSessionMissingError]: Auth session missing!
+    at ignore-listed frames {
+  __isAuthError: true,
+  status: 400,
+  code: undefined
+}
+Error getting user in proxy: Error [AuthSessionMissingError]: Auth session missing!
+    at ignore-listed frames {
+  __isAuthError: true,
+  status: 400,
+  code: undefined
+}
+Error getting user in proxy: Error [AuthSessionMissingError]: Auth session missing!
+    at ignore-listed frames {
+  __isAuthError: true,
+  status: 400,
+  code: undefined
+}
+⚠ Fast Refresh had to perform a full reload when ./src/lib/redis/cache-manager.ts changed. Read more: https://nextjs.org/docs/messages/fast-refresh-reload
+Error getting user in proxy: Error [AuthSessionMissingError]: Auth session missing!
+    at ignore-listed frames {
+  __isAuthError: true,
+  status: 400,
+  code: undefined
+}
+Error getting user in proxy: Error [AuthSessionMissingError]: Auth session missing!
+    at ignore-listed frames {
+  __isAuthError: true,
+  status: 400,
+  code: undefined
+}
+Error getting user in proxy: Error [AuthSessionMissingError]: Auth session missing!
+    at ignore-listed frames {
+  __isAuthError: true,
+  status: 400,
+  code: undefined
+}
+⚠ Fast Refresh had to perform a full reload when ./src/context/AuthContext.tsx changed. Read more: https://nextjs.org/docs/messages/fast-refresh-reload
+Error getting user in proxy: Error [AuthSessionMissingError]: Auth session missing!
+    at ignore-listed frames {
+  __isAuthError: true,
+  status: 400,
+  code: undefined
+}
+Error getting user in proxy: Error [AuthSessionMissingError]: Auth session missing!
+    at ignore-listed frames {
+  __isAuthError: true,
+  status: 400,
+  code: undefined
+}
+Error getting user in proxy: Error [AuthSessionMissingError]: Auth session missing!
+    at ignore-listed frames {
+  __isAuthError: true,
+  status: 400,
+  code: undefined
+}
+Error getting user in proxy: Error [AuthSessionMissingError]: Auth session missing!
+    at ignore-listed frames {
+  __isAuthError: true,
+  status: 400,
+  code: undefined
+}
+Error getting user in proxy: Error [AuthSessionMissingError]: Auth session missing!
+    at ignore-listed frames {
+  __isAuthError: true,
+  status: 400,
+  code: undefined
+}
+Error getting user in proxy: Error [AuthSessionMissingError]: Auth session missing!
+    at ignore-listed frames {
+  __isAuthError: true,
+  status: 400,
+  code: undefined
+}
+Error getting user in proxy: Error [AuthSessionMissingError]: Auth session missing!
+    at ignore-listed frames {
+  __isAuthError: true,
+  status: 400,
+  code: undefined
+}
+Error getting user in proxy: Error [AuthSessionMissingError]: Auth session missing!
+    at ignore-listed frames {
+  __isAuthError: true,
+  status: 400,
+  code: undefined
+}
+Error getting user in proxy: Error [AuthSessionMissingError]: Auth session missing!
+    at ignore-listed frames {
+  __isAuthError: true,
+  status: 400,
+  code: undefined
+}
+⚠ Fast Refresh had to perform a full reload when ./src/context/AuthContext.tsx changed. Read more: https://nextjs.org/docs/messages/fast-refresh-reload
+Error getting user in proxy: Error [AuthSessionMissingError]: Auth session missing!
+    at ignore-listed frames {
+  __isAuthError: true,
+  status: 400,
+  code: undefined
+}
+Error getting user in proxy: Error [AuthSessionMissingError]: Auth session missing!
+    at ignore-listed frames {
+  __isAuthError: true,
+  status: 400,
+  code: undefined
+}
+Error getting user in proxy: Error [AuthSessionMissingError]: Auth session missing!
+    at ignore-listed frames {
+  __isAuthError: true,
+  status: 400,
+  code: undefined
+}
+⚠ Fast Refresh had to perform a full reload when ./src/context/BackgroundContext.tsx changed. Read more: https://nextjs.org/docs/messages/fast-refresh-reload
+Error getting user in proxy: Error [AuthSessionMissingError]: Auth session missing!
+    at ignore-listed frames {
+  __isAuthError: true,
+  status: 400,
+  code: undefined
+}
+Error getting user in proxy: Error [AuthSessionMissingError]: Auth session missing!
+    at ignore-listed frames {
+  __isAuthError: true,
+  status: 400,
+  code: undefined
+}
+Error getting user in proxy: Error [AuthSessionMissingError]: Auth session missing!
+    at ignore-listed frames {
+  __isAuthError: true,
+  status: 400,
+  code: undefined
+}
+⚠ Fast Refresh had to perform a full reload when ./src/context/ChatContext.tsx changed. Read more: https://nextjs.org/docs/messages/fast-refresh-reload
+Error getting user in proxy: Error [AuthSessionMissingError]: Auth session missing!
+    at ignore-listed frames {
+  __isAuthError: true,
+  status: 400,
+  code: undefined
+}
+Error getting user in proxy: Error [AuthSessionMissingError]: Auth session missing!
+    at ignore-listed frames {
+  __isAuthError: true,
+  status: 400,
+  code: undefined
+}
+Error getting user in proxy: Error [AuthSessionMissingError]: Auth session missing!
+    at ignore-listed frames {
+  __isAuthError: true,
+  status: 400,
+  code: undefined
+}
+Error getting user in proxy: Error [AuthSessionMissingError]: Auth session missing!
+    at ignore-listed frames {
+  __isAuthError: true,
+  status: 400,
+  code: undefined
+}
+Error getting user in proxy: Error [AuthSessionMissingError]: Auth session missing!
+    at ignore-listed frames {
+  __isAuthError: true,
+  status: 400,
+  code: undefined
+}
+Error getting user in proxy: Error [AuthSessionMissingError]: Auth session missing!
+    at ignore-listed frames {
+  __isAuthError: true,
+  status: 400,
+  code: undefined
+}
+Error getting user in proxy: Error [AuthSessionMissingError]: Auth session missing!
+    at ignore-listed frames {
+  __isAuthError: true,
+  status: 400,
+  code: undefined
+}
+Error getting user in proxy: Error [AuthSessionMissingError]: Auth session missing!
+    at ignore-listed frames {
+  __isAuthError: true,
+  status: 400,
+  code: undefined
+}

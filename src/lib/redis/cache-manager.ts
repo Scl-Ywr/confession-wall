@@ -14,7 +14,7 @@ import {
 } from './cache.config';
 
 // 导入Redis客户端
-import { redis } from './client';
+import { getRedis, redis } from './client';
 
 // 缓存键前缀
 const CACHE_PREFIX = 'confession_wall:';
@@ -112,9 +112,11 @@ export class RedisCacheManager {
    */
   private async initialize(): Promise<void> {
     try {
-      if (redis) {
+      const client = await getRedis();
+
+      if (client) {
         // 检查Redis客户端状态
-        if (redis.status !== 'ready') {
+        if (client.status !== 'ready') {
           if (process.env.NODE_ENV === 'development') {
             console.log('Redis client not ready, skipping initialization');
           }
@@ -123,7 +125,7 @@ export class RedisCacheManager {
         }
         
         // 使用Promise.race添加超时保护
-        const pingPromise = redis.ping();
+        const pingPromise = client.ping();
         const timeoutPromise = new Promise<void>((_, reject) => {
           setTimeout(() => reject(new Error('Redis ping timed out')), 5000);
         });

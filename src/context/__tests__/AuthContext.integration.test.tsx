@@ -3,7 +3,27 @@ import '@testing-library/jest-dom';
 import { AuthProvider, useAuth } from '@/context/AuthContext';
 import { supabase } from '@/lib/supabase/client';
 
-jest.mock('@/lib/supabase/client');
+jest.mock('@/lib/supabase/client', () => ({
+  supabase: {
+    auth: {
+      getUser: jest.fn(),
+      getSession: jest.fn(),
+      onAuthStateChange: jest.fn(),
+      refreshSession: jest.fn(),
+      signInWithPassword: jest.fn(),
+      signOut: jest.fn(),
+    },
+    from: jest.fn(),
+    rpc: jest.fn(),
+  },
+}));
+jest.mock('next/navigation', () => ({
+  useRouter: () => ({
+    push: jest.fn(),
+    replace: jest.fn(),
+    refresh: jest.fn(),
+  }),
+}));
 jest.mock('@/services/globalMessageService');
 
 const TestComponent = () => {
@@ -14,7 +34,7 @@ const TestComponent = () => {
       <div data-testid="loading">{loading ? 'Loading' : 'Not Loading'}</div>
       <div data-testid="user">{user ? user.email : 'No User'}</div>
       <div data-testid="error">{error || 'No Error'}</div>
-      <button onClick={() => login('test@example.com', 'password123')}>Login</button>
+      <button onClick={() => login('test@example.com', 'password123').catch(() => undefined)}>Login</button>
     </div>
   );
 };
@@ -22,6 +42,32 @@ const TestComponent = () => {
 describe('AuthContext Integration Tests', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    (supabase.auth.getUser as jest.Mock).mockResolvedValue({
+      data: { user: null },
+      error: null,
+    });
+    (supabase.auth.getSession as jest.Mock).mockResolvedValue({
+      data: { session: null },
+      error: null,
+    });
+    (supabase.auth.onAuthStateChange as jest.Mock).mockReturnValue({
+      data: {
+        subscription: {
+          unsubscribe: jest.fn(),
+        },
+      },
+    });
+    (supabase.from as jest.Mock).mockReturnValue({
+      insert: jest.fn().mockResolvedValue({ data: null, error: null }),
+      select: jest.fn().mockReturnThis(),
+      update: jest.fn().mockReturnThis(),
+      eq: jest.fn().mockReturnThis(),
+      maybeSingle: jest.fn().mockResolvedValue({ data: null, error: null }),
+    });
+    (supabase.rpc as jest.Mock).mockResolvedValue({
+      data: { remaining_attempts: 5 },
+      error: null,
+    });
   });
 
   it('应该初始化为加载状态', () => {
@@ -54,6 +100,7 @@ describe('AuthContext Integration Tests', () => {
     });
 
     (supabase.from as jest.Mock).mockReturnValue({
+      insert: jest.fn().mockResolvedValue({ data: null, error: null }),
       select: jest.fn().mockReturnThis(),
       eq: jest.fn().mockReturnThis(),
       maybeSingle: jest.fn().mockResolvedValue({

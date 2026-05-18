@@ -1,0 +1,82 @@
+
+> confession-wall@0.1.0 dev
+> next dev -p 3000
+
+▲ Next.js 16.1.1 (Turbopack)
+- Local:         http://localhost:3000
+- Network:       http://198.18.0.1:3000
+- Environments: .env.local
+
+✓ Starting...
+✓ Ready in 1493ms
+○ Compiling / ...
+Redis connected
+Redis Queue Service connected
+ GET / 200 in 5.2s (compile: 4.5s, proxy.ts: 200ms, render: 497ms)
+ GET / 200 in 134ms (compile: 28ms, proxy.ts: 40ms, render: 67ms)
+ GET / 200 in 246ms (compile: 6ms, proxy.ts: 32ms, render: 208ms)
+ GET /api/hashtags?limit=4 200 in 848ms (compile: 70ms, proxy.ts: 17ms, render: 761ms)
+ GET /api/categories 200 in 869ms (compile: 92ms, proxy.ts: 29ms, render: 748ms)
+ GET / 200 in 103ms (compile: 7ms, proxy.ts: 31ms, render: 65ms)
+ GET /api/hashtags?limit=4 200 in 306ms (compile: 20ms, proxy.ts: 32ms, render: 254ms)
+ GET /api/categories 200 in 318ms (compile: 11ms, proxy.ts: 44ms, render: 262ms)
+✓ Compiled in 247ms
+Redis connected
+Redis Queue Service connected
+ GET / 200 in 702ms (compile: 155ms, proxy.ts: 17ms, render: 531ms)
+ GET /api/hashtags?limit=4 200 in 1155ms (compile: 25ms, proxy.ts: 42ms, render: 1088ms)
+ GET /api/categories 200 in 1163ms (compile: 18ms, proxy.ts: 54ms, render: 1091ms)
+✓ Compiled in 299ms
+Redis Queue Service connected
+ GET / 200 in 608ms (compile: 109ms, proxy.ts: 51ms, render: 447ms)
+ GET /api/categories 200 in 411ms (compile: 19ms, proxy.ts: 42ms, render: 350ms)
+ GET /api/hashtags?limit=4 200 in 415ms (compile: 22ms, proxy.ts: 30ms, render: 363ms)
+✓ Compiled in 199ms
+Redis client not ready, skipping initialization
+Redis connected
+Redis Queue Service connected
+ GET / 200 in 543ms (compile: 143ms, proxy.ts: 20ms, render: 380ms)
+ GET /api/categories 200 in 283ms (compile: 9ms, proxy.ts: 40ms, render: 234ms)
+ GET /api/hashtags?limit=4 200 in 290ms (compile: 16ms, proxy.ts: 28ms, render: 246ms)
+✓ Compiled in 309ms
+Redis client not ready, skipping initialization
+Redis Queue Service connected
+Redis connected
+ GET / 200 in 658ms (compile: 143ms, proxy.ts: 46ms, render: 468ms)
+ GET /api/hashtags?limit=4 200 in 722ms (compile: 28ms, proxy.ts: 39ms, render: 655ms)
+ GET /api/categories 200 in 727ms (compile: 7ms, proxy.ts: 61ms, render: 658ms)
+ GET /auth/login 200 in 237ms (compile: 191ms, proxy.ts: 26ms, render: 20ms)
+ GET /api/categories 200 in 313ms (compile: 7ms, proxy.ts: 43ms, render: 262ms)
+ GET /api/hashtags?limit=4 200 in 361ms (compile: 21ms, proxy.ts: 28ms, render: 312ms)
+ GET / 200 in 347ms (compile: 8ms, proxy.ts: 62ms, render: 278ms)
+ GET /api/categories 200 in 347ms (compile: 6ms, proxy.ts: 37ms, render: 303ms)
+ GET /api/hashtags?limit=4 200 in 402ms (compile: 23ms, proxy.ts: 18ms, render: 361ms)
+✓ Compiled in 273ms
+Redis client not ready, skipping initialization
+Redis Queue Service connected
+Redis connected
+ GET / 200 in 584ms (compile: 110ms, proxy.ts: 19ms, render: 454ms)
+ GET /api/hashtags?limit=4 200 in 508ms (compile: 19ms, proxy.ts: 16ms, render: 473ms)
+ GET /api/categories 200 in 509ms (compile: 7ms, proxy.ts: 31ms, render: 471ms)
+✓ Compiled in 191ms
+Redis client not ready, skipping initialization
+Redis Queue Service connected
+Redis connected
+ GET / 200 in 588ms (compile: 115ms, proxy.ts: 38ms, render: 436ms)
+ GET /api/hashtags?limit=4 200 in 320ms (compile: 18ms, proxy.ts: 30ms, render: 271ms)
+ GET /api/categories 200 in 338ms (compile: 16ms, proxy.ts: 42ms, render: 279ms)
+✓ Compiled in 182ms
+Redis client not ready, skipping initialization
+Redis connected
+Redis Queue Service connected
+ GET / 200 in 654ms (compile: 117ms, proxy.ts: 40ms, render: 497ms)
+ GET /api/hashtags?limit=4 200 in 614ms (compile: 28ms, proxy.ts: 27ms, render: 559ms)
+ GET /api/categories 200 in 621ms (compile: 11ms, proxy.ts: 47ms, render: 563ms)
+✓ Compiled in 211ms
+ GET / 200 in 159ms (compile: 93ms, proxy.ts: 29ms, render: 37ms)
+ GET /auth/register 200 in 103ms (compile: 78ms, proxy.ts: 13ms, render: 12ms)
+ GET /api/categories 200 in 305ms (compile: 10ms, proxy.ts: 53ms, render: 242ms)
+ GET /api/hashtags?limit=4 200 in 352ms (compile: 27ms, proxy.ts: 36ms, render: 290ms)
+Redis client not ready, skipping initialization
+Redis connected
+ GET /auth/login 200 in 390ms (compile: 103ms, proxy.ts: 28ms, render: 258ms)

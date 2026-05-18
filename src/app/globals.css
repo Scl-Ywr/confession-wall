@@ -22,6 +22,17 @@
   /* 主题效果变量 */
   --effect-shadow: 0 18px 55px rgba(31, 41, 55, 0.1);
   --effect-glow: 0 0 24px rgba(255, 91, 110, 0.28);
+
+  --theme-page-background: radial-gradient(circle at 8% 12%, rgba(255, 187, 204, 0.55), transparent 24%),
+    radial-gradient(circle at 82% 10%, rgba(255, 222, 181, 0.58), transparent 22%),
+    linear-gradient(180deg, #fff8f7 0%, #fffaf4 45%, #f3f6fb 100%);
+  --theme-texture: linear-gradient(rgba(255, 255, 255, 0.45) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.45) 1px, transparent 1px);
+  --theme-accent-wash: linear-gradient(135deg, rgba(255, 255, 255, 0.5), rgba(255, 181, 197, 0.18));
+  --theme-panel-tint: rgba(255, 255, 255, 0.82);
+  --theme-border-tint: rgba(255, 255, 255, 0.72);
+  --theme-preview-background: linear-gradient(135deg, #fff8f7, #ffe7bd 55%, #f3f6fb);
+  --theme-motif: "✦";
   
   /* 默认背景和前景色 */
   --background: #fdf8f6;
@@ -53,13 +64,108 @@ body {
   background: var(--color-background);
   color: var(--color-text);
   font-family: "Microsoft YaHei", "PingFang SC", "Hiragino Sans GB", ui-sans-serif, system-ui, sans-serif;
-  background-image: radial-gradient(at 6% 12%, rgba(255, 187, 204, 0.55) 0, transparent 28%),
-    radial-gradient(at 88% 8%, rgba(255, 222, 181, 0.55) 0, transparent 26%),
-    linear-gradient(180deg, #fff8f7 0%, #fffaf4 46%, #f3f6fb 100%);
+  background-image: var(--theme-page-background);
   background-attachment: fixed;
   min-height: 100vh;
   overflow-x: hidden;
   transition: background 0.3s ease, color 0.3s ease;
+}
+
+:root[data-theme="default"] {
+  --theme-page-background: radial-gradient(circle at 10% 12%, rgba(147, 197, 253, 0.38), transparent 25%),
+    radial-gradient(circle at 86% 12%, rgba(196, 181, 253, 0.4), transparent 24%),
+    linear-gradient(180deg, #f8fbff 0%, #f7f5ff 48%, #eef4ff 100%);
+  --theme-accent-wash: linear-gradient(135deg, rgba(59, 130, 246, 0.12), rgba(139, 92, 246, 0.14));
+  --theme-panel-tint: rgba(255, 255, 255, 0.84);
+  --theme-border-tint: rgba(191, 219, 254, 0.72);
+  --theme-preview-background: linear-gradient(135deg, #f8fbff, #eef2ff 54%, #e0f2fe);
+  --theme-motif: "✦";
+}
+
+:root[data-theme="christmas"] {
+  --theme-page-background: radial-gradient(circle at 10% 8%, rgba(239, 68, 68, 0.34), transparent 24%),
+    radial-gradient(circle at 86% 10%, rgba(34, 197, 94, 0.3), transparent 24%),
+    linear-gradient(180deg, #10213d 0%, #15352a 46%, #260f18 100%);
+  --theme-texture: linear-gradient(rgba(255, 255, 255, 0.08) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.08) 1px, transparent 1px);
+  --theme-accent-wash: linear-gradient(135deg, rgba(196, 30, 58, 0.22), rgba(255, 215, 0, 0.12));
+  --theme-panel-tint: rgba(15, 23, 42, 0.74);
+  --theme-border-tint: rgba(255, 255, 255, 0.14);
+  --theme-preview-background: linear-gradient(135deg, #14342b, #8b1e2d 62%, #facc15);
+  --theme-motif: "✶";
+}
+
+:root[data-theme="spring"] {
+  --theme-page-background: radial-gradient(circle at 12% 12%, rgba(244, 114, 182, 0.42), transparent 24%),
+    radial-gradient(circle at 84% 14%, rgba(52, 211, 153, 0.32), transparent 24%),
+    linear-gradient(180deg, #fff1f7 0%, #f0fdf4 52%, #fff7ed 100%);
+  --theme-accent-wash: linear-gradient(135deg, rgba(244, 114, 182, 0.16), rgba(16, 185, 129, 0.14));
+  --theme-border-tint: rgba(249, 168, 212, 0.62);
+  --theme-preview-background: linear-gradient(135deg, #fff1f7, #dcfce7 55%, #fef3c7);
+  --theme-motif: "花";
+}
+
+:root[data-theme="ocean"] {
+  --theme-page-background: radial-gradient(circle at 9% 16%, rgba(125, 211, 252, 0.5), transparent 24%),
+    radial-gradient(circle at 88% 8%, rgba(45, 212, 191, 0.35), transparent 24%),
+    linear-gradient(180deg, #e0f7ff 0%, #dbeafe 48%, #eefaff 100%);
+  --theme-accent-wash: linear-gradient(135deg, rgba(14, 165, 233, 0.16), rgba(45, 212, 191, 0.16));
+  --theme-border-tint: rgba(125, 211, 252, 0.68);
+  --theme-preview-background: linear-gradient(135deg, #e0f7ff, #7dd3fc 55%, #0ea5e9);
+  --theme-motif: "~";
+}
+
+:root[data-theme="sunset"] {
+  --theme-page-background: radial-gradient(circle at 10% 12%, rgba(251, 146, 60, 0.42), transparent 24%),
+    radial-gradient(circle at 86% 12%, rgba(244, 114, 182, 0.32), transparent 24%),
+    linear-gradient(180deg, #fff7ed 0%, #ffedd5 45%, #ffe4e6 100%);
+  --theme-accent-wash: linear-gradient(135deg, rgba(249, 115, 22, 0.18), rgba(244, 114, 182, 0.16));
+  --theme-border-tint: rgba(253, 186, 116, 0.7);
+  --theme-preview-background: linear-gradient(135deg, #fff7ed, #fb923c 55%, #fb7185);
+  --theme-motif: "◒";
+}
+
+:root[data-theme="midnight"] {
+  --theme-page-background: radial-gradient(circle at 12% 10%, rgba(99, 102, 241, 0.34), transparent 25%),
+    radial-gradient(circle at 86% 12%, rgba(168, 85, 247, 0.28), transparent 24%),
+    linear-gradient(180deg, #141235 0%, #111827 52%, #070b16 100%);
+  --theme-texture: linear-gradient(rgba(255, 255, 255, 0.07) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.07) 1px, transparent 1px);
+  --theme-accent-wash: linear-gradient(135deg, rgba(99, 102, 241, 0.22), rgba(168, 85, 247, 0.16));
+  --theme-panel-tint: rgba(15, 23, 42, 0.76);
+  --theme-border-tint: rgba(255, 255, 255, 0.12);
+  --theme-preview-background: linear-gradient(135deg, #111827, #312e81 54%, #7c3aed);
+  --theme-motif: "✧";
+}
+
+:root[data-theme="cherry"] {
+  --theme-page-background: radial-gradient(circle at 10% 10%, rgba(251, 113, 133, 0.36), transparent 25%),
+    radial-gradient(circle at 86% 12%, rgba(251, 191, 36, 0.22), transparent 24%),
+    linear-gradient(180deg, #fff1f6 0%, #ffe4ef 52%, #fff7ed 100%);
+  --theme-accent-wash: linear-gradient(135deg, rgba(244, 114, 182, 0.18), rgba(251, 113, 133, 0.14));
+  --theme-border-tint: rgba(244, 114, 182, 0.68);
+  --theme-preview-background: linear-gradient(135deg, #fff1f6, #f9a8d4 58%, #fda4af);
+  --theme-motif: "花";
+}
+
+:root[data-theme="forest"] {
+  --theme-page-background: radial-gradient(circle at 12% 12%, rgba(16, 185, 129, 0.38), transparent 24%),
+    radial-gradient(circle at 86% 10%, rgba(132, 204, 22, 0.28), transparent 24%),
+    linear-gradient(180deg, #ecfdf5 0%, #d1fae5 48%, #f7fee7 100%);
+  --theme-accent-wash: linear-gradient(135deg, rgba(5, 150, 105, 0.16), rgba(132, 204, 22, 0.14));
+  --theme-border-tint: rgba(110, 231, 183, 0.7);
+  --theme-preview-background: linear-gradient(135deg, #ecfdf5, #86efac 56%, #059669);
+  --theme-motif: "▲";
+}
+
+:root[data-theme="candy"] {
+  --theme-page-background: radial-gradient(circle at 10% 12%, rgba(251, 191, 36, 0.4), transparent 24%),
+    radial-gradient(circle at 84% 12%, rgba(236, 72, 153, 0.34), transparent 24%),
+    linear-gradient(180deg, #fffbeb 0%, #fef3c7 48%, #ffe4e6 100%);
+  --theme-accent-wash: linear-gradient(135deg, rgba(245, 158, 11, 0.18), rgba(236, 72, 153, 0.16));
+  --theme-border-tint: rgba(251, 191, 36, 0.72);
+  --theme-preview-background: linear-gradient(135deg, #fffbeb, #fbbf24 45%, #ec4899);
+  --theme-motif: "◆";
 }
 
 *,
@@ -77,13 +183,7 @@ svg {
 }
 
 .dark body {
-  background-image: radial-gradient(
-      at 0% 0%,
-      hsla(25, 30%, 15%, 1) 0,
-      transparent 50%
-    ),
-    radial-gradient(at 50% 0%, hsla(35, 25%, 18%, 1) 0, transparent 50%),
-    radial-gradient(at 100% 0%, hsla(340, 20%, 20%, 1) 0, transparent 50%);
+  background-image: var(--theme-page-background);
 }
 
 /* Glassmorphism Utilities */
@@ -104,19 +204,14 @@ svg {
 /* Confession Wall soft UI system */
 .cw-page {
   min-height: 100vh;
-  color: #182132;
-  background:
-    radial-gradient(circle at 8% 14%, rgba(255, 173, 198, 0.46), transparent 25%),
-    radial-gradient(circle at 86% 10%, rgba(255, 218, 171, 0.52), transparent 24%),
-    linear-gradient(180deg, #fff8f7 0%, #fffaf4 46%, #f3f6fb 100%);
+  color: var(--color-text);
+  background: var(--theme-page-background);
+  transition: background 0.45s ease, color 0.3s ease;
 }
 
 .dark .cw-page {
   color: #f8fafc;
-  background:
-    radial-gradient(circle at 8% 14%, rgba(127, 29, 29, 0.28), transparent 25%),
-    radial-gradient(circle at 86% 10%, rgba(120, 53, 15, 0.24), transparent 24%),
-    linear-gradient(180deg, #160f14 0%, #17131d 50%, #111827 100%);
+  background: var(--theme-page-background);
 }
 
 .cw-decor-grid {
@@ -124,10 +219,22 @@ svg {
   inset: 0;
   pointer-events: none;
   opacity: 0.65;
-  background-image:
-    linear-gradient(rgba(255, 255, 255, 0.42) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(255, 255, 255, 0.42) 1px, transparent 1px);
+  background-image: var(--theme-texture);
   background-size: 72px 72px;
+}
+
+.theme-scene-backdrop {
+  background: var(--theme-page-background);
+  transition: background 0.45s ease;
+}
+
+.theme-motif {
+  color: var(--color-accent);
+  text-shadow: var(--effect-glow);
+}
+
+.theme-motif::before {
+  content: var(--theme-motif);
 }
 
 .dark .cw-decor-grid {
@@ -156,8 +263,8 @@ svg {
 }
 
 .cw-panel {
-  border: 1px solid rgba(255, 255, 255, 0.72);
-  background: rgba(255, 255, 255, 0.82);
+  border: 1px solid var(--theme-border-tint);
+  background: var(--theme-panel-tint);
   backdrop-filter: blur(22px);
   -webkit-backdrop-filter: blur(22px);
   box-shadow: 0 20px 60px rgba(31, 41, 55, 0.11);
@@ -171,8 +278,8 @@ svg {
 }
 
 .cw-panel-sm {
-  border: 1px solid rgba(255, 255, 255, 0.72);
-  background: rgba(255, 255, 255, 0.72);
+  border: 1px solid var(--theme-border-tint);
+  background: color-mix(in srgb, var(--theme-panel-tint) 86%, transparent);
   backdrop-filter: blur(18px);
   -webkit-backdrop-filter: blur(18px);
   box-shadow: 0 12px 35px rgba(31, 41, 55, 0.08);

@@ -139,7 +139,7 @@ const ResponsiveVideoContainer = React.forwardRef<HTMLDivElement, Omit<Responsiv
 
   // 获取设备特定的类名
   const getDeviceClasses = () => {
-    const classes = [];
+    const classes: string[] = [];
     
     if (deviceType === 'mobile') {
       classes.push('video-container-mobile');

@@ -21,7 +21,7 @@ export const profileService = {
   // Get current user's profile
   getCurrentProfile: async (): Promise<Profile> => {
     // Get current user first
-    let userId = null;
+    let userId: string | null = null;
     try {
       const userResult = await supabase.auth.getUser();
       

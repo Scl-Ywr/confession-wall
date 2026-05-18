@@ -16,6 +16,12 @@ interface BackgroundHistoryItem {
 // 设备类型枚举
 type DeviceType = 'desktop' | 'mobile';
 
+type UserBackgroundSetting = {
+  image_url: string | null;
+  position: string | null;
+  device_type: DeviceType;
+};
+
 interface BackgroundContextType {
   desktopBackgroundImage: string | null;
   desktopBackgroundPosition: string;
@@ -136,18 +142,19 @@ export const BackgroundProvider = ({ children }: BackgroundProviderProps) => {
         }
         // 没有找到记录，继续执行，让 finally 块处理 isLoading 状态
       } else if (data && data.length > 0) {
+        const backgroundSettings = data as UserBackgroundSetting[];
         // 分离桌面和移动背景设置
-        const desktopBackground = data.find(item => item.device_type === 'desktop') || null;
-        const mobileBackground = data.find(item => item.device_type === 'mobile') || null;
+        const desktopBackground = backgroundSettings.find((item) => item.device_type === 'desktop') || null;
+        const mobileBackground = backgroundSettings.find((item) => item.device_type === 'mobile') || null;
         
         if (desktopBackground) {
           setDesktopBackgroundImage(desktopBackground.image_url);
-          setDesktopBackgroundPosition(desktopBackground.position);
+          setDesktopBackgroundPosition(desktopBackground.position || 'center center');
         }
         
         if (mobileBackground) {
           setMobileBackgroundImage(mobileBackground.image_url);
-          setMobileBackgroundPosition(mobileBackground.position);
+          setMobileBackgroundPosition(mobileBackground.position || 'center center');
         }
       }
     } catch (err) {

@@ -1739,7 +1739,7 @@ export const chatService = {
       }
 
       // 确保 messages 是数组
-      const chatMessages = messages || [];
+      const chatMessages = (messages || []) as ChatMessage[];
 
       // 如果没有消息，直接返回空数组
       if (chatMessages.length === 0) {
@@ -1747,7 +1747,7 @@ export const chatService = {
       }
 
       // 获取所有发送者的ID
-      const senderIds = [...new Set(chatMessages.map(msg => msg.sender_id))];
+      const senderIds = [...new Set(chatMessages.map((msg) => msg.sender_id))];
       
       // 初始化发送者资料对象
       const senderProfiles: Record<string, Profile> = {};

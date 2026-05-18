@@ -1,6 +1,7 @@
 'use client';
 
 import React, { createContext, useContext, useState, useEffect, ReactNode, useCallback } from 'react';
+import type { AuthChangeEvent, Session, User as SupabaseUser } from '@supabase/supabase-js';
 import { supabase } from '@/lib/supabase/client';
 import { User, AuthState } from '@/types/auth';
 import { useRouter } from 'next/navigation';
@@ -36,6 +37,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     // 登录相关错误
     if (isBadRequest ||
         errorMessage.includes('invalid login credentials') || 
+        errorMessage.includes('invalid credentials') || 
         errorMessage.includes('invalid email or password') || 
         errorMessage.includes('invalid_credentials') ||
         errorMessage.includes('bad request') ||
@@ -223,7 +225,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     const SESSION_REFRESH_INTERVAL = 5 * 60 * 1000; // 5分钟刷新一次会话
     
     // 获取完整用户资料（包括profile表中的信息）
-    const getCompleteUserProfile = async (authUser: import('@supabase/supabase-js').User | null) => {
+    const getCompleteUserProfile = async (authUser: SupabaseUser | null) => {
       if (!authUser) return null;
       
       try {
@@ -405,7 +407,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     checkUser();
 
     // Listen for auth changes
-    const { data: authListener } = supabase.auth.onAuthStateChange(async (event, session) => {
+    const { data: authListener } = supabase.auth.onAuthStateChange(async (event: AuthChangeEvent, session: Session | null) => {
       if (session?.user) {
         // 用户登录或会话恢复，设置在线状态
         updateOnlineStatus(session.user.id, 'online');

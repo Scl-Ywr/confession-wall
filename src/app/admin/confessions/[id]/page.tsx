@@ -15,6 +15,26 @@ interface MediaFile {
   name: string;
 }
 
+type ProfileSummary = {
+  username?: string | null;
+  avatar_url?: string | null;
+};
+
+type LikeWithProfile = {
+  id: string;
+  user_id: string;
+  created_at: string;
+  profiles?: ProfileSummary | null;
+};
+
+type CommentWithProfile = {
+  id: string;
+  content?: string | null;
+  created_at: string;
+  is_anonymous?: boolean | null;
+  profiles?: ProfileSummary | null;
+};
+
 export default async function ConfessionDetailPage({ params }: { params: Promise<{ id: string }> }) {
   // 在Next.js 16中，params是一个Promise，需要先await解包
   const { id } = await params;
@@ -30,6 +50,9 @@ export default async function ConfessionDetailPage({ params }: { params: Promise
   if (!confession) {
     notFound();
   }
+
+  const likes = likesResult.likes as LikeWithProfile[];
+  const comments = commentsResult.comments as CommentWithProfile[];
 
   // 从表白数据中提取媒体文件
   const mediaFiles: MediaFile[] = (confession.images || []).map((image: ConfessionImage) => ({
@@ -237,8 +260,8 @@ export default async function ConfessionDetailPage({ params }: { params: Promise
                   </tr>
                 </thead>
                 <tbody className="bg-white divide-y divide-gray-200">
-                  {likesResult.likes.length > 0 ? (
-                    likesResult.likes.map((like) => (
+                  {likes.length > 0 ? (
+                    likes.map((like) => (
                       <tr key={like.id} className="hover:bg-gray-50 transition-colors duration-150">
                         <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                           {like.user_id}
@@ -249,7 +272,7 @@ export default async function ConfessionDetailPage({ params }: { params: Promise
                               <div className="w-10 h-10 rounded-full mr-2 overflow-hidden relative">
                                 <Image 
                                   src={like.profiles.avatar_url} 
-                                  alt={like.profiles.username} 
+                                  alt={like.profiles.username || '用户头像'} 
                                   width={40}
                                   height={40}
                                   className="w-full h-full object-cover"
@@ -303,8 +326,8 @@ export default async function ConfessionDetailPage({ params }: { params: Promise
           </CardHeader>
           <CardContent>
             <div className="space-y-4">
-              {commentsResult.comments.length > 0 ? (
-                commentsResult.comments.map((comment) => (
+              {comments.length > 0 ? (
+                comments.map((comment) => (
                   <div 
                     key={comment.id}
                     className="p-4 bg-gray-50 rounded-lg"
@@ -319,7 +342,7 @@ export default async function ConfessionDetailPage({ params }: { params: Promise
                           <div className="w-10 h-10 rounded-full mr-3 overflow-hidden relative">
                             <Image 
                               src={comment.profiles.avatar_url} 
-                              alt={comment.profiles.username} 
+                              alt={comment.profiles.username || '用户头像'} 
                               width={40}
                               height={40}
                               className="w-full h-full object-cover"

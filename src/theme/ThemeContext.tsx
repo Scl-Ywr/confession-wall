@@ -32,6 +32,8 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
 
   const applyTheme = useCallback((currentTheme: Theme, darkMode: boolean) => {
     const root = document.documentElement;
+    root.setAttribute('data-theme', currentTheme.id);
+
     const colors = darkMode ? {
       primary: currentTheme.colors.primary,
       secondary: currentTheme.colors.secondary,
@@ -62,6 +64,7 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     root.style.setProperty('--gradient-primary', currentTheme.gradients.primary);
     root.style.setProperty('--gradient-secondary', currentTheme.gradients.secondary);
     root.style.setProperty('--gradient-background', currentTheme.gradients.background);
+    root.style.setProperty('--theme-scene-background', currentTheme.gradients.background);
     
     root.style.setProperty('--effect-shadow', currentTheme.effects.shadow);
     root.style.setProperty('--effect-glow', currentTheme.effects.glow);

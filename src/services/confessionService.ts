@@ -56,7 +56,7 @@ export const confessionService = {
 
     try {
       // 3. 尝试从缓存获取数据（只在服务器环境中）
-      let cachedData = null;
+      let cachedData: Confession[] | null = null;
       if (typeof window === 'undefined') {
         cachedData = await cacheManager.getCache<Confession[]>(listCacheKey);
       }

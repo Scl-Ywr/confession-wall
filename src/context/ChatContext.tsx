@@ -11,6 +11,12 @@ type ChatContextType = {
 
 const ChatContext = createContext<ChatContextType | undefined>(undefined);
 
+type GroupMessagePayload = {
+  new: {
+    group_id?: string | null;
+  };
+};
+
 export const useChat = () => {
   const context = useContext(ChatContext);
   if (!context) {
@@ -112,7 +118,7 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
           table: 'chat_messages',
           filter: `group_id=not.is.null`
         },
-        async (payload) => {
+        async (payload: GroupMessagePayload) => {
           try {
             // 检查用户是否是该群成员
             const { data: isMember, error: memberError } = await supabase

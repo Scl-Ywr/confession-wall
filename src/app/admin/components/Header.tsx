@@ -31,6 +31,19 @@ interface SearchSuggestion {
   url: string;
 }
 
+type SearchUser = {
+  id: string;
+  username?: string | null;
+  display_name?: string | null;
+  email?: string | null;
+};
+
+type SearchConfession = {
+  id: string;
+  content?: string | null;
+  created_at: string;
+};
+
 export function AdminHeader() {
   const [searchFocused, setSearchFocused] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
@@ -85,7 +98,7 @@ export function AdminHeader() {
       
       if (data) {
         setNotifications(data as Notification[]);
-        setUnreadCount(data.filter(n => !n.is_read).length);
+        setUnreadCount((data as Notification[]).filter((notification) => !notification.is_read).length);
       }
     } catch (error) {
       console.error('Failed to fetch notifications:', error);
@@ -122,7 +135,7 @@ export function AdminHeader() {
       });
       
       // 格式化用户搜索建议
-      const userSuggestions: SearchSuggestion[] = users.map(user => ({
+      const userSuggestions: SearchSuggestion[] = (users as SearchUser[]).map((user) => ({
         id: user.id,
         type: 'user' as const,
         title: user.username || user.display_name || '未知用户',
@@ -139,7 +152,7 @@ export function AdminHeader() {
       });
       
       // 格式化表白搜索建议
-      const confessionSuggestions: SearchSuggestion[] = confessions.map(confession => ({
+      const confessionSuggestions: SearchSuggestion[] = (confessions as SearchConfession[]).map((confession) => ({
         id: confession.id,
         type: 'confession' as const,
         title: confession.content?.substring(0, 30) || '无内容',
