@@ -237,6 +237,23 @@ svg {
   content: var(--theme-motif);
 }
 
+.blog-markdown {
+  font-size: 1.02rem;
+}
+
+.blog-markdown :where(h1, h2, h3) {
+  letter-spacing: 0;
+}
+
+.blog-markdown :where(p, li) {
+  line-height: 1.9;
+}
+
+.blog-markdown :where(img) {
+  border-radius: 1.5rem;
+  box-shadow: 0 24px 80px rgba(15, 23, 42, 0.14);
+}
+
 .dark .cw-decor-grid {
   opacity: 0.08;
 }

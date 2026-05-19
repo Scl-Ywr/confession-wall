@@ -3,7 +3,7 @@
 import React from 'react';
 import { motion } from 'framer-motion';
 import Skeleton from './Skeleton';
-import { Heart, MessageCircleHeart, PenLine, Sparkles } from 'lucide-react';
+import { Heart, MessageCircleHeart, PenLine, RefreshCw, Sparkles } from 'lucide-react';
 
 interface PageLoaderProps {
   type?: 'spinner' | 'skeleton' | 'profile' | 'content';
@@ -11,15 +11,41 @@ interface PageLoaderProps {
   showNavbar?: boolean;
   fullscreen?: boolean;
   className?: string;
+  showRefreshButton?: boolean;
 }
+
+interface ForceRefreshButtonProps {
+  onClick: () => void;
+}
+
+const ForceRefreshButton: React.FC<ForceRefreshButtonProps> = ({ onClick }) => (
+  <motion.button
+    type="button"
+    onClick={onClick}
+    className="mt-6 inline-flex items-center justify-center gap-2 rounded-full border border-white/70 bg-white/85 px-5 py-3 text-sm font-black text-slate-700 shadow-[0_14px_35px_rgba(15,23,42,.10)] backdrop-blur-xl transition hover:-translate-y-0.5 hover:border-rose-200 hover:bg-white hover:text-rose-600 active:translate-y-0 dark:border-white/10 dark:bg-white/10 dark:text-slate-100 dark:hover:bg-white/15"
+    initial={{ opacity: 0, y: 8 }}
+    animate={{ opacity: 1, y: 0 }}
+    transition={{ delay: 1.2, duration: 0.25 }}
+    whileTap={{ scale: 0.97 }}
+    aria-label="强制刷新页面"
+  >
+    <RefreshCw className="h-4 w-4" />
+    页面卡住？强制刷新
+  </motion.button>
+);
 
 const PageLoader: React.FC<PageLoaderProps> = ({
   type = 'spinner',
   message = '加载中...',
   showNavbar = false,
   fullscreen = true,
-  className = ''
+  className = '',
+  showRefreshButton = true
 }) => {
+  const handleForceRefresh = () => {
+    window.location.reload();
+  };
+
   const SoftConfessionLoader = () => (
     <motion.div
       className="relative flex flex-col items-center justify-center text-center"
@@ -241,14 +267,18 @@ const PageLoader: React.FC<PageLoaderProps> = ({
         <div className="pointer-events-none absolute right-16 bottom-28 h-24 w-24 rotate-12 rounded-[36%] bg-rose-300/25 blur-sm" />
         <div className={showNavbar ? 'pt-16' : ''}>
           {renderContent()}
+          <div className="flex justify-center">
+            {showRefreshButton && <ForceRefreshButton onClick={handleForceRefresh} />}
+          </div>
         </div>
       </motion.div>
     );
   }
 
   return (
-    <div className={`flex items-center justify-center p-8 ${className}`}>
+    <div className={`flex flex-col items-center justify-center p-8 ${className}`}>
       {renderContent()}
+      {showRefreshButton && <ForceRefreshButton onClick={handleForceRefresh} />}
     </div>
   );
 };

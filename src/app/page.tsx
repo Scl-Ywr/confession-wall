@@ -20,6 +20,7 @@ import Modal from '@/components/AnimatedModal';
 import toast from 'react-hot-toast';
 import { usePageRefresh } from '@/hooks/usePageRefresh';
 import PageLoader from '@/components/PageLoader';
+import { withTimeout } from '@/utils/asyncTimeout';
 import {
   Heart,
   LockKeyhole,
@@ -27,6 +28,8 @@ import {
   ShieldCheck,
   Sparkles,
 } from 'lucide-react';
+
+const CONFESSION_LOAD_TIMEOUT_MS = 12000;
 
 export default function Home() {
   const router = useRouter();
@@ -55,7 +58,11 @@ export default function Home() {
     refetch: refetchConfessions
   } = useInfiniteQuery<Confession[], Error>({
     queryKey: ['confessions'],
-    queryFn: (context) => confessionService.getConfessions(context.pageParam as number),
+    queryFn: (context) => withTimeout(
+      confessionService.getConfessions(context.pageParam as number),
+      CONFESSION_LOAD_TIMEOUT_MS,
+      '加载表白墙'
+    ),
     getNextPageParam: (lastPage, allPages) => {
       // 如果返回的数据数量少于请求的limit，说明没有更多数据了
       return lastPage.length >= 10 ? allPages.length + 1 : undefined;
@@ -64,8 +71,8 @@ export default function Home() {
     staleTime: 5 * 60 * 1000, // 5分钟缓存有效期
     refetchOnMount: true, // 组件挂载时重新获取数据
     refetchOnWindowFocus: false, // 窗口获得焦点时不重新获取
-    retry: 3, // 失败时重试3次
-    retryDelay: (attemptIndex) => Math.min(1000 * 2 ** attemptIndex, 30000), // 指数退避
+    retry: 1,
+    retryDelay: 1200,
     placeholderData: (previousData) => previousData, // 重新获取数据时保留之前的数据，避免空白
   });
 
@@ -78,7 +85,11 @@ export default function Home() {
     queryKey: ['search', searchKeyword, searchType],
     queryFn: () => {
       if (!searchKeyword.trim()) return [];
-      return confessionService.searchConfessions(searchKeyword, searchType, 1);
+      return withTimeout(
+        confessionService.searchConfessions(searchKeyword, searchType, 1),
+        CONFESSION_LOAD_TIMEOUT_MS,
+        '搜索表白'
+      );
     },
     enabled: false, // 禁用自动执行，手动触发
     staleTime: 3 * 60 * 1000, // 3分钟缓存有效期

@@ -12,6 +12,7 @@ import PageLoader from '@/components/PageLoader';
 import { MessageCircleIcon, UserSearchIcon, UsersIcon, TrashIcon, PlusIcon, UsersRoundIcon } from 'lucide-react';
 import { supabase } from '@/lib/supabase/client';
 import { usePageRefresh } from '@/hooks/usePageRefresh';
+import { withTimeout } from '@/utils/asyncTimeout';
 
 type PrivateUnreadMessage = {
   sender_id: string;
@@ -26,6 +27,62 @@ type ProfileStatusPayload = {
     id: string;
     online_status?: OnlineStatus;
     last_seen?: string;
+  };
+};
+
+const CHAT_LIST_TIMEOUT_MS = 10000;
+
+const getLastActiveDate = (lastSeen?: string, updatedAt?: string) => {
+  const source = lastSeen || updatedAt;
+  if (!source) return null;
+
+  const date = new Date(source);
+  return Number.isNaN(date.getTime()) ? null : date;
+};
+
+const getFriendPresence = (onlineStatus?: OnlineStatus, lastSeen?: string, updatedAt?: string) => {
+  const lastActiveDate = getLastActiveDate(lastSeen, updatedAt);
+  const now = new Date();
+  const timeDiff = lastActiveDate ? now.getTime() - lastActiveDate.getTime() : Number.POSITIVE_INFINITY;
+  const isRecent = timeDiff >= 0 && timeDiff < 5 * 60 * 1000;
+  const isOnline = Boolean(lastSeen && isRecent && onlineStatus !== 'offline');
+
+  if (isOnline) {
+    return {
+      text: onlineStatus === 'away' ? '离开' : '在线',
+      dotClass: onlineStatus === 'away' ? 'bg-yellow-500' : 'bg-green-500',
+      textClass: onlineStatus === 'away' ? 'text-yellow-500' : 'text-green-500',
+    };
+  }
+
+  if (!lastActiveDate) {
+    return {
+      text: '离线',
+      dotClass: 'bg-gray-400',
+      textClass: 'text-gray-500 dark:text-gray-400',
+    };
+  }
+
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const activeDay = new Date(lastActiveDate.getFullYear(), lastActiveDate.getMonth(), lastActiveDate.getDate());
+  const dayDiff = Math.round((today.getTime() - activeDay.getTime()) / 86400000);
+  const timeText = lastActiveDate.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' });
+
+  let text: string;
+  if (dayDiff === 0) {
+    text = `今天 ${timeText}`;
+  } else if (dayDiff === 1) {
+    text = `昨天 ${timeText}`;
+  } else if (now.getFullYear() === lastActiveDate.getFullYear()) {
+    text = `${lastActiveDate.toLocaleDateString('zh-CN', { month: '2-digit', day: '2-digit' })} ${timeText}`;
+  } else {
+    text = `${lastActiveDate.toLocaleDateString('zh-CN', { year: 'numeric', month: '2-digit', day: '2-digit' })} ${timeText}`;
+  }
+
+  return {
+    text,
+    dotClass: 'bg-gray-400',
+    textClass: 'text-gray-500 dark:text-gray-400',
   };
 };
 
@@ -56,24 +113,22 @@ const ChatListPage = () => {
 
     try {
       setLoading(true);
-      // 分别获取好友列表和群聊列表，确保即使其中一个失败，另一个也能显示
-      // 获取好友列表
-      try {
-        const friendships = await chatService.getFriends();
-        setFriends(friendships);
+      const [friendsResult, groupsResult] = await Promise.allSettled([
+        withTimeout(chatService.getFriends(), CHAT_LIST_TIMEOUT_MS, '获取好友列表'),
+        withTimeout(chatService.getGroups(), CHAT_LIST_TIMEOUT_MS, '获取群聊列表'),
+      ]);
 
-      } catch (friendsError) {
-        console.error('Failed to fetch friends:', friendsError);
+      if (friendsResult.status === 'fulfilled') {
+        setFriends(friendsResult.value);
+      } else {
+        console.error('Failed to fetch friends:', friendsResult.reason);
         setFriends([]);
       }
 
-      // 获取群聊列表
-      try {
-        const userGroups = await chatService.getGroups();
-        setGroups(userGroups);
-
-      } catch (groupsError) {
-        console.error('Failed to fetch groups:', groupsError);
+      if (groupsResult.status === 'fulfilled') {
+        setGroups(groupsResult.value);
+      } else {
+        console.error('Failed to fetch groups:', groupsResult.reason);
         setGroups([]);
       }
     } finally {
@@ -187,8 +242,10 @@ const ChatListPage = () => {
       }
 
       await fetchFriendsAndGroups();
-      // 在获取好友和群聊列表后，立即刷新未读计数
-      await refreshUnreadCounts();
+      // 未读数不是首屏依赖，避免慢查询把聊天列表卡在加载页。
+      refreshUnreadCounts().catch(error => {
+        console.error('Failed to refresh unread counts after initial load:', error);
+      });
     };
     loadData();
   }, [authLoading, user, fetchFriendsAndGroups, refreshUnreadCounts]);
@@ -632,7 +689,8 @@ const ChatListPage = () => {
                         {friends.map((friendship) => {
                           const friend = friendship.friend_profile;
                           const friendId = friendship.friend_id;
-                          
+                          const presence = getFriendPresence(friend?.online_status, friend?.last_seen, friend?.updated_at);
+                           
                           // 即使没有好友资料，也要显示好友项，使用默认信息
                           return (
                             <div key={friendId} className="flex items-center gap-3 p-3 rounded-xl hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors group">
@@ -658,23 +716,8 @@ const ChatListPage = () => {
                                       </div>
                                     )}
                                   </div>
-                                  {/* 在线状态指示器 - 根据lastSeen时间判断，5分钟内视为在线 */}
-                                  <div className={`absolute bottom-0 right-0 w-4 h-4 rounded-full border-2 border-white dark:border-gray-700 ${(() => {
-                                    if (!friend || !friend.last_seen) return 'bg-gray-400';
-                                    
-                                    try {
-                                      const lastSeen = new Date(friend.last_seen);
-                                      const now = new Date();
-                                      const timeDiff = now.getTime() - lastSeen.getTime();
-                                      // 5分钟内且online_status不是offline视为在线
-                                          if (timeDiff >= 0 && timeDiff < 5 * 60 * 1000 && friend.online_status !== 'offline') {
-                                            return friend.online_status === 'away' ? 'bg-yellow-500' : 'bg-green-500';
-                                          }
-                                    } catch {
-                                      // 日期解析错误，视为离线
-                                    }
-                                    return 'bg-gray-400';
-                                  })()}`}></div>
+                                  {/* 在线状态指示器 */}
+                                  <div className={`absolute bottom-0 right-0 w-4 h-4 rounded-full border-2 border-white dark:border-gray-700 ${presence.dotClass}`}></div>
                                   {/* 未读消息指示器 */}
                                   {friendship.unread_count > 0 && (
                                     <div className="absolute top-0 right-0 w-5 h-5 bg-red-500 text-white text-xs font-bold rounded-full flex items-center justify-center border-2 border-white dark:border-gray-700 shadow-md">
@@ -684,75 +727,13 @@ const ChatListPage = () => {
                                 </div>
                                 <div className="flex-1 min-w-0">
                                   <div className="flex flex-col">
-                                    {/* 显示日期（如果不是当天） */}
-                                    {friend?.online_status !== 'online' && (() => {
-                                      if (friend) {
-                                        const lastActive = friend.last_seen || friend.updated_at;
-                                        if (lastActive) {
-                                          try {
-                                            const lastActiveDate = new Date(lastActive);
-                                            const today = new Date();
-                                            const isSameDay = lastActiveDate.toDateString() === today.toDateString();
-                                            if (!isSameDay) {
-                                              return (
-                                                <span className="text-xs text-gray-500 dark:text-gray-400 mb-1">
-                                                  {lastActiveDate.toLocaleDateString('zh-CN', { year: 'numeric', month: '2-digit', day: '2-digit' })}
-                                                </span>
-                                              );
-                                            }
-                                          } catch {
-                                            // 忽略日期解析错误
-                                          }
-                                        }
-                                      }
-                                      return null;
-                                    })()}
                                     <div className="flex items-center justify-between">
                                       <h3 className="font-semibold text-gray-800 dark:text-white truncate">
                                         {friend?.display_name || friend?.username || '好友'}
                                       </h3>
-                                      {(() => {
-                                        if (!friend) {
-                                          return <span className="text-xs text-gray-500 dark:text-gray-400">离线</span>;
-                                        }
-                                        
-                                        // 根据lastSeen时间和online_status字段判断是否在线，5分钟内且online_status不是offline视为在线
-                                        let isOnline = false;
-                                        try {
-                                          if (friend.last_seen) {
-                                            const lastSeen = new Date(friend.last_seen);
-                                            const now = new Date();
-                                            const timeDiff = now.getTime() - lastSeen.getTime();
-                                            // 5分钟内且online_status不是offline视为在线
-                                            isOnline = timeDiff >= 0 && timeDiff < 5 * 60 * 1000 && friend.online_status !== 'offline';
-                                          }
-                                        } catch {
-                                          // 日期解析错误，视为离线
-                                        }
-                                        
-                                        if (isOnline) {
-                                          return friend.online_status === 'away' ? (
-                                            <span className="text-xs text-yellow-500">离开</span>
-                                          ) : (
-                                            <span className="text-xs text-green-500">在线</span>
-                                          );
-                                        } else {
-                                          // 离线状态显示最后活跃时间
-                                          const lastActive = friend.last_seen || friend.updated_at;
-                                          if (lastActive) {
-                                            try {
-                                              return (
-                                                <span className="text-xs text-gray-500 dark:text-gray-400">
-                                                  {new Date(lastActive).toLocaleString('zh-CN', { hour: '2-digit', minute: '2-digit' })}
-                                                </span>
-                                              );
-                                            } catch {
-                                              return <span className="text-xs text-gray-500 dark:text-gray-400">离线</span>;
-                                            }
-                                          }
-                                          return <span className="text-xs text-gray-500 dark:text-gray-400">离线</span>;
-                                        }
-                                      })()}
+                                      <span className={`ml-3 flex-shrink-0 text-xs ${presence.textClass}`}>
+                                        {presence.text}
+                                      </span>
                                     </div>
                                     {/* 这里可以添加最后一条消息的显示 */}
                                   </div>

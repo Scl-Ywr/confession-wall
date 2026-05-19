@@ -4,7 +4,7 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { chatService } from '@/services/chatService';
 import { chatBackgroundService } from '@/services/chatBackgroundService';
 import { ChatMessage, OnlineStatus, Profile } from '@/types/chat';
-import { MessageSquare, Send, Smile, Trash2, Search, Image as ImageIcon, Upload, X, Palette, Clock } from 'lucide-react';
+import { AlertCircle, Loader2, MessageSquare, Send, Smile, Trash2, Search, Image as ImageIcon, Upload, X, Palette, Clock } from 'lucide-react';
 import Image from 'next/image';
 import { useAuth } from '@/context/AuthContext';
 import { supabase } from '@/lib/supabase/client';
@@ -33,6 +33,8 @@ type ProfileRealtimePayload = {
   };
 };
 
+type SendStatus = 'idle' | 'sending' | 'failed';
+
 export function ChatInterface({ otherUserId, otherUserProfile: initialOtherUserProfile }: ChatInterfaceProps) {
   const { user } = useAuth();
   const currentUserId = user?.id;
@@ -42,6 +44,8 @@ export function ChatInterface({ otherUserId, otherUserProfile: initialOtherUserP
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
   const [sending, setSending] = useState(false);
+  const [sendStatus, setSendStatus] = useState<SendStatus>('idle');
+  const [sendStatusMessage, setSendStatusMessage] = useState('');
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
   const [selectedMessages, setSelectedMessages] = useState<string[]>([]);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
@@ -53,9 +57,26 @@ export function ChatInterface({ otherUserId, otherUserProfile: initialOtherUserP
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const messagesStartRef = useRef<HTMLDivElement>(null);
   const channelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
+  const negativeFriendshipChecksRef = useRef(0);
   const [hasMore, setHasMore] = useState(true);
   const [offset, setOffset] = useState(0);
   const [connectionStatus, setConnectionStatus] = useState<'connected' | 'connecting' | 'disconnected'>('connecting');
+
+  const markSending = (message: string) => {
+    setSending(true);
+    setSendStatus('sending');
+    setSendStatusMessage(message);
+  };
+
+  const markSendFailed = (message: string) => {
+    setSendStatus('failed');
+    setSendStatusMessage(message);
+  };
+
+  const clearSendStatus = () => {
+    setSendStatus('idle');
+    setSendStatusMessage('');
+  };
   
   // 背景图片相关状态
   const [backgroundImageUrl, setBackgroundImageUrl] = useState<string | null>(null);
@@ -238,9 +259,23 @@ export function ChatInterface({ otherUserId, otherUserProfile: initialOtherUserP
     
     try {
       const status = await chatService.checkFriendshipStatus(otherUserId);
-      const newStatus = status === 'accepted' ? 'accepted' : 'none';
-      setFriendshipStatus(newStatus);
-      if (newStatus !== 'accepted') {
+
+      if (status === 'unknown') {
+        setInitialCheckDone(true);
+        return;
+      }
+
+      if (status === 'accepted') {
+        negativeFriendshipChecksRef.current = 0;
+        setFriendshipStatus('accepted');
+        setShowFriendDeletedAlert(false);
+        setInitialCheckDone(true);
+        return;
+      }
+
+      negativeFriendshipChecksRef.current += 1;
+      if (negativeFriendshipChecksRef.current >= 2) {
+        setFriendshipStatus('none');
         setShowFriendDeletedAlert(true);
       }
       setInitialCheckDone(true);
@@ -587,7 +622,7 @@ export function ChatInterface({ otherUserId, otherUserProfile: initialOtherUserP
     const file = e.target.files?.[0];
     if (!file || sending) return;
 
-    setSending(true);
+    markSending('正在发送文件...');
     
     try {
       let fileType: 'image' | 'video' | 'file' = 'file';
@@ -607,7 +642,7 @@ export function ChatInterface({ otherUserId, otherUserProfile: initialOtherUserP
       } else if (file.type.startsWith('video/')) {
         // 视频文件，最大50MB
         if (file.size > 50 * 1024 * 1024) {
-          alert('视频文件大小不能超过50MB');
+          markSendFailed('视频文件大小不能超过50MB');
           setSending(false);
           return;
         }
@@ -615,7 +650,7 @@ export function ChatInterface({ otherUserId, otherUserProfile: initialOtherUserP
         fileType = 'video';
       } else {
         // 其他文件，暂时不支持
-        alert('暂不支持该文件类型');
+        markSendFailed('暂不支持该文件类型');
         setSending(false);
         return;
       }
@@ -640,9 +675,10 @@ export function ChatInterface({ otherUserId, otherUserProfile: initialOtherUserP
       });
       
       scrollToBottom();
+      clearSendStatus();
     } catch (error) {
       console.error('Error sending file message:', error);
-      alert('发送文件失败，请重试');
+      markSendFailed('发送文件失败，请重试');
     } finally {
       setSending(false);
       // 重置文件输入
@@ -655,7 +691,7 @@ export function ChatInterface({ otherUserId, otherUserProfile: initialOtherUserP
     e.preventDefault();
     if (!newMessage.trim() || sending) return;
 
-    setSending(true);
+    markSending('发送中...');
     const messageContent = newMessage.trim();
     setNewMessage('');
 
@@ -680,9 +716,12 @@ export function ChatInterface({ otherUserId, otherUserProfile: initialOtherUserP
       });
       
       scrollToBottom();
-    } catch {
+      clearSendStatus();
+    } catch (error) {
+      console.error('Error sending text message:', error);
       // 发送失败，恢复输入
       setNewMessage(messageContent);
+      markSendFailed('发送失败，请检查网络后重试');
     } finally {
       setSending(false);
     }
@@ -690,7 +729,7 @@ export function ChatInterface({ otherUserId, otherUserProfile: initialOtherUserP
 
   // 发送语音消息
   const handleSendVoiceMessage = async (audioBlob: Blob) => {
-    setSending(true);
+    markSending('正在发送语音...');
     
     try {
       // 从Blob中获取实际的MIME类型和文件扩展名
@@ -723,12 +762,12 @@ export function ChatInterface({ otherUserId, otherUserProfile: initialOtherUserP
       });
       
       scrollToBottom();
+      clearSendStatus();
     } catch (error) {
       // 更详细的错误处理和日志记录
       console.error('Error sending voice message:', error);
-      // 使用showToast替代alert，提供更好的用户体验
       const errorMessage = error instanceof Error ? error.message : '发送语音消息失败，请重试';
-      alert(errorMessage);
+      markSendFailed(errorMessage);
     } finally {
       setSending(false);
     }
@@ -1344,7 +1383,12 @@ export function ChatInterface({ otherUserId, otherUserProfile: initialOtherUserP
                   placeholder="输入消息..."
                   className="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-full focus:ring-2 focus:ring-primary-500 focus:outline-none bg-white dark:bg-gray-700 text-gray-800 dark:text-white"
                   value={newMessage}
-                  onChange={(e) => setNewMessage(e.target.value)}
+                  onChange={(e) => {
+                    setNewMessage(e.target.value);
+                    if (sendStatus === 'failed') {
+                      clearSendStatus();
+                    }
+                  }}
                   onKeyDown={(e) => e.key === 'Enter' && !e.shiftKey && handleSendMessage(e as unknown as React.FormEvent)}
                 />
               </div>
@@ -1354,12 +1398,42 @@ export function ChatInterface({ otherUserId, otherUserProfile: initialOtherUserP
                 disabled={!newMessage.trim() || sending}
               >
                 {sending ? (
-                  <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
+                  <Loader2 className="w-5 h-5 animate-spin" />
                 ) : (
                   <Send className="w-5 h-5 sm:w-6 sm:h-6" />
                 )}
               </button>
             </div>
+
+            {sendStatus !== 'idle' && (
+              <div
+                className={`flex items-center justify-between gap-3 rounded-2xl px-3 py-2 text-sm font-medium transition-colors ${
+                  sendStatus === 'sending'
+                    ? 'border border-blue-100 bg-blue-50 text-blue-700 dark:border-blue-500/30 dark:bg-blue-500/10 dark:text-blue-200'
+                    : 'border border-red-100 bg-red-50 text-red-700 dark:border-red-500/30 dark:bg-red-500/10 dark:text-red-200'
+                }`}
+                role="status"
+                aria-live="polite"
+              >
+                <span className="flex min-w-0 items-center gap-2">
+                  {sendStatus === 'sending' ? (
+                    <Loader2 className="h-4 w-4 flex-shrink-0 animate-spin" />
+                  ) : (
+                    <AlertCircle className="h-4 w-4 flex-shrink-0" />
+                  )}
+                  <span className="truncate">{sendStatusMessage}</span>
+                </span>
+                {sendStatus === 'failed' && (
+                  <button
+                    type="button"
+                    className="flex-shrink-0 rounded-full px-2 py-1 text-xs transition-colors hover:bg-red-100 dark:hover:bg-red-500/20"
+                    onClick={clearSendStatus}
+                  >
+                    关闭
+                  </button>
+                )}
+              </div>
+            )}
             
             {/* 语音录制组件 */}
             {showVoiceRecorder && (

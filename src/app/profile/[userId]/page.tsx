@@ -67,7 +67,9 @@ const OtherUserProfilePage = () => {
           if (user) {
             // 使用用户的 UUID 而不是用户名检查好友关系
             const status = await chatService.checkFriendshipStatus(profileData.id);
-            setFriendshipStatus(status);
+            if (status !== 'unknown') {
+              setFriendshipStatus(status);
+            }
           }
         } else {
           setError('用户不存在');
@@ -357,7 +359,9 @@ const OtherUserProfilePage = () => {
             // 只有登录用户才检查好友关系
             if (user) {
               const status = await chatService?.checkFriendshipStatus(profileData.id);
-              setFriendshipStatus(status);
+              if (status !== 'unknown') {
+                setFriendshipStatus(status);
+              }
             }
           }
         } catch (err) {

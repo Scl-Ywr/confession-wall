@@ -9,7 +9,7 @@ import { useTheme } from '@/theme/ThemeContext';
 import { useChat } from '@/context/ChatContext';
 import { useDeviceDetection } from '@/hooks/useDeviceDetection';
 import { HomeIcon, UserIcon, ArrowRightOnRectangleIcon, UserPlusIcon, UsersIcon, BellIcon, VideoCameraIcon, MusicalNoteIcon, XMarkIcon, PaintBrushIcon, HeartIcon } from '@heroicons/react/20/solid';
-import { MessageCircleIcon } from 'lucide-react';
+import { BookOpenText, MessageCircleIcon } from 'lucide-react';
 import { chatService } from '@/services/chatService';
 import { Notification } from '@/types/chat';
 import { usePathname, useRouter } from 'next/navigation';
@@ -420,6 +420,13 @@ const Navbar = () => {
               ) : user ? (
                 <div className="ml-3 flex items-center md:ml-5 gap-2.5">
                   <Link
+                    href="/blog"
+                    className="app-btn"
+                    aria-label="博客"
+                  >
+                    <BookOpenText className="w-5.5 h-5.5" />
+                  </Link>
+                  <Link
                     href="/chat"
                     className="app-btn relative"
                     aria-label="聊天"
@@ -458,6 +465,13 @@ const Navbar = () => {
                     aria-label="登录"
                   >
                     <UserIcon className="w-5.5 h-5.5" />
+                  </Link>
+                  <Link
+                    href="/blog"
+                    className="app-btn"
+                    aria-label="博客"
+                  >
+                    <BookOpenText className="w-5.5 h-5.5" />
                   </Link>
                   <Link
                     href="/auth/register"
@@ -638,6 +652,20 @@ const Navbar = () => {
                   {user ? (
                     <>
                       <Link
+                        href="/blog"
+                        onClick={() => setShowMobileMenu(false)}
+                        className="flex items-center gap-4 p-4 rounded-2xl transition-all duration-300 hover:bg-gradient-to-r from-orange-50 to-red-50 dark:hover:bg-gradient-to-r from-orange-900/20 to-red-900/20 transform hover:-translate-x-1 shadow-sm hover:shadow-md"
+                        style={{ color: 'var(--color-text)' }}
+                      >
+                        <div className="flex items-center gap-4">
+                          <div className="w-10 h-10 rounded-full bg-gradient-to-r from-cyan-500 to-slate-900 flex items-center justify-center text-white shadow-md">
+                            <BookOpenText className="w-5 h-5" />
+                          </div>
+                          <span className="text-lg font-medium" style={{ color: 'var(--color-text)' }}>博客</span>
+                        </div>
+                      </Link>
+
+                      <Link
                         href="/chat"
                         onClick={() => setShowMobileMenu(false)}
                         className="flex items-center justify-between w-full p-4 rounded-2xl transition-all duration-300 hover:bg-gradient-to-r from-orange-50 to-red-50 dark:hover:bg-gradient-to-r from-orange-900/20 to-red-900/20 transform hover:-translate-x-1 shadow-sm hover:shadow-md"
@@ -688,6 +716,17 @@ const Navbar = () => {
                     </>
                   ) : (
                     <div className="pt-4 space-y-3">
+                      <Link
+                        href="/blog"
+                        onClick={() => setShowMobileMenu(false)}
+                        className="flex items-center gap-4 p-4 rounded-2xl transition-all duration-300 hover:bg-gradient-to-r from-orange-50 to-red-50 dark:hover:bg-gradient-to-r from-orange-900/20 to-red-900/20 transform hover:-translate-x-1 shadow-sm hover:shadow-md"
+                        style={{ color: 'var(--color-text)' }}
+                      >
+                        <div className="w-10 h-10 rounded-full bg-gradient-to-r from-cyan-500 to-slate-900 flex items-center justify-center text-white shadow-md">
+                          <BookOpenText className="w-5 h-5" />
+                        </div>
+                        <span className="text-lg font-medium">博客</span>
+                      </Link>
                       <Link
                         href="/auth/login"
                         onClick={() => setShowMobileMenu(false)}

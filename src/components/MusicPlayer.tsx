@@ -33,6 +33,8 @@ const MusicPlayer: React.FC<MusicPlayerProps> = () => {
   const isSeekingRef = useRef(false);
   const lyricContainerRef = useRef<HTMLDivElement>(null);
   const lyricRefs = useRef<(HTMLParagraphElement | null)[]>([]);
+  const dragStartRef = useRef<{ pointerId: number; x: number; y: number; buttonX: number; buttonY: number } | null>(null);
+  const wasDraggedRef = useRef(false);
 
   // Data states
   const [tracks, setTracks] = useState<MusicTrack[]>([]);
@@ -60,12 +62,29 @@ const MusicPlayer: React.FC<MusicPlayerProps> = () => {
   const [showSearchResults, setShowSearchResults] = useState(false);
   const [showLyrics, setShowLyrics] = useState(true);
   const [windowSize, setWindowSize] = useState({ width: 0, height: 0 });
+  const [buttonPosition, setButtonPosition] = useState<{ x: number; y: number } | null>(null);
 
   // Lyrics states
   const [lyrics, setLyrics] = useState<Array<{time: number, text: string}>>([]);
   const [currentLyricIndex, setCurrentLyricIndex] = useState(0);
 
   const isMobile = windowSize.width < 768;
+
+  const getButtonSize = React.useCallback(() => (windowSize.width < 768 ? 64 : 60), [windowSize.width]);
+
+  const clampButtonPosition = React.useCallback((position: { x: number; y: number }) => {
+    if (typeof window === 'undefined') return position;
+
+    const buttonSize = getButtonSize();
+    const margin = 12;
+    const maxX = Math.max(margin, window.innerWidth - buttonSize - margin);
+    const maxY = Math.max(margin, window.innerHeight - buttonSize - margin);
+
+    return {
+      x: Math.min(Math.max(position.x, margin), maxX),
+      y: Math.min(Math.max(position.y, margin), maxY),
+    };
+  }, [getButtonSize]);
 
   // Filter search results based on playable status
   const filteredSearchResults = React.useMemo(() => {
@@ -85,6 +104,29 @@ const MusicPlayer: React.FC<MusicPlayerProps> = () => {
     window.addEventListener('resize', updateWindowSize);
     return () => window.removeEventListener('resize', updateWindowSize);
   }, []);
+
+  useEffect(() => {
+    if (typeof window === 'undefined' || windowSize.width === 0 || windowSize.height === 0) return;
+
+    setButtonPosition(prev => {
+      if (prev) return clampButtonPosition(prev);
+
+      const buttonSize = getButtonSize();
+      const storedPosition = window.localStorage.getItem('musicPlayerButtonPosition');
+      if (storedPosition) {
+        try {
+          return clampButtonPosition(JSON.parse(storedPosition));
+        } catch {
+          window.localStorage.removeItem('musicPlayerButtonPosition');
+        }
+      }
+
+      return {
+        x: window.innerWidth - buttonSize - (isMobile ? 20 : 24),
+        y: window.innerHeight - buttonSize - (isMobile ? 20 : 24),
+      };
+    });
+  }, [clampButtonPosition, getButtonSize, isMobile, windowSize.width, windowSize.height]);
 
   // Parse LRC lyrics
   const parseLyric = (lrcText: string): Array<{time: number, text: string}> => {
@@ -352,6 +394,67 @@ const MusicPlayer: React.FC<MusicPlayerProps> = () => {
     }
   };
 
+  const handleButtonPointerDown = (event: React.PointerEvent<HTMLButtonElement>) => {
+    if (!buttonPosition) return;
+
+    dragStartRef.current = {
+      pointerId: event.pointerId,
+      x: event.clientX,
+      y: event.clientY,
+      buttonX: buttonPosition.x,
+      buttonY: buttonPosition.y,
+    };
+    wasDraggedRef.current = false;
+    event.currentTarget.setPointerCapture(event.pointerId);
+  };
+
+  const handleButtonPointerMove = (event: React.PointerEvent<HTMLButtonElement>) => {
+    const dragStart = dragStartRef.current;
+    if (!dragStart || dragStart.pointerId !== event.pointerId) return;
+
+    const deltaX = event.clientX - dragStart.x;
+    const deltaY = event.clientY - dragStart.y;
+    if (Math.abs(deltaX) > 4 || Math.abs(deltaY) > 4) {
+      wasDraggedRef.current = true;
+    }
+
+    setButtonPosition(clampButtonPosition({
+      x: dragStart.buttonX + deltaX,
+      y: dragStart.buttonY + deltaY,
+    }));
+  };
+
+  const handleButtonPointerUp = (event: React.PointerEvent<HTMLButtonElement>) => {
+    if (dragStartRef.current?.pointerId === event.pointerId) {
+      dragStartRef.current = null;
+    }
+
+    try {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    } catch {
+      // Pointer capture may already be released by the browser.
+    }
+
+    setButtonPosition(prev => {
+      if (!prev || typeof window === 'undefined') return prev;
+      const nextPosition = clampButtonPosition(prev);
+      window.localStorage.setItem('musicPlayerButtonPosition', JSON.stringify(nextPosition));
+      return nextPosition;
+    });
+  };
+
+  const togglePlayerVisibility = () => {
+    if (wasDraggedRef.current) {
+      wasDraggedRef.current = false;
+      return;
+    }
+
+    setIsVisible(prev => {
+      if (!prev) setShowSearchBox(true);
+      return !prev;
+    });
+  };
+
   // Mute toggle
   const toggleMute = () => {
     if (!audioRef.current) return;
@@ -501,14 +604,18 @@ const MusicPlayer: React.FC<MusicPlayerProps> = () => {
     <>
       {/* Floating Music Button */}
       <motion.button
-        onClick={() => {
-          setIsVisible(!isVisible);
-          if (!isVisible) setShowSearchBox(true);
-        }}
-        className="fixed z-[9999] flex items-center justify-center shadow-2xl cursor-pointer"
+        type="button"
+        onClick={togglePlayerVisibility}
+        onPointerDown={handleButtonPointerDown}
+        onPointerMove={handleButtonPointerMove}
+        onPointerUp={handleButtonPointerUp}
+        onPointerCancel={handleButtonPointerUp}
+        className="fixed z-[9999] flex touch-none select-none items-center justify-center shadow-2xl cursor-grab active:cursor-grabbing"
         style={{
-          bottom: isMobile ? '20px' : '24px',
-          right: isMobile ? '20px' : '24px',
+          left: buttonPosition ? `${buttonPosition.x}px` : 'auto',
+          top: buttonPosition ? `${buttonPosition.y}px` : 'auto',
+          bottom: buttonPosition ? 'auto' : (isMobile ? '20px' : '24px'),
+          right: buttonPosition ? 'auto' : (isMobile ? '20px' : '24px'),
           width: isMobile ? '64px' : '60px',
           height: isMobile ? '64px' : '60px',
           borderRadius: '50%',
@@ -519,8 +626,22 @@ const MusicPlayer: React.FC<MusicPlayerProps> = () => {
         whileHover={{ scale: 1.05, boxShadow: '0 6px 20px rgba(244, 114, 142, 0.5)' }}
         whileTap={{ scale: 0.95 }}
         transition={{ type: 'spring', stiffness: 400, damping: 17 }}
+        aria-label="打开音乐播放器，按住可拖动"
+        title="音乐播放器，按住可拖动"
       >
         <Music size={isMobile ? 28 : 26} color="#ffffff" />
+        {tracks.length > 0 && currentTrackIndex < tracks.length && (
+          <span className="absolute -bottom-1 -right-1 h-9 w-9 overflow-hidden rounded-full border-2 border-white bg-white shadow-lg">
+            <Image
+              src={tracks[currentTrackIndex].coverUrl}
+              alt=""
+              width={36}
+              height={36}
+              className="h-full w-full object-cover"
+              unoptimized
+            />
+          </span>
+        )}
       </motion.button>
 
       {/* Main Player */}
@@ -543,10 +664,9 @@ const MusicPlayer: React.FC<MusicPlayerProps> = () => {
                   animate={{ y: 0 }}
                   exit={{ y: '100%' }}
                   transition={{ type: 'spring', damping: 30, stiffness: 300 }}
-                  className="fixed bottom-0 left-0 right-0 z-[9999] overflow-hidden"
+                  className="fixed bottom-0 left-0 right-0 z-[9999] flex max-h-[88dvh] flex-col overflow-hidden"
                   style={{
                     background: 'linear-gradient(to bottom, rgba(255, 248, 246, 0.95) 0%, rgba(254, 243, 239, 0.98) 100%)',
-                    maxHeight: '90vh',
                     borderTopLeftRadius: '32px',
                     borderTopRightRadius: '32px',
                     boxShadow: '0 -8px 32px rgba(248, 122, 67, 0.2)',
@@ -558,9 +678,28 @@ const MusicPlayer: React.FC<MusicPlayerProps> = () => {
                     <div className="w-12 h-1.5 rounded-full bg-orange-300/40" />
                   </div>
 
+                  <div className="flex items-center justify-between px-5 pb-3">
+                    <div className="min-w-0">
+                      <p className="text-xs font-semibold uppercase tracking-[0.18em] text-orange-500">Music</p>
+                      <h2 className="truncate text-lg font-bold text-gray-900 dark:text-white">
+                        {tracks.length > 0 && currentTrackIndex < tracks.length ? tracks[currentTrackIndex].title : '搜索音乐'}
+                      </h2>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setIsVisible(false)}
+                      className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-full bg-white/80 text-gray-500 shadow-sm transition-colors hover:text-gray-800"
+                      aria-label="关闭音乐播放器"
+                    >
+                      <X size={18} />
+                    </button>
+                  </div>
+
+                  <div className="flex-1 overflow-y-auto overscroll-contain pb-[max(1rem,env(safe-area-inset-bottom))]">
+
                   {/* Search Box */}
                   {showSearchBox && (
-                    <div className="px-5 pb-4">
+                    <div className="px-4 pb-3">
                       <div className="flex gap-2">
                         <div className="flex-1 relative">
                           <input
@@ -569,7 +708,7 @@ const MusicPlayer: React.FC<MusicPlayerProps> = () => {
                             value={searchKeyword}
                             onChange={(e) => setSearchKeyword(e.target.value)}
                             onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); handleSearch(); } }}
-                            className="w-full pl-12 pr-12 py-4 rounded-2xl text-base text-gray-700 dark:text-gray-200 placeholder-gray-400 dark:placeholder-gray-500 outline-none transition-all duration-200 border border-orange-200 dark:border-orange-900/30 focus:border-orange-400 dark:focus:border-orange-600 focus:ring-2 focus:ring-orange-200 dark:focus:ring-orange-900/50"
+                            className="w-full rounded-2xl border border-orange-200 py-3 pl-11 pr-11 text-base text-gray-700 outline-none transition-all duration-200 placeholder:text-gray-400 focus:border-orange-400 focus:ring-2 focus:ring-orange-200 dark:border-orange-900/30 dark:text-gray-200 dark:placeholder:text-gray-500 dark:focus:border-orange-600 dark:focus:ring-orange-900/50"
                             style={{
                               background: 'rgba(255, 255, 255, 0.8)',
                               backdropFilter: 'blur(10px)',
@@ -589,7 +728,7 @@ const MusicPlayer: React.FC<MusicPlayerProps> = () => {
                         <motion.button
                           type="button"
                           onClick={handleSearch}
-                          className="px-6 py-4 rounded-2xl font-medium text-white shadow-lg transition-all duration-200"
+                          className="rounded-2xl px-4 py-3 font-medium text-white shadow-lg transition-all duration-200"
                           style={{
                             background: 'linear-gradient(135deg, #f87a43 0%, #f4728e 100%)',
                             boxShadow: '0 4px 12px rgba(248, 122, 67, 0.4)',
@@ -610,7 +749,7 @@ const MusicPlayer: React.FC<MusicPlayerProps> = () => {
                         initial={{ opacity: 0, y: -10 }}
                         animate={{ opacity: 1, y: 0 }}
                         exit={{ opacity: 0, y: -10 }}
-                        className="px-5 pb-4 max-h-64 overflow-y-auto"
+                        className="max-h-[38dvh] overflow-y-auto px-4 pb-3"
                       >
                         <div className="flex items-center justify-between mb-3">
                           <div className="flex items-center gap-2">
@@ -686,10 +825,10 @@ const MusicPlayer: React.FC<MusicPlayerProps> = () => {
 
                   {/* Player Content */}
                   {tracks.length > 0 && (isPlaying || hasPlayed) && currentTrackIndex < tracks.length && (
-                    <div className="px-5 pb-8">
+                    <div className="px-4 pb-2">
                       {/* Album Cover */}
                       <motion.div
-                        className="w-48 h-48 mx-auto rounded-3xl overflow-hidden shadow-2xl mb-6 cursor-pointer"
+                        className="mx-auto mb-4 h-32 w-32 cursor-pointer overflow-hidden rounded-3xl shadow-2xl"
                         style={{
                           background: 'linear-gradient(135deg, rgba(248, 122, 67, 0.1), rgba(244, 114, 142, 0.1))',
                           backdropFilter: 'blur(10px)',
@@ -718,16 +857,16 @@ const MusicPlayer: React.FC<MusicPlayerProps> = () => {
                         <Image
                           src={tracks[currentTrackIndex].coverUrl}
                           alt={tracks[currentTrackIndex].title}
-                          width={192}
-                          height={192}
+                          width={128}
+                          height={128}
                           className="object-cover w-full h-full"
                           unoptimized
                         />
                       </motion.div>
 
                       {/* Track Info */}
-                      <div className="text-center mb-6">
-                        <h3 className="text-xl font-bold text-gray-800 dark:text-gray-100 mb-2 truncate">
+                      <div className="mb-4 text-center">
+                        <h3 className="mb-1 truncate text-lg font-bold text-gray-800 dark:text-gray-100">
                           {tracks[currentTrackIndex].title}
                         </h3>
                         <p className="text-sm text-gray-600 dark:text-gray-400 truncate">
@@ -736,7 +875,7 @@ const MusicPlayer: React.FC<MusicPlayerProps> = () => {
                       </div>
 
                       {/* Progress Bar */}
-                      <div className="mb-6">
+                      <div className="mb-4">
                         <div className="flex justify-between text-xs mb-2 text-gray-600 dark:text-gray-400">
                           <span>{formatTime(currentTime)}</span>
                           <span>{formatTime(duration)}</span>
@@ -766,29 +905,29 @@ const MusicPlayer: React.FC<MusicPlayerProps> = () => {
                       </div>
 
                       {/* Control Buttons */}
-                      <div className="flex items-center justify-center gap-4 mb-6">
+                      <div className="mb-4 flex items-center justify-center gap-2">
                         <motion.button
                           onClick={toggleShuffle}
-                          className="p-3 rounded-full glass-card transition-all duration-200"
+                          className="rounded-full p-2.5 glass-card transition-all duration-200"
                           style={{
                             background: isShuffled ? 'rgba(248, 122, 67, 0.15)' : 'rgba(255, 255, 255, 0.8)',
                           }}
                           whileTap={{ scale: 0.9 }}
                         >
-                          <Shuffle size={20} color={isShuffled ? '#f87a43' : '#6b7280'} />
+                          <Shuffle size={18} color={isShuffled ? '#f87a43' : '#6b7280'} />
                         </motion.button>
 
                         <motion.button
                           onClick={handlePrevTrack}
-                          className="p-4 rounded-full glass-card"
+                          className="rounded-full p-3 glass-card"
                           whileTap={{ scale: 0.9 }}
                         >
-                          <SkipBack size={24} color="#6b7280" />
+                          <SkipBack size={22} color="#6b7280" />
                         </motion.button>
 
                         <motion.button
                           onClick={togglePlayPause}
-                          className="p-6 rounded-full shadow-2xl"
+                          className="rounded-full p-5 shadow-2xl"
                           style={{
                             background: 'linear-gradient(135deg, #f87a43 0%, #f4728e 100%)',
                             boxShadow: '0 8px 24px rgba(248, 122, 67, 0.4)',
@@ -796,29 +935,29 @@ const MusicPlayer: React.FC<MusicPlayerProps> = () => {
                           whileHover={{ scale: 1.05 }}
                           whileTap={{ scale: 0.95 }}
                         >
-                          {isPlaying ? <Pause size={32} color="#ffffff" /> : <Play size={32} color="#ffffff" />}
+                          {isPlaying ? <Pause size={28} color="#ffffff" /> : <Play size={28} color="#ffffff" />}
                         </motion.button>
 
                         <motion.button
                           onClick={handleNextTrack}
-                          className="p-4 rounded-full glass-card"
+                          className="rounded-full p-3 glass-card"
                           whileTap={{ scale: 0.9 }}
                         >
-                          <SkipForward size={24} color="#6b7280" />
+                          <SkipForward size={22} color="#6b7280" />
                         </motion.button>
 
                         <motion.button
                           onClick={toggleRepeatMode}
-                          className="p-3 rounded-full glass-card transition-all duration-200"
+                          className="rounded-full p-2.5 glass-card transition-all duration-200"
                           style={{
                             background: repeatMode !== 'off' ? 'rgba(248, 122, 67, 0.15)' : 'rgba(255, 255, 255, 0.8)',
                           }}
                           whileTap={{ scale: 0.9 }}
                         >
                           {repeatMode === 'one' ? (
-                            <Repeat1 size={20} color="#f87a43" />
+                            <Repeat1 size={18} color="#f87a43" />
                           ) : (
-                            <Repeat size={20} color={repeatMode === 'all' ? '#f87a43' : '#6b7280'} />
+                            <Repeat size={18} color={repeatMode === 'all' ? '#f87a43' : '#6b7280'} />
                           )}
                         </motion.button>
                       </div>
@@ -836,7 +975,7 @@ const MusicPlayer: React.FC<MusicPlayerProps> = () => {
                               <Volume2 size={20} color="#6b7280" />
                             )}
                           </motion.button>
-                          <div className="w-20 h-1 rounded-full bg-gray-200/50 dark:bg-gray-700/50 relative">
+                            <div className="relative h-1 w-24 rounded-full bg-gray-200/50 dark:bg-gray-700/50">
                             <div
                               className="absolute h-full rounded-full"
                               style={{
@@ -888,7 +1027,7 @@ const MusicPlayer: React.FC<MusicPlayerProps> = () => {
                             animate={{ height: 'auto', opacity: 1 }}
                             exit={{ height: 0, opacity: 0 }}
                             transition={{ duration: 0.3, ease: 'easeInOut' }}
-                            className="glass-card rounded-2xl overflow-hidden relative"
+                              className="glass-card relative overflow-hidden rounded-2xl"
                           >
                             {/* 渐变遮罩 - 顶部 */}
                             <div className="absolute top-0 left-0 right-0 h-12 bg-gradient-to-b from-white/90 dark:from-gray-800/90 to-transparent pointer-events-none z-10" />
@@ -898,7 +1037,7 @@ const MusicPlayer: React.FC<MusicPlayerProps> = () => {
 
                             <div
                               ref={lyricContainerRef}
-                              className="max-h-64 overflow-y-auto p-4 scroll-smooth"
+                              className="max-h-36 overflow-y-auto p-3 scroll-smooth"
                               style={{
                                 scrollbarWidth: 'none',
                                 msOverflowStyle: 'none'
@@ -947,6 +1086,7 @@ const MusicPlayer: React.FC<MusicPlayerProps> = () => {
                       </AnimatePresence>
                     </div>
                   )}
+                  </div>
                 </motion.div>
               </>
             ) : (

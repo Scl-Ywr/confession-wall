@@ -24,6 +24,8 @@ import {
   clearNotificationsListCache
 } from '@/services/notificationCacheService';
 
+type FriendshipCheckStatus = 'none' | 'pending' | 'accepted' | 'unknown';
+
 // 创建通知的辅助函数
 const createNotification = async (
   recipientId: string,
@@ -861,6 +863,9 @@ export const chatService = {
 
       // 检查好友关系状态
       const friendshipStatus = await chatService.checkFriendshipStatus(receiverId);
+      if (friendshipStatus === 'unknown') {
+        throw new Error('暂时无法确认好友关系，请稍后重试');
+      }
       if (friendshipStatus !== 'accepted') {
         throw new Error('You are not friends with this user, cannot send message');
       }
@@ -2099,7 +2104,7 @@ export const chatService = {
   },
 
   // 检查好友关系状态
-  checkFriendshipStatus: async (otherUserId: string): Promise<'none' | 'pending' | 'accepted'> => {
+  checkFriendshipStatus: async (otherUserId: string): Promise<FriendshipCheckStatus> => {
     try {
       // 为整个函数添加超时保护
       const mainPromise = (async () => {
@@ -2117,13 +2122,13 @@ export const chatService = {
           user = await Promise.race([getUserPromise, getUserTimeoutPromise]);
         } catch (error) {
           console.error('Error getting user:', error);
-          return 'none';
+          return 'unknown';
         }
         
         const userId = user.data.user?.id;
 
         if (!userId) {
-          return 'none'; // 未登录用户，默认返回 none
+          return 'unknown';
         }
 
         try {
@@ -2155,7 +2160,7 @@ export const chatService = {
               }
             } catch (profileError) {
               console.error('Error getting profile:', profileError);
-              return 'none';
+              return 'unknown';
             }
           }
           
@@ -2173,7 +2178,7 @@ export const chatService = {
             session = await Promise.race([getSessionPromise, getSessionTimeoutPromise]);
           } catch (sessionError) {
             console.error('Error getting session:', sessionError);
-            return 'none';
+            return 'unknown';
           }
           
           const accessToken = session.data.session?.access_token || '';
@@ -2198,7 +2203,12 @@ export const chatService = {
             friendshipsResponse = await Promise.race([friendshipsPromise, friendshipsTimeoutPromise]);
           } catch (friendshipsError) {
             console.error('Error fetching friendships:', friendshipsError);
-            return 'none';
+            return 'unknown';
+          }
+
+          if (!friendshipsResponse.ok) {
+            console.error('Friendships request failed:', await friendshipsResponse.text());
+            return 'unknown';
           }
           
           const friendships = await friendshipsResponse.json();
@@ -2225,7 +2235,12 @@ export const chatService = {
             requestsResponse = await Promise.race([requestsPromise, requestsTimeoutPromise]);
           } catch (requestsError) {
             console.error('Error fetching friend requests:', requestsError);
-            return 'none';
+            return 'unknown';
+          }
+
+          if (!requestsResponse.ok) {
+            console.error('Friend requests request failed:', await requestsResponse.text());
+            return 'unknown';
           }
           
           const friendRequests = await requestsResponse.json();
@@ -2235,20 +2250,21 @@ export const chatService = {
         } catch (error) {
           // 如果发生任何错误，返回默认状态
           console.error('Error checking friendship status:', error);
+          return 'unknown';
         }
 
         return 'none';
       })();
       
       // 设置整个函数的超时时间
-      const timeoutPromise = new Promise<'none' | 'pending' | 'accepted'>((_, reject) => {
+      const timeoutPromise = new Promise<FriendshipCheckStatus>((_, reject) => {
         setTimeout(() => reject(new Error('checkFriendshipStatus timed out')), 10000);
       });
       
       return await Promise.race([mainPromise, timeoutPromise]);
     } catch (error) {
       console.error('Error in checkFriendshipStatus outer catch:', error);
-      return 'none';
+      return 'unknown';
     }
   },
 

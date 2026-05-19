@@ -7,6 +7,9 @@ import { User, AuthState } from '@/types/auth';
 import { useRouter } from 'next/navigation';
 import { globalMessageService } from '@/services/globalMessageService';
 import { profileService } from '@/services/profileService';
+import { isTimeoutError, withTimeout } from '@/utils/asyncTimeout';
+
+const AUTH_REQUEST_TIMEOUT_MS = 8000;
 
 interface AuthContextType extends AuthState {
   register: (email: string, password: string, captchaToken?: string) => Promise<void>;
@@ -139,11 +142,24 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     return error.message || '发生未知错误，请重试';
   };
 
+  const createBasicUser = (authUser: SupabaseUser): User => ({
+    id: authUser.id,
+    email: authUser.email || '',
+    email_confirmed_at: authUser.email_confirmed_at,
+    created_at: authUser.created_at,
+    updated_at: authUser.updated_at || authUser.created_at || new Date().toISOString(),
+    is_admin: false,
+  });
+
   // 更新用户在线状态的辅助函数
   const updateOnlineStatus = async (userId: string, status: 'online' | 'offline' | 'away') => {
     try {
       // 获取当前登录用户，确保只有当前登录用户才能更新自己的状态
-      const userResult = await supabase.auth.getUser();
+      const userResult = await withTimeout(
+        supabase.auth.getUser(),
+        AUTH_REQUEST_TIMEOUT_MS,
+        '获取当前登录用户'
+      );
       if (userResult.error) {
         // 会话可能已过期，忽略状态更新
         if (process.env.NODE_ENV === 'development') {
@@ -229,24 +245,20 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       if (!authUser) return null;
       
       try {
-        // 从profiles表获取完整用户资料
-        const { data: profileData, error: profileError } = await supabase
-          .from('profiles')
-          .select('*')
-          .eq('id', authUser.id)
-          .maybeSingle();
+        // 从profiles表获取完整用户资料，超时时降级为基础 auth 信息，避免页面或控制台被 profile 慢查询卡住。
+        const { data: profileData, error: profileError } = await withTimeout(
+          supabase
+            .from('profiles')
+            .select('*')
+            .eq('id', authUser.id)
+            .maybeSingle(),
+          12000,
+          '获取用户资料'
+        );
         
         if (profileError) {
           console.error('Error getting profile:', profileError.message);
-          // 即使获取profile失败，也要返回基本用户信息
-          return {
-            id: authUser.id,
-            email: authUser.email || '',
-            email_confirmed_at: authUser.email_confirmed_at,
-            created_at: authUser.created_at,
-            updated_at: authUser.updated_at,
-            is_admin: false
-          } as User;
+          return createBasicUser(authUser);
         }
         
         // 返回完整的用户资料
@@ -262,23 +274,25 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
           is_admin: profileData?.is_admin || false
         } as User;
       } catch (error) {
-        console.error('Error getting complete user profile:', error);
-        // 即使获取profile失败，也要返回基本用户信息
-        return {
-          id: authUser.id,
-          email: authUser.email || '',
-          email_confirmed_at: authUser.email_confirmed_at,
-          created_at: authUser.created_at,
-          updated_at: authUser.updated_at,
-          is_admin: false
-        } as User;
+        if (isTimeoutError(error)) {
+          if (process.env.NODE_ENV === 'development') {
+            console.debug('Profile lookup timed out, using auth user fallback:', error.message);
+          }
+        } else {
+          console.error('Error getting complete user profile:', error);
+        }
+        return createBasicUser(authUser);
       }
     };
     
     // 刷新会话
     const refreshSession = async () => {
       try {
-        const { error } = await supabase.auth.refreshSession();
+        const { error } = await withTimeout(
+          supabase.auth.refreshSession(),
+          AUTH_REQUEST_TIMEOUT_MS,
+          '刷新登录会话'
+        );
         if (error) {
           console.error('Error refreshing session:', error);
           // 会话刷新失败，检查是否是会话丢失错误
@@ -319,7 +333,11 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     // Check if user is already logged in
     const checkUser = async () => {
       try {
-        const { data: { user }, error: getUserError } = await supabase.auth.getUser();
+        const { data: { user }, error: getUserError } = await withTimeout(
+          supabase.auth.getUser(),
+          AUTH_REQUEST_TIMEOUT_MS,
+          '初始化登录状态'
+        );
         
         if (getUserError) {
           console.error('Error getting user:', getUserError);
@@ -362,7 +380,11 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
           
           // 获取会话信息，检查会话是否即将过期
           try {
-            const { data: { session } } = await supabase.auth.getSession();
+            const { data: { session } } = await withTimeout(
+              supabase.auth.getSession(),
+              AUTH_REQUEST_TIMEOUT_MS,
+              '获取登录会话'
+            );
             if (session) {
               // 启动会话刷新定时器
               if (sessionRefreshInterval) {
@@ -527,7 +549,11 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     const heartbeatInterval = setInterval(async () => {
       try {
         // 每次心跳都获取最新的登录用户信息，确保只更新当前登录用户的状态
-        const userResult = await supabase.auth.getUser();
+        const userResult = await withTimeout(
+          supabase.auth.getUser(),
+          AUTH_REQUEST_TIMEOUT_MS,
+          '心跳检查登录用户'
+        );
         
         if (userResult.error) {
           // 会话可能已过期，检查是否是正常的会话缺失错误
