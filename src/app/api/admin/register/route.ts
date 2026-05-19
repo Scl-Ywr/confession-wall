@@ -104,12 +104,22 @@ export async function POST(request: Request) {
     if (!existingRoles || existingRoles.length === 0) {
       // 分配超级管理员角色
       try {
-        await supabase
-          .from('user_roles')
-          .insert({
-            user_id: userId,
-            role_id: 'role_super_admin'
-          });
+        const { data: superAdminRole, error: roleError } = await supabase
+          .from('roles')
+          .select('id')
+          .eq('name', 'super_admin')
+          .single();
+
+        if (roleError || !superAdminRole) {
+          console.error('Error finding super admin role:', roleError?.message);
+        } else {
+          await supabase
+            .from('user_roles')
+            .insert({
+              user_id: userId,
+              role_id: superAdminRole.id
+            });
+        }
       } catch (err) {
         console.error('Error assigning super admin role:', (err as Error).message);
       }

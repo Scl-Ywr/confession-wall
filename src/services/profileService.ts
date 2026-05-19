@@ -306,49 +306,32 @@ export const profileService = {
 
   // Update user IP and location information
   updateIpLocation: async (data: IpLocationUpdateData): Promise<void> => {
-    // Get current user first
-    const userResult = await supabase.auth.getUser();
-    
-    // 处理会话缺失错误
-    if (userResult.error) {
-      if (userResult.error.message === 'Auth session missing!' || userResult.error.name === 'AuthSessionMissingError') {
-        throw new Error('用户会话不存在，请重新登录');
-      }
-      throw new Error('User not authenticated');
-    }
-    
-    const userId = userResult.data.user?.id;
-    
-    if (!userId) {
-      throw new Error('User not authenticated');
-    }
-    
-    // 更新IP地址、城市、省份、国家和更新时间
-    const updateData: Record<string, unknown> = {
-      user_ip: data.user_ip,
-      user_city: data.user_city,
-      user_country: data.user_country,
-      ip_updated_at: new Date().toISOString()
-    };
-    
-    // 只有当province存在且不为空时才更新
-    if (data.user_province) {
-      updateData.user_province = data.user_province;
-    }
-    
-    // 更新数据库
-    const { error: updateError } = await supabase
-      .from('profiles')
-      .update(updateData)
-      .eq('id', userId);
+    const response = await fetch('/api/profile/ip-location', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      credentials: 'include',
+      body: JSON.stringify(data),
+    });
 
-    if (updateError) {
-      console.error('更新IP和地理位置失败:', updateError);
-      throw updateError;
+    if (!response.ok) {
+      let message = '更新IP和地理位置失败';
+      try {
+        const result = await response.json();
+        if (result?.error) {
+          message = result.error;
+        }
+      } catch {
+        // ignore invalid JSON error response
+      }
+      throw new Error(message);
     }
-    
-    // Invalidate cache
-    const cacheKey = getUserProfileCacheKey(userId);
-    await removeCache(cacheKey);
+
+    const userId = (await supabase.auth.getUser()).data.user?.id;
+    if (userId) {
+      const cacheKey = getUserProfileCacheKey(userId);
+      await removeCache(cacheKey);
+    }
   },
 };

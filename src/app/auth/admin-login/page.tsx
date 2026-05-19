@@ -8,6 +8,7 @@ import Link from 'next/link';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
+import Turnstile from '@/components/Turnstile';
 
 // 创建登录表单的Zod schema
 const loginSchema = z.object({
@@ -20,6 +21,12 @@ const loginSchema = z.object({
 });
 
 type LoginFormData = z.infer<typeof loginSchema>;
+
+type AdminStatusResponse = {
+  authenticated: boolean;
+  isAdmin: boolean;
+  reason?: string;
+};
 
 const AdminLoginPage: React.FC = () => {
   const router = useRouter();
@@ -35,6 +42,10 @@ const AdminLoginPage: React.FC = () => {
     isLocked: false 
   });
   const [emailInput, setEmailInput] = React.useState<string>('');
+  const [captchaToken, setCaptchaToken] = React.useState<string | null>(null);
+  const [captchaError, setCaptchaError] = React.useState<string | null>(null);
+  const [captchaResetKey, setCaptchaResetKey] = React.useState(0);
+  const [adminLoginError, setAdminLoginError] = React.useState<string | null>(null);
   
   React.useEffect(() => {
     // 从window.location.search中解析redirect参数
@@ -49,6 +60,24 @@ const AdminLoginPage: React.FC = () => {
   React.useEffect(() => {
     clearError();
   }, [clearError]);
+
+  const handleCaptchaSuccess = React.useCallback((token: string) => {
+    setCaptchaToken(token);
+    setCaptchaError(null);
+  }, []);
+
+  const handleCaptchaError = React.useCallback(() => {
+    setCaptchaToken(null);
+    setCaptchaError('验证失败，请重试');
+  }, []);
+
+  const resetCaptcha = React.useCallback((message?: string) => {
+    setCaptchaToken(null);
+    setCaptchaResetKey((key) => key + 1);
+    if (message) {
+      setCaptchaError(message);
+    }
+  }, []);
 
   // 监听邮箱输入变化，获取登录尝试信息
   React.useEffect(() => {
@@ -107,34 +136,61 @@ const AdminLoginPage: React.FC = () => {
   });
 
   const onSubmit = async (data: LoginFormData) => {
+    if (!captchaToken) {
+      setCaptchaError('请完成验证');
+      return;
+    }
+
     setIsLoggingIn(true);
+    setCaptchaError(null);
+    setAdminLoginError(null);
 
     try {
-      // 管理员登录，传递captchaToken和isAdminLogin参数
-      // 由于目前还未在admin-login页面添加captcha，所以captchaToken为undefined
-      await login(data.email, data.password, undefined, true);
-      
+      // Turnstile token 是一次性的，直接交给 Supabase Auth 验证。
+      await login(data.email, data.password, captchaToken, true);
+
+      const statusResponse = await fetch('/api/auth/admin-status', {
+        cache: 'no-store',
+        credentials: 'include',
+      });
+      const adminStatus = await statusResponse.json() as AdminStatusResponse;
+
+      if (!statusResponse.ok || !adminStatus.authenticated || !adminStatus.isAdmin) {
+        throw new Error(getAdminStatusMessage(adminStatus.reason));
+      }
 
       // 登录成功后跳转到管理员页面
-      router.push(redirectUrl);
-    } catch {
+      router.replace(redirectUrl);
+      router.refresh();
+    } catch (err) {
+      resetCaptcha();
       // 登录失败后，重新获取登录尝试信息
-      const ipResponse = await fetch('/api/get-ip');
-      const ipData = await ipResponse.json();
-      const ipAddress = ipData.ip || 'unknown';
-      
-      const supabase = (await import('@/lib/supabase/client')).supabase;
-      const { data: attemptData } = await supabase
-        .rpc('check_login_attempts', { 
-          p_email: data.email, 
-          p_ip_address: ipAddress 
-        });
-      
-      if (attemptData) {
-        setLoginAttemptInfo({
-          remainingAttempts: attemptData.remaining_attempts || 5,
-          isLocked: attemptData.is_locked || false
-        });
+      try {
+        const ipResponse = await fetch('/api/get-ip');
+        const ipData = await ipResponse.json();
+        const ipAddress = ipData.ip || 'unknown';
+
+        const supabase = (await import('@/lib/supabase/client')).supabase;
+        const { data: attemptData } = await supabase
+          .rpc('check_login_attempts', {
+            p_email: data.email,
+            p_ip_address: ipAddress
+          });
+
+        if (attemptData) {
+          setLoginAttemptInfo({
+            remainingAttempts: attemptData.remaining_attempts || 5,
+            isLocked: attemptData.is_locked || false
+          });
+        }
+      } catch (attemptError) {
+        console.error('Failed to refresh admin login attempt info:', attemptError);
+      }
+
+      const errorMessage = error || (err instanceof Error ? err.message : '');
+      setAdminLoginError(errorMessage || '管理员登录失败，请重试');
+      if (errorMessage.includes('验证码') || errorMessage.includes('captcha')) {
+        resetCaptcha(errorMessage);
       }
     } finally {
       setIsLoggingIn(false);
@@ -228,6 +284,27 @@ const AdminLoginPage: React.FC = () => {
             </div>
           )}
 
+          <div className="mt-4">
+            {!process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY && (
+              <div className="p-3 rounded-xl text-sm bg-red-50/80 border border-red-200 text-red-600">
+                Turnstile site key not configured
+              </div>
+            )}
+            {process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY && (
+              <Turnstile
+                siteKey={process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY}
+                onSuccess={handleCaptchaSuccess}
+                onError={handleCaptchaError}
+                onExpire={() => setCaptchaToken(null)}
+                onTimeout={() => setCaptchaToken(null)}
+                resetSignal={captchaResetKey}
+              />
+            )}
+            {captchaError && (
+              <p className="mt-1 text-sm text-red-500 pl-1 animate-slide-up">{captchaError}</p>
+            )}
+          </div>
+
           {error && (
             <div className="p-4 bg-red-50/80 border border-red-200 rounded-xl backdrop-blur-sm animate-fade-in dark:bg-red-900/30 dark:border-red-800">
               <div className="flex items-center gap-2 text-red-600 dark:text-red-400">
@@ -235,6 +312,17 @@ const AdminLoginPage: React.FC = () => {
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
                 </svg>
                 <p className="text-sm font-medium">{error}</p>
+              </div>
+            </div>
+          )}
+
+          {adminLoginError && adminLoginError !== error && (
+            <div className="p-4 bg-red-50/80 border border-red-200 rounded-xl backdrop-blur-sm animate-fade-in dark:bg-red-900/30 dark:border-red-800">
+              <div className="flex items-center gap-2 text-red-600 dark:text-red-400">
+                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+                <p className="text-sm font-medium">{adminLoginError}</p>
               </div>
             </div>
           )}
@@ -256,6 +344,22 @@ const AdminLoginPage: React.FC = () => {
     </div>
   );
 };
+
+function getAdminStatusMessage(reason?: string) {
+  switch (reason) {
+    case 'not_authenticated':
+      return '登录会话没有写入成功，请刷新页面后重试';
+    case 'profile_check_failed':
+      return '无法读取管理员资料，请稍后重试';
+    case 'no_admin_role':
+    case 'insufficient_role':
+      return '该账号没有管理员权限';
+    case 'role_check_failed':
+      return '无法校验管理员角色，请稍后重试';
+    default:
+      return '管理员登录校验失败，请稍后重试';
+  }
+}
 
 // 标记为动态页面，避免预渲染错误
 export const dynamic = 'force-dynamic';
