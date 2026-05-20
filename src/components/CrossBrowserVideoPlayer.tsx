@@ -60,6 +60,7 @@ export default function CrossBrowserVideoPlayer({
   const containerRef = useRef<HTMLDivElement>(null);
   const progressRef = useRef<HTMLDivElement>(null);
   const playButtonRef = useRef<HTMLButtonElement>(null);
+  const speedButtonRef = useRef<HTMLButtonElement>(null);
   
   const [isPlaying, setIsPlaying] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
@@ -74,6 +75,8 @@ export default function CrossBrowserVideoPlayer({
   const [error, setError] = useState<string | null>(null);
   const [isDragging, setIsDragging] = useState(false);
   const [showPlaybackMenu, setShowPlaybackMenu] = useState(false);
+  const [playbackMenuPlacement, setPlaybackMenuPlacement] = useState<'up' | 'down'>('up');
+  const [playbackMenuMaxHeight, setPlaybackMenuMaxHeight] = useState(220);
   const [showMoreMenu, setShowMoreMenu] = useState(false);
   const [useNativeControls, setUseNativeControls] = useState(false);
   const [isPictureInPicture, setIsPictureInPicture] = useState(false);
@@ -231,6 +234,29 @@ export default function CrossBrowserVideoPlayer({
     videoRef.current.playbackRate = rate;
     setPlaybackRate(rate);
     setShowPlaybackMenu(false);
+  }, []);
+
+  const togglePlaybackMenu = useCallback((e: React.MouseEvent<HTMLButtonElement>) => {
+    e.stopPropagation();
+    if (!containerRef.current || !speedButtonRef.current) {
+      setShowPlaybackMenu(prev => !prev);
+      return;
+    }
+
+    const containerRect = containerRef.current.getBoundingClientRect();
+    const buttonRect = speedButtonRef.current.getBoundingClientRect();
+    const spaceAbove = buttonRect.top - containerRect.top - 12;
+    const spaceBelow = containerRect.bottom - buttonRect.bottom - 12;
+
+    // 预估菜单高度（含内边距）
+    const estimatedMenuHeight = 212;
+    const placeUp = spaceAbove >= estimatedMenuHeight || spaceAbove >= spaceBelow;
+    const maxHeight = Math.max(120, Math.floor((placeUp ? spaceAbove : spaceBelow)));
+
+    setPlaybackMenuPlacement(placeUp ? 'up' : 'down');
+    setPlaybackMenuMaxHeight(maxHeight);
+    setShowPlaybackMenu(prev => !prev);
+    setShowMoreMenu(false);
   }, []);
 
   const handleRewind = useCallback(() => {
@@ -863,12 +889,9 @@ export default function CrossBrowserVideoPlayer({
                     {/* 播放速度 */}
                     <div className="relative">
                       <motion.button
+                        ref={speedButtonRef}
                         className="w-8 h-8 sm:w-9 sm:h-9 lg:w-10 lg:h-10 px-1.5 sm:px-2 rounded-full bg-white/10 hover:bg-white/20 backdrop-blur-md text-white flex items-center justify-center transition-colors text-[10px] sm:text-xs lg:text-sm font-bold border border-white/5"
-                        onClick={(e) => {
-                        e.stopPropagation();
-                        setShowPlaybackMenu(prev => !prev);
-                        setShowMoreMenu(false);
-                      }}
+                        onClick={togglePlaybackMenu}
                         whileHover={{ scale: 1.08 }}
                         whileTap={{ scale: 0.92 }}
                         aria-label="播放速度"
@@ -881,7 +904,8 @@ export default function CrossBrowserVideoPlayer({
                       <AnimatePresence>
                         {showPlaybackMenu && (
                           <motion.div
-                            className="absolute bottom-full right-0 mb-3 bg-black/95 backdrop-blur-xl rounded-xl p-0.5 min-w-[75px] shadow-xl border border-white/10 z-50"
+                            className={`absolute right-0 bg-black/95 backdrop-blur-xl rounded-xl p-1 min-w-[84px] overflow-y-auto custom-scrollbar shadow-xl border border-white/10 z-50 video-speed-menu ${playbackMenuPlacement === 'up' ? 'bottom-full mb-3' : 'top-full mt-3'}`}
+                            style={{ maxHeight: `${playbackMenuMaxHeight}px` }}
                             initial={{ opacity: 0, scale: 0.9, y: 10 }}
                             animate={{ opacity: 1, scale: 1, y: 0 }}
                             exit={{ opacity: 0, scale: 0.9, y: 10 }}
@@ -893,7 +917,7 @@ export default function CrossBrowserVideoPlayer({
                               {[0.5, 0.75, 1, 1.25, 1.5, 2].map(rate => (
                                 <motion.button
                                   key={rate}
-                                  className={`block w-full text-center px-1.5 py-0.75 text-white rounded-md text-[10px] font-medium transition-all ${playbackRate === rate ? 'bg-gradient-to-r from-orange-500 to-orange-600' : 'hover:bg-white/10'}`}
+                                  className={`block w-full h-8 min-h-0 text-center px-2 py-1.5 text-white rounded-md text-xs leading-none font-medium transition-all ${playbackRate === rate ? 'bg-gradient-to-r from-orange-500 to-orange-600' : 'hover:bg-white/10'}`}
                                   onClick={(e) => {
                                     e.stopPropagation();
                                     handlePlaybackRateChange(rate);

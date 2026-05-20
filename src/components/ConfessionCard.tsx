@@ -629,21 +629,23 @@ export default function ConfessionCard({
 
         {currentUserId && confession.user_id === currentUserId && (
           <>
-            <motion.button
-              onClick={() => setShowDeleteConfirm(true)}
-              className="flex items-center gap-2 text-gray-400 hover:text-red-500 transition-colors duration-300"
-            >
-              <TrashIcon className="w-4 h-4 sm:w-5 sm:h-5" />
-              <span className="text-xs sm:text-sm font-medium">删除</span>
-            </motion.button>
-            
-            <motion.button
-              onClick={handleEditClick}
-              className="flex items-center gap-2 text-gray-400 hover:text-blue-500 transition-colors duration-300"
-            >
-              <PencilIcon className="w-4 h-4 sm:w-5 sm:h-5" />
-              <span className="text-xs sm:text-sm font-medium">编辑</span>
-            </motion.button>
+            <div className="flex items-center justify-center gap-6 sm:gap-4">
+              <motion.button
+                onClick={() => setShowDeleteConfirm(true)}
+                className="flex items-center gap-2 text-gray-400 hover:text-red-500 transition-colors duration-300"
+              >
+                <TrashIcon className="w-4 h-4 sm:w-5 sm:h-5" />
+                <span className="text-xs sm:text-sm font-medium">删除</span>
+              </motion.button>
+              
+              <motion.button
+                onClick={handleEditClick}
+                className="flex items-center gap-2 text-gray-400 hover:text-blue-500 transition-colors duration-300"
+              >
+                <PencilIcon className="w-4 h-4 sm:w-5 sm:h-5" />
+                <span className="text-xs sm:text-sm font-medium">编辑</span>
+              </motion.button>
+            </div>
             
             {/* 自定义删除确认对话框 */}
             {showDeleteConfirm && (

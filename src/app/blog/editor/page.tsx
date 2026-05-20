@@ -335,7 +335,7 @@ function BlogEditorContent() {
                 </label>
                 <label className="block">
                   <span className="sr-only">状态</span>
-                  <select value={form.status} onChange={(event) => updateField('status', event.target.value as BlogPostStatus)} className="h-full min-h-12 w-full rounded-2xl border border-slate-200 bg-white/70 px-4 text-sm font-bold outline-none dark:border-white/10 dark:bg-slate-900">
+                  <select value={form.status} onChange={(event) => updateField('status', event.target.value as BlogPostStatus)} className="cw-select h-full min-h-12 w-full">
                     <option value="draft">草稿</option>
                     <option value="published">发布</option>
                   </select>

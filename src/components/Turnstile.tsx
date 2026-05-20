@@ -59,6 +59,7 @@ const Turnstile: React.FC<TurnstileProps> = ({
 
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [resolvedSize, setResolvedSize] = useState<'normal' | 'compact'>(size);
 
   // 稳定的回调引用
   const onSuccessRef = useRef(onSuccess);
@@ -72,6 +73,20 @@ const Turnstile: React.FC<TurnstileProps> = ({
     onExpireRef.current = onExpire;
     onTimeoutRef.current = onTimeout;
   }, [onSuccess, onError, onExpire, onTimeout]);
+
+  useEffect(() => {
+    const resolveSize = () => {
+      if (size === 'compact') {
+        setResolvedSize('compact');
+        return;
+      }
+      setResolvedSize(window.innerWidth < 380 ? 'compact' : 'normal');
+    };
+
+    resolveSize();
+    window.addEventListener('resize', resolveSize);
+    return () => window.removeEventListener('resize', resolveSize);
+  }, [size]);
 
   // 渲染 widget 的函数
   const renderWidget = useCallback(() => {
@@ -163,7 +178,7 @@ const Turnstile: React.FC<TurnstileProps> = ({
           }
         },
         theme,
-        size,
+        size: resolvedSize,
         retry: 'auto',
         'retry-interval': 3000,
         'refresh-expired': 'auto',
@@ -179,7 +194,7 @@ const Turnstile: React.FC<TurnstileProps> = ({
     } finally {
       isRenderingRef.current = false;
     }
-  }, [siteKey, theme, size]);
+  }, [siteKey, theme, resolvedSize]);
 
   // 加载脚本
   useEffect(() => {
@@ -327,7 +342,7 @@ const Turnstile: React.FC<TurnstileProps> = ({
     <div className="flex flex-col items-center gap-2">
       <div 
         ref={containerRef} 
-        className="flex min-h-[65px] w-full justify-center overflow-hidden rounded-2xl"
+        className="flex min-h-[65px] w-full justify-center overflow-visible rounded-2xl"
       />
       {isLoading && !error && (
         <div className="flex items-center gap-2 text-sm font-medium text-slate-500 dark:text-slate-400">

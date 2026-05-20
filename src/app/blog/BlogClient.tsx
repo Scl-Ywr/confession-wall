@@ -197,7 +197,7 @@ export default function BlogClient() {
                 <select
                   value={activeTag}
                   onChange={(event) => setActiveTag(event.target.value)}
-                  className="h-12 rounded-2xl border border-slate-200 bg-white/85 px-4 text-sm font-bold outline-none transition focus:border-cyan-300 dark:border-white/10 dark:bg-slate-900"
+                  className="cw-select h-12"
                 >
                   <option value="全部">全部标签</option>
                   {allTags.map(([tag]) => <option key={tag} value={tag}>{tag}</option>)}

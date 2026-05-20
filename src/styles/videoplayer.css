@@ -249,6 +249,12 @@ input[type="range"]:active::-moz-range-thumb {
   background: rgba(249, 115, 22, 0.7);
 }
 
+/* 倍速菜单使用紧凑尺寸，避免被移动端最小点击高度规则撑大 */
+.video-speed-menu button {
+  min-height: 2rem !important;
+  min-width: 0 !important;
+}
+
 /* Tailwind 字体工具类扩展 */
 .tabular-nums {
   font-variant-numeric: tabular-nums;
@@ -268,7 +274,10 @@ input[type="range"]:active::-moz-range-thumb {
   }
 
   /* 优化iOS上的触摸区域 */
-  button, input[type="range"] {
+  .video-player-card button,
+  .custom-video-player button,
+  .video-player-card input[type="range"],
+  .custom-video-player input[type="range"] {
     -webkit-tap-highlight-color: transparent;
     min-height: 44px;
     min-width: 44px;
@@ -292,7 +301,8 @@ input[type="range"]:active::-moz-range-thumb {
   }
 
   /* iOS 移动端按钮优化 */
-  button {
+  .video-player-card button,
+  .custom-video-player button {
     min-height: 44px;
     min-width: 44px;
   }
@@ -338,7 +348,10 @@ input[type="range"]:active::-moz-range-thumb {
 /* 触摸设备优化 */
 @media (hover: none) and (pointer: coarse) {
   /* 移动设备增大点击区域 */
-  button, input[type="range"] {
+  .video-player-card button,
+  .custom-video-player button,
+  .video-player-card input[type="range"],
+  .custom-video-player input[type="range"] {
     min-height: 44px;
     min-width: 44px;
   }
@@ -350,7 +363,8 @@ input[type="range"]:active::-moz-range-thumb {
   }
 
   /* 优化按钮触摸响应 */
-  button:active {
+  .video-player-card button:active,
+  .custom-video-player button:active {
     transform: scale(0.95);
   }
 }
