@@ -13,8 +13,7 @@ import {
   Profile
 } from '@/types/chat';
 import { getCache, setCache, removeCache } from '@/utils/cache';
-import { getUserProfileCacheKey, EXPIRY } from '@/lib/redis/cache';
-import { queueService, MessagePriority } from '@/lib/redis/queue-service';
+import { getUserProfileCacheKey, EXPIRY } from '@/lib/cache/cache';
 import { 
   getCachedUnreadNotificationsCount, 
   setCachedUnreadNotificationsCount, 
@@ -135,21 +134,6 @@ const createNotification = async (
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString()
       } as Notification;
-    }
-    
-    // 使用Redis消息队列发布通知
-    try {
-      await queueService.publishNotification(
-        recipientId,
-        {
-          notification,
-          type: 'new_notification'
-        },
-        MessagePriority.MEDIUM
-      );
-    } catch (redisError) {
-      // 只记录错误，不影响主要流程
-      console.error('Failed to publish notification to Redis:', redisError);
     }
     
     return notification;
@@ -1325,8 +1309,6 @@ export const chatService = {
   // 获取群列表
   getGroups: async (): Promise<Group[]> => {
     try {
-
-      
       // 获取当前认证用户
       const user = await supabase.auth.getUser();
       
@@ -1363,12 +1345,31 @@ export const chatService = {
       // 获取用户所属的所有群ID
       const groupIds = groupMemberships.map(membership => membership.group_id);
       
-      // 查询这些群的详细信息
-      const { data: groups, error: groupsError } = await supabase
-        .from('groups')
-        .select('*')
-        .in('id', groupIds)
-        .order('created_at', { ascending: false });
+      // 并行执行所有查询，消除N+1问题
+      const [
+        { data: groups, error: groupsError },
+        { data: unreadStatuses, error: unreadError },
+        { data: memberCounts, error: memberCountError }
+      ] = await Promise.all([
+        // 查询这些群的详细信息
+        supabase
+          .from('groups')
+          .select('*')
+          .in('id', groupIds)
+          .order('created_at', { ascending: false }),
+        // 查询所有群聊的未读消息数量
+        supabase
+          .from('group_message_read_status')
+          .select('group_id, user_id')
+          .eq('user_id', userId)
+          .eq('is_read', false)
+          .in('group_id', groupIds),
+        // 一次性查询所有群的成员数量
+        supabase
+          .from('group_members')
+          .select('group_id, id', { count: 'exact' })
+          .in('group_id', groupIds)
+      ]);
       
       if (groupsError) {
         console.error('Error getting groups:', groupsError);
@@ -1376,56 +1377,33 @@ export const chatService = {
         return [];
       }
       
-      // 查询所有群聊的未读消息数量
-      // 使用计数查询获取每个群聊的未读消息数量
+      if (!groups) {
+        await setCache(cacheKey, [], EXPIRY.SHORT);
+        return [];
+      }
+      
+      // 计算未读消息数量映射
       const unreadCountsMap: Record<string, number> = {};
-
-      const { data: unreadStatuses, error: unreadError } = await supabase
-        .from('group_message_read_status')
-        .select('group_id, user_id')
-        .eq('user_id', userId)
-        .eq('is_read', false)
-        .in('group_id', groupIds);
-
-      if (unreadError) {
-        console.error('Error getting unread statuses:', unreadError);
-        return groups;
-      }
-
-      for (const groupId of groupIds) {
-        const count = (unreadStatuses || []).filter(s => s.group_id === groupId).length;
-        unreadCountsMap[groupId] = count;
+      if (!unreadError && unreadStatuses) {
+        for (const status of unreadStatuses) {
+          unreadCountsMap[status.group_id] = (unreadCountsMap[status.group_id] || 0) + 1;
+        }
       }
       
-      // 将未读消息数量映射到群聊对象中，并确保member_count准确
-      let groupsWithUnreadCounts: Promise<Group>[] = [];
-      if (groups && groups.length > 0) {
-        groupsWithUnreadCounts = groups.map(async (group) => {
-          // 为每个群聊获取准确的成员数量
-          try {
-            const { count } = await supabase
-              .from('group_members')
-              .select('id', { count: 'exact', head: true })
-              .eq('group_id', group.id);
-            
-            return {
-              ...group,
-              // 使用计算出的准确成员数量，确保与群聊页面显示一致
-              member_count: count || group.member_count,
-              unread_count: unreadCountsMap[group.id] || 0
-            };
-          } catch (error) {
-            console.error(`Error getting member count for group ${group.id}:`, error);
-            return {
-              ...group,
-              unread_count: unreadCountsMap[group.id] || 0
-            };
-          }
-        });
+      // 计算成员数量映射
+      const memberCountsMap: Record<string, number> = {};
+      if (!memberCountError && memberCounts) {
+        for (const member of memberCounts) {
+          memberCountsMap[member.group_id] = (memberCountsMap[member.group_id] || 0) + 1;
+        }
       }
       
-      // 等待所有成员数量查询完成
-      const resolvedGroups = await Promise.all(groupsWithUnreadCounts);
+      // 合并数据
+      const resolvedGroups = groups.map(group => ({
+        ...group,
+        member_count: memberCountsMap[group.id] || group.member_count,
+        unread_count: unreadCountsMap[group.id] || 0
+      }));
       
       // 缓存群列表，设置较短的过期时间（5分钟）
       await setCache(cacheKey, resolvedGroups, EXPIRY.SHORT);
@@ -1684,22 +1662,6 @@ export const chatService = {
     // 清除发送者的群列表缓存，确保未读消息数量更新
     const senderGroupListCacheKey = `chat:groups:${senderId}`;
     await removeCache(senderGroupListCacheKey);
-
-    // 使用Redis消息队列发布群消息通知
-    try {
-      await queueService.publishNotification(
-        senderId,
-        {
-          message: completeMessage,
-          type: 'group_message_sent',
-          groupId
-        },
-        MessagePriority.MEDIUM
-      );
-    } catch (redisError) {
-      // 只记录错误，不影响主要流程
-      console.error('Failed to publish group message to Redis:', redisError);
-    }
 
     // 返回包含发送者资料的消息
     return completeMessage;
@@ -2523,24 +2485,8 @@ export const chatService = {
       const updatedNotificationData = await getResponse.json();
       const updatedNotification = updatedNotificationData[0] as Notification;
       
-      // 使用Redis消息队列发布通知状态更新
-      try {
-        await queueService.publishNotification(
-          userId,
-          {
-            notification: updatedNotification,
-            type: 'notification_updated',
-            updateType: 'read_status'
-          },
-          MessagePriority.LOW
-        );
-        // 清除相关缓存
-        await clearUnreadNotificationsCountCache(userId);
-        await clearNotificationsListCache(userId);
-      } catch (redisError) {
-        // 只记录错误，不影响主要流程
-        console.error('Failed to publish notification update to Redis:', redisError);
-      }
+      await clearUnreadNotificationsCountCache(userId);
+      await clearNotificationsListCache(userId);
       
       return updatedNotification;
     } catch (error) {
@@ -2585,23 +2531,8 @@ export const chatService = {
         throw new Error(`Failed to mark all notifications as read: ${await response.text()}`);
       }
       
-      // 使用Redis消息队列发布批量更新通知
-      try {
-        await queueService.publishNotification(
-          userId,
-          {
-            type: 'notifications_updated',
-            updateType: 'mark_all_as_read'
-          },
-          MessagePriority.LOW
-        );
-        // 清除相关缓存
-        await clearUnreadNotificationsCountCache(userId);
-        await clearNotificationsListCache(userId);
-      } catch (redisError) {
-        // 只记录错误，不影响主要流程
-        console.error('Failed to publish mark-all-as-read notification to Redis:', redisError);
-      }
+      await clearUnreadNotificationsCountCache(userId);
+      await clearNotificationsListCache(userId);
     } catch (error) {
       console.error('Error in markAllNotificationsAsRead:', error);
       throw error;
@@ -2643,23 +2574,8 @@ export const chatService = {
         throw new Error(`Failed to delete notification: ${await response.text()}`);
       }
       
-      // 使用Redis消息队列发布通知删除事件
-      try {
-        await queueService.publishNotification(
-          userId,
-          {
-            notificationId,
-            type: 'notification_deleted'
-          },
-          MessagePriority.LOW
-        );
-        // 清除相关缓存
-        await clearUnreadNotificationsCountCache(userId);
-        await clearNotificationsListCache(userId);
-      } catch (redisError) {
-        // 只记录错误，不影响主要流程
-        console.error('Failed to publish notification deletion to Redis:', redisError);
-      }
+      await clearUnreadNotificationsCountCache(userId);
+      await clearNotificationsListCache(userId);
     } catch (error) {
       console.error('Error in deleteNotification:', error);
       throw error;

@@ -1,5 +1,5 @@
 import { getCache, setCache, removeCache } from '@/utils/cache';
-import { CacheModule, CacheResource, generateCacheKey } from '@/lib/redis/cache-key-naming';
+import { CacheModule, CacheResource, generateCacheKey } from '@/lib/cache/cache-key-naming';
 
 // 缓存过期时间（秒）
 const UNREAD_COUNT_CACHE_EXPIRY = 60 * 5; // 5分钟

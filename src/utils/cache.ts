@@ -1,11 +1,11 @@
-// 统一缓存工具函数，支持Redis和localStorage双缓存机制
+// 统一缓存工具函数，服务端使用无外部依赖的缓存兼容层，客户端使用 localStorage。
 
 import { 
-  setCache as setRedisCache, 
-  getCache as getRedisCache, 
-  deleteCache as deleteRedisCache,
+  setCache as setServerCache, 
+  getCache as getServerCache, 
+  deleteCache as deleteServerCache,
   EXPIRY
-} from '../lib/redis/cache';
+} from '../lib/cache/cache';
 
 /**
  * 获取聊天消息缓存键
@@ -14,7 +14,7 @@ import {
  * @param isGroup 是否是群聊
  * @returns 缓存键
  */
-const getRedisChatCacheKey = (userId: string, otherId: string, isGroup: boolean = false): string => {
+const getServerChatCacheKey = (userId: string, otherId: string, isGroup: boolean = false): string => {
   if (isGroup) {
     return `chat:group:${otherId}:${userId}`;
   }
@@ -24,16 +24,15 @@ const getRedisChatCacheKey = (userId: string, otherId: string, isGroup: boolean 
 };
 
 /**
- * 清除所有Redis缓存
+ * 清除所有服务端缓存
  */
-const clearRedisCache = async (): Promise<boolean> => {
-  // 由于我们在cache.ts中没有导出clearCache，我们可以动态导入cache-manager来实现
+const clearServerCache = async (): Promise<boolean> => {
   if (typeof window === 'undefined') {
     try {
-      const { clearCache } = await import('../lib/redis/cache-manager');
+      const { clearCache } = await import('../lib/cache/cache-manager');
       return clearCache();
     } catch (error) {
-      console.error('Error clearing Redis cache:', error);
+      console.error('Error clearing server cache:', error);
       return false;
     }
   }
@@ -41,16 +40,16 @@ const clearRedisCache = async (): Promise<boolean> => {
 };
 
 /**
- * 更新Redis缓存
+ * 更新服务端缓存
  */
-const updateRedisCache = async <T>(key: string, updater: (data: T) => T): Promise<T | null> => {
+const updateServerCache = async <T>(key: string, updater: (data: T) => T): Promise<T | null> => {
   // 实现更新逻辑：先获取，再更新，再设置
-  const currentData = await getRedisCache<T>(key);
+  const currentData = await getServerCache<T>(key);
   if (currentData === null) {
     return null;
   }
   const updatedData = updater(currentData);
-  const success = await setRedisCache(key, updatedData);
+  const success = await setServerCache(key, updatedData);
   return success ? updatedData : null;
 };
 
@@ -80,8 +79,7 @@ const isServer = typeof window === 'undefined';
 export const setCache = async <T>(key: string, data: T, expiry: number = LOCAL_CACHE_EXPIRY): Promise<void> => {
   try {
     if (isServer) {
-      // 服务器端使用Redis
-      await setRedisCache(key, data, expiry);
+      await setServerCache(key, data, expiry);
     } else {
       // 客户端使用localStorage
       const cacheItem: LocalCacheItem<T> = {
@@ -103,8 +101,7 @@ export const setCache = async <T>(key: string, data: T, expiry: number = LOCAL_C
 export const getCache = async <T>(key: string): Promise<T | null> => {
   try {
     if (isServer) {
-      // 服务器端使用Redis
-      return await getRedisCache<T>(key);
+      return await getServerCache<T>(key);
     } else {
       // 客户端使用localStorage
       const cacheItemStr = localStorage.getItem(`${LOCAL_CACHE_PREFIX}${key}`);
@@ -136,8 +133,7 @@ export const getCache = async <T>(key: string): Promise<T | null> => {
 export const removeCache = async (key: string): Promise<void> => {
   try {
     if (isServer) {
-      // 服务器端使用Redis
-      await deleteRedisCache(key);
+      await deleteServerCache(key);
     } else {
       // 客户端使用localStorage
       localStorage.removeItem(`${LOCAL_CACHE_PREFIX}${key}`);
@@ -153,8 +149,7 @@ export const removeCache = async (key: string): Promise<void> => {
 export const clearCache = async (): Promise<void> => {
   try {
     if (isServer) {
-      // 服务器端使用Redis
-      await clearRedisCache();
+      await clearServerCache();
     } else {
       // 客户端使用localStorage
       for (let i = 0; i < localStorage.length; i++) {
@@ -178,8 +173,7 @@ export const clearCache = async (): Promise<void> => {
 export const updateCache = async <T>(key: string, updater: (data: T) => T): Promise<T | null> => {
   try {
     if (isServer) {
-      // 服务器端使用Redis
-      return await updateRedisCache<T>(key, updater);
+      return await updateServerCache<T>(key, updater);
     } else {
       // 客户端使用localStorage
       const currentData = await getCache<T>(key);
@@ -205,8 +199,7 @@ export const updateCache = async <T>(key: string, updater: (data: T) => T): Prom
  * @returns 缓存键
  */
 export const getChatCacheKey = (userId: string, otherId: string, isGroup: boolean = false): string => {
-  // 使用Redis的缓存键生成逻辑，保持一致性
-  return getRedisChatCacheKey(userId, otherId, isGroup);
+  return getServerChatCacheKey(userId, otherId, isGroup);
 };
 
 // 导出过期时间常量

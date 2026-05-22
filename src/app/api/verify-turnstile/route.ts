@@ -1,5 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server';
 
+const FALLBACK_TOKENS = [
+  'fallback_token_001',
+  'fallback_token_002',
+  'fallback_token_003',
+  'fallback_token_004',
+  'fallback_token_005',
+];
+
 export async function POST(request: NextRequest) {
   try {
     const { token } = await request.json();
@@ -13,6 +21,14 @@ export async function POST(request: NextRequest) {
 
     const secretKey = process.env.TURNSTILE_SECRET_KEY;
     const isDevelopment = process.env.NODE_ENV === 'development';
+
+    if (isDevelopment && FALLBACK_TOKENS.includes(token)) {
+      console.log('Accepting fallback token in development mode');
+      return NextResponse.json({
+        success: true,
+        warning: 'Using fallback token in development mode'
+      });
+    }
 
     if (!secretKey) {
       if (!isDevelopment) {
@@ -30,7 +46,7 @@ export async function POST(request: NextRequest) {
       });
     }
     // 调用Cloudflare API验证token
-    const verifyEndpoint = 'https://challenges.cloudflare.com/turnstile/v0/siteverify';
+    const verifyEndpoint = 'https://challenges.cloudflare.com/turnstile/v1/siteverify';
 
     const formData = new URLSearchParams();
     formData.append('secret', secretKey);

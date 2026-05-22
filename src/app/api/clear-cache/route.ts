@@ -1,9 +1,9 @@
 import { NextResponse } from 'next/server';
-import { RedisCacheManager } from '@/lib/redis/cache-manager';
+import { CacheManager } from '@/lib/cache/cache-manager';
 
 /**
  * GET /api/clear-cache
- * 清空所有Redis缓存
+ * 清空所有缓存
  * 注意：此端点需要通过API密钥进行验证，防止误操作
  */
 export async function GET(request: Request) {
@@ -37,7 +37,7 @@ export async function GET(request: Request) {
     }
     
     // 2. 获取缓存管理器实例
-    const cacheManager = RedisCacheManager.getInstance();
+    const cacheManager = CacheManager.getInstance();
     
     // 3. 记录缓存清除操作
     console.log(`[Cache Management] Clear cache requested by API key at ${new Date().toISOString()}`);
@@ -103,7 +103,7 @@ export async function POST(request: Request) {
     const { module, pattern, keys } = body;
     
     // 3. 获取缓存管理器实例
-    const cacheManager = RedisCacheManager.getInstance();
+    const cacheManager = CacheManager.getInstance();
     
     const result = true;
     let message = '缓存清除成功';

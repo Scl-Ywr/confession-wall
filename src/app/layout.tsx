@@ -11,6 +11,7 @@ import { Providers } from "./providers";
 import { VideoPlayerProvider } from "@/context/VideoPlayerContext";
 import { BackgroundProvider } from "@/context/BackgroundContext";
 import MusicPlayer from "@/components/MusicPlayer";
+import RealtimeStatusIndicator from "@/components/RealtimeStatusIndicator";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -55,6 +56,7 @@ export default function RootLayout({
                     <VideoPlayerProvider>
                       {children}
                       <MusicPlayer />
+                      <RealtimeStatusIndicator />
                     </VideoPlayerProvider>
                   </LikeProvider>
                 </Providers>

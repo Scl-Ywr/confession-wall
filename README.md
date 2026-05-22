@@ -76,6 +76,5 @@ Before deploying to Vercel, you need to configure the following environment vari
 - `NEXT_PUBLIC_SUPABASE_URL` - Your Supabase project URL
 - `NEXT_PUBLIC_SUPABASE_ANON_KEY` - Your Supabase anonymous API key
 - `SUPABASE_SERVICE_ROLE_KEY` - Your Supabase service role key
-- `REDIS_URL` or `REDIS_HOST`, `REDIS_PORT`, `REDIS_PASSWORD` - Redis connection details
 
 Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.

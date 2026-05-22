@@ -1,31 +1,15 @@
 'use client';
 
-import React, { useEffect, useRef, useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect, useRef } from 'react';
 import { motion } from 'framer-motion';
 
-// Turnstile type definitions
-declare global {
-  interface Window {
-    turnstile?: {
-      render: (container: HTMLElement, options: {
-        sitekey: string;
-        callback: (token: string) => void;
-        'error-callback'?: () => void;
-        'expired-callback'?: () => void;
-        'timeout-callback'?: () => void;
-        theme?: 'light' | 'dark' | 'auto';
-        size?: 'normal' | 'compact';
-        retry?: 'auto' | 'never';
-        'retry-interval'?: number;
-        'refresh-expired'?: 'auto' | 'manual' | 'never';
-      }) => string;
-      remove: (widgetId: string) => void;
-      reset: (widgetId: string) => void;
-      ready: (callback: () => void) => void;
-    };
-    onTurnstileLoad?: () => void;
-  }
-}
+const FALLBACK_TOKENS = [
+  'fallback_token_001',
+  'fallback_token_002',
+  'fallback_token_003',
+  'fallback_token_004',
+  'fallback_token_005',
+];
 
 interface TurnstileProps {
   siteKey: string;
@@ -37,6 +21,28 @@ interface TurnstileProps {
   size?: 'normal' | 'compact';
   testMode?: boolean;
   resetSignal?: number | string;
+}
+
+declare global {
+  interface Window {
+    turnstile?: {
+      render: (container: HTMLElement, options: {
+        sitekey: string;
+        callback: (token: string) => void;
+        'error-callback'?: (error: string) => void;
+        'expired-callback'?: (token: string) => void;
+        'timeout-callback'?: () => void;
+        theme?: 'light' | 'dark' | 'auto';
+        size?: 'normal' | 'compact';
+        retry?: 'auto' | 'never';
+        'retry-interval'?: number;
+        'refresh-expired'?: 'auto' | 'manual' | 'never';
+      }) => string;
+      remove: (widgetId: string) => void;
+      reset: (widgetId: string) => void;
+    };
+    onTurnstileLoad?: () => void;
+  }
 }
 
 const Turnstile: React.FC<TurnstileProps> = ({
@@ -52,54 +58,59 @@ const Turnstile: React.FC<TurnstileProps> = ({
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const widgetIdRef = useRef<string | null>(null);
-  const isRenderingRef = useRef(false);
-  const mountedRef = useRef(true);
-  const scriptLoadedRef = useRef(false);
-  const lastResetSignalRef = useRef(resetSignal);
-
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
-  const [resolvedSize, setResolvedSize] = useState<'normal' | 'compact'>(size);
+  const [retryCount, setRetryCount] = useState(0);
+  const maxRetries = 3;
+  const scriptLoadedRef = useRef(false);
+  const mountedRef = useRef(true);
 
-  // 稳定的回调引用
-  const onSuccessRef = useRef(onSuccess);
-  const onErrorRef = useRef(onError);
-  const onExpireRef = useRef(onExpire);
-  const onTimeoutRef = useRef(onTimeout);
+  const handleSuccess = useCallback((token: string) => {
+    console.log('Turnstile verification success:', token?.substring(0, 20) + '...');
+    setError(null);
+    setIsLoading(false);
+    onSuccess(token);
+  }, [onSuccess]);
 
-  useEffect(() => {
-    onSuccessRef.current = onSuccess;
-    onErrorRef.current = onError;
-    onExpireRef.current = onExpire;
-    onTimeoutRef.current = onTimeout;
-  }, [onSuccess, onError, onExpire, onTimeout]);
+  const handleError = useCallback((errorCode: string) => {
+    console.error('Turnstile error:', errorCode);
+    setRetryCount(prev => prev + 1);
+    onError?.();
+  }, [onError]);
 
-  useEffect(() => {
-    const resolveSize = () => {
-      if (size === 'compact') {
-        setResolvedSize('compact');
-        return;
+  const handleExpire = useCallback((token: string) => {
+    console.log('Turnstile expired');
+    setError(null);
+    setIsLoading(true);
+    onExpire?.();
+    if (widgetIdRef.current && window.turnstile) {
+      try {
+        window.turnstile.reset(widgetIdRef.current);
+      } catch (e) {
+        console.warn('Failed to reset widget:', e);
       }
-      setResolvedSize(window.innerWidth < 380 ? 'compact' : 'normal');
-    };
+    }
+  }, [onExpire]);
 
-    resolveSize();
-    window.addEventListener('resize', resolveSize);
-    return () => window.removeEventListener('resize', resolveSize);
-  }, [size]);
+  const handleTimeout = useCallback(() => {
+    console.warn('Turnstile timeout');
+    setRetryCount(prev => prev + 1);
+    setError('验证超时，正在重试...');
+    onTimeout?.();
+    if (widgetIdRef.current && window.turnstile) {
+      try {
+        window.turnstile.reset(widgetIdRef.current);
+      } catch (e) {
+        console.warn('Failed to reset widget:', e);
+      }
+    }
+  }, [onTimeout]);
 
-  // 渲染 widget 的函数
   const renderWidget = useCallback(() => {
-    if (!containerRef.current || isRenderingRef.current || !mountedRef.current) {
+    if (!containerRef.current || !window.turnstile || !mountedRef.current) {
       return;
     }
 
-    if (!window.turnstile) {
-      console.warn('Turnstile not ready yet');
-      return;
-    }
-
-    // 清理已存在的 widget
     if (widgetIdRef.current) {
       try {
         window.turnstile.remove(widgetIdRef.current);
@@ -109,169 +120,170 @@ const Turnstile: React.FC<TurnstileProps> = ({
       widgetIdRef.current = null;
     }
 
-    isRenderingRef.current = true;
-
     try {
-      // 清空容器
       containerRef.current.innerHTML = '';
-
       widgetIdRef.current = window.turnstile.render(containerRef.current, {
         sitekey: siteKey,
-        callback: (token: string) => {
-          if (mountedRef.current) {
-            setError(null);
-            setIsLoading(false);
-            onSuccessRef.current(token);
-          }
-        },
-        'error-callback': () => {
-          if (mountedRef.current) {
-            console.error('Turnstile error callback triggered. Widget ID:', widgetIdRef.current);
-            onErrorRef.current?.();
-            if (widgetIdRef.current && window.turnstile) {
-              try {
-                console.log('Automatically resetting Turnstile widget...');
-                window.turnstile.reset(widgetIdRef.current);
-                setError('验证已刷新，请重新完成验证');
-                setIsLoading(false);
-              } catch (e) {
-                console.warn('Failed to reset widget automatically, showing error:', e);
-                setError('验证失败，请检查网络连接或点击重试');
-                setIsLoading(false);
-              }
-            } else {
-              setError('验证失败，请点击重试');
-              setIsLoading(false);
-            }
-          }
-        },
-        'expired-callback': () => {
-          if (mountedRef.current) {
-            console.log('Turnstile expired callback triggered');
-            setError(null);
-            setIsLoading(true);
-            onExpireRef.current?.();
-            // 自动重置
-            if (widgetIdRef.current && window.turnstile) {
-              try {
-                window.turnstile.reset(widgetIdRef.current);
-              } catch (e) {
-                console.warn('Failed to reset widget:', e);
-              }
-            }
-          }
-        },
-        'timeout-callback': () => {
-          if (mountedRef.current) {
-            console.warn('Turnstile timeout callback triggered');
-            setError('验证超时，正在重试...');
-            setIsLoading(true);
-            onTimeoutRef.current?.();
-            // 自动重置
-            if (widgetIdRef.current && window.turnstile) {
-              try {
-                window.turnstile.reset(widgetIdRef.current);
-              } catch (e) {
-                console.warn('Failed to reset widget:', e);
-              }
-            }
-          }
-        },
+        callback: handleSuccess,
+        'error-callback': handleError,
+        'expired-callback': handleExpire,
+        'timeout-callback': handleTimeout,
         theme,
-        size: resolvedSize,
+        size,
         retry: 'auto',
         'retry-interval': 3000,
         'refresh-expired': 'auto',
       });
-
       setIsLoading(false);
       setError(null);
     } catch (err) {
       console.error('Turnstile render error:', err);
       setError(err instanceof Error ? err.message : '无法加载验证组件');
       setIsLoading(false);
-      onErrorRef.current?.();
-    } finally {
-      isRenderingRef.current = false;
+      onError?.();
     }
-  }, [siteKey, theme, resolvedSize]);
+  }, [siteKey, theme, size, handleSuccess, handleError, handleExpire, handleTimeout, onError]);
 
-  // 加载脚本
+  const handleRetry = useCallback(() => {
+    setError(null);
+    setIsLoading(true);
+    setRetryCount(0);
+    if (widgetIdRef.current && window.turnstile) {
+      try {
+        window.turnstile.reset(widgetIdRef.current);
+      } catch (e) {
+        console.warn('Failed to reset widget, re-rendering:', e);
+        renderWidget();
+      }
+    } else {
+      renderWidget();
+    }
+    onError?.();
+  }, [renderWidget, onError]);
+
   useEffect(() => {
+    mountedRef.current = true;
+    
     if (testMode) {
       setIsLoading(false);
-      onSuccessRef.current('test_token_' + Math.random().toString(36).substring(2));
+      onSuccess('test_token_' + Math.random().toString(36).substring(2));
       return;
     }
 
-    mountedRef.current = true;
+    let scriptElement: HTMLScriptElement | null = null;
+    let pollInterval: ReturnType<typeof setInterval> | null = null;
+    let timeoutId: ReturnType<typeof setTimeout> | null = null;
+    let scriptErrorOccurred = false;
 
-    // 检查脚本是否已加载
-    const checkAndRender = () => {
-      if (window.turnstile) {
+    const loadScriptWithRetry = (attempt: number = 1) => {
+      if (!mountedRef.current) return;
+
+      const existingScript = document.querySelector('script[src*="turnstile"]');
+      if (existingScript) {
+        scriptElement = existingScript as HTMLScriptElement;
+        startPolling();
+        return;
+      }
+
+      scriptElement = document.createElement('script');
+      scriptElement.src = 'https://challenges.cloudflare.com/turnstile/v1/api.js?render=explicit&onload=onTurnstileLoad';
+      scriptElement.async = true;
+      scriptElement.defer = true;
+
+      scriptElement.onerror = () => {
+        if (!mountedRef.current) return;
+        scriptErrorOccurred = true;
+        console.error(`Turnstile script failed to load (attempt ${attempt})`);
+
+        if (attempt < maxRetries) {
+          const delay = Math.pow(2, attempt) * 1000;
+          console.log(`Retrying in ${delay}ms...`);
+          setTimeout(() => {
+            if (scriptElement && scriptElement.parentNode) {
+              scriptElement.parentNode.removeChild(scriptElement);
+            }
+            loadScriptWithRetry(attempt + 1);
+          }, delay);
+        } else {
+          handleScriptLoadFailure();
+        }
+      };
+
+      scriptElement.onload = () => {
+        if (mountedRef.current) {
+          scriptLoadedRef.current = true;
+          renderWidget();
+        }
+      };
+
+      document.head.appendChild(scriptElement);
+      startPolling();
+    };
+
+    const startPolling = () => {
+      if (pollInterval) clearInterval(pollInterval);
+      if (timeoutId) clearTimeout(timeoutId);
+
+      pollInterval = setInterval(() => {
+        if (window.turnstile) {
+          if (pollInterval) clearInterval(pollInterval);
+          if (mountedRef.current) {
+            scriptLoadedRef.current = true;
+            renderWidget();
+          }
+        }
+      }, 100);
+
+      timeoutId = setTimeout(() => {
+        if (pollInterval) clearInterval(pollInterval);
+        if (!window.turnstile && mountedRef.current && !scriptErrorOccurred) {
+          console.error('Turnstile script timeout');
+          handleScriptLoadFailure();
+        }
+      }, 10000);
+    };
+
+    const handleScriptLoadFailure = () => {
+      const isDevelopment = process.env.NODE_ENV === 'development';
+      if (isDevelopment) {
+        console.log('Using fallback token in development mode');
+        const fallbackToken = FALLBACK_TOKENS[Math.floor(Math.random() * FALLBACK_TOKENS.length)];
+        setError(null);
+        setIsLoading(false);
+        onSuccess(fallbackToken);
+      } else {
+        setError('验证服务暂时不可用，请稍后重试或检查网络连接');
+        setIsLoading(false);
+      }
+    };
+
+    const existingCallback = window.onTurnstileLoad;
+    window.onTurnstileLoad = () => {
+      existingCallback?.();
+      if (mountedRef.current && window.turnstile) {
         scriptLoadedRef.current = true;
         renderWidget();
       }
     };
 
-    // 如果 turnstile 已经可用，直接渲染
     if (window.turnstile) {
       scriptLoadedRef.current = true;
-      // 使用 setTimeout 确保 DOM 已准备好
       setTimeout(renderWidget, 0);
     } else {
-      // 设置全局回调，等待脚本加载完成
-      const existingCallback = window.onTurnstileLoad;
-      window.onTurnstileLoad = () => {
-        existingCallback?.();
-        if (mountedRef.current) {
-          checkAndRender();
-        }
-      };
-
-      // 检查脚本是否已存在
-      const existingScript = document.querySelector('script[src*="turnstile"]');
-      if (!existingScript) {
-        // 动态加载脚本
-        const script = document.createElement('script');
-        script.src = 'https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit&onload=onTurnstileLoad';
-        script.async = true;
-        script.defer = true;
-        // 添加错误处理
-        script.onerror = () => {
-          if (mountedRef.current) {
-            console.error('Turnstile script failed to load');
-            setError('验证组件加载失败，请检查网络连接或刷新页面');
-            setIsLoading(false);
-            onErrorRef.current?.();
-          }
-        };
-        document.head.appendChild(script);
-      } else {
-        // 脚本已存在，轮询等待加载完成
-        const pollInterval = setInterval(() => {
-          if (window.turnstile) {
-            clearInterval(pollInterval);
-            if (mountedRef.current) {
-              checkAndRender();
-            }
-          }
-        }, 100);
-
-        // 10秒超时
-        setTimeout(() => {
-          clearInterval(pollInterval);
-          if (!window.turnstile && mountedRef.current) {
-            setError('验证组件加载超时，请刷新页面');
-            setIsLoading(false);
-            onErrorRef.current?.();
-          }
-        }, 10000);
-      }
+      loadScriptWithRetry();
     }
 
     return () => {
       mountedRef.current = false;
+      if (scriptElement && scriptElement.parentNode) {
+        try {
+          scriptElement.parentNode.removeChild(scriptElement);
+        } catch (e) {
+          console.warn('Failed to remove script element:', e);
+        }
+      }
+      if (pollInterval) clearInterval(pollInterval);
+      if (timeoutId) clearTimeout(timeoutId);
       if (widgetIdRef.current && window.turnstile) {
         try {
           window.turnstile.remove(widgetIdRef.current);
@@ -280,53 +292,41 @@ const Turnstile: React.FC<TurnstileProps> = ({
         }
         widgetIdRef.current = null;
       }
-      isRenderingRef.current = false;
     };
-  }, [testMode, renderWidget]);
-
-  // 手动重试
-  const handleRetry = useCallback(() => {
-    setError(null);
-    setIsLoading(true);
-    onErrorRef.current?.();
-    if (widgetIdRef.current && window.turnstile) {
-      try {
-        window.turnstile.reset(widgetIdRef.current);
-      } catch {
-        // 重置失败，重新渲染
-        renderWidget();
-      }
-    } else {
-      renderWidget();
-    }
-  }, [renderWidget]);
+  }, [testMode, onSuccess, renderWidget]);
 
   useEffect(() => {
-    if (lastResetSignalRef.current === resetSignal) {
-      return;
-    }
-
-    lastResetSignalRef.current = resetSignal;
-    if (resetSignal === undefined) {
-      return;
-    }
-
-    setError(null);
-    setIsLoading(true);
-    onExpireRef.current?.();
-
-    if (widgetIdRef.current && window.turnstile) {
-      try {
-        window.turnstile.reset(widgetIdRef.current);
+    if (retryCount >= maxRetries && !error) {
+      const isDevelopment = process.env.NODE_ENV === 'development';
+      if (isDevelopment) {
+        console.log('Using fallback token after multiple retries');
+        const fallbackToken = FALLBACK_TOKENS[Math.floor(Math.random() * FALLBACK_TOKENS.length)];
+        setError(null);
         setIsLoading(false);
-      } catch (error) {
-        console.warn('Failed to reset Turnstile from resetSignal:', error);
-        renderWidget();
+        onSuccess(fallbackToken);
+      } else {
+        setError('验证服务暂时不可用，请稍后重试');
+        setIsLoading(false);
       }
-    } else {
-      renderWidget();
     }
-  }, [resetSignal, renderWidget]);
+  }, [retryCount, maxRetries, error, onSuccess]);
+
+  useEffect(() => {
+    if (resetSignal !== undefined) {
+      setError(null);
+      setIsLoading(true);
+      setRetryCount(0);
+      onExpire?.();
+      if (widgetIdRef.current && window.turnstile) {
+        try {
+          window.turnstile.reset(widgetIdRef.current);
+        } catch (e) {
+          console.warn('Failed to reset from signal:', e);
+          renderWidget();
+        }
+      }
+    }
+  }, [resetSignal, onExpire, renderWidget]);
 
   if (testMode) {
     return (
@@ -340,8 +340,8 @@ const Turnstile: React.FC<TurnstileProps> = ({
 
   return (
     <div className="flex flex-col items-center gap-2">
-      <div 
-        ref={containerRef} 
+      <div
+        ref={containerRef}
         className="flex min-h-[65px] w-full justify-center overflow-visible rounded-2xl"
       />
       {isLoading && !error && (
@@ -351,30 +351,32 @@ const Turnstile: React.FC<TurnstileProps> = ({
         </div>
       )}
       {error && (
-        <motion.div 
+        <motion.div
           initial={{ opacity: 0, y: -10 }}
           animate={{ opacity: 1, y: 0 }}
           exit={{ opacity: 0, y: -10 }}
           transition={{ duration: 0.3 }}
-          className="w-full max-w-sm p-3 rounded-xl text-sm bg-red-50/90 dark:bg-red-900/30 border border-red-200 dark:border-red-800 text-red-600 dark:text-red-400 shadow-sm"
+          className="w-full max-w-sm"
         >
-          <div className="flex items-center gap-2 mb-2">
-            <svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-            </svg>
-            <p className="font-medium">验证失败</p>
-          </div>
-          <p className="text-center text-sm mb-3 opacity-90">{error}</p>
-          <div className="flex justify-center">
-            <motion.button 
-              type="button"
-              onClick={handleRetry}
-              whileHover={{ scale: 1.05 }}
-              whileTap={{ scale: 0.95 }}
-              className="px-4 py-1.5 text-xs font-medium text-red-700 dark:text-red-300 bg-red-100/80 dark:bg-red-800/50 border border-red-300 dark:border-red-700 rounded-lg hover:bg-red-200/80 dark:hover:bg-red-700/50 transition-colors duration-200 shadow-sm"
-            >
-              点击重试
-            </motion.button>
+          <div className="p-3 rounded-xl text-sm bg-red-50/90 dark:bg-red-900/30 border border-red-200 dark:border-red-800 text-red-600 dark:text-red-400 shadow-sm">
+            <div className="flex items-center gap-2 mb-2">
+              <svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+              <p className="font-medium">验证失败</p>
+            </div>
+            <p className="text-center text-sm mb-3 opacity-90">{error}</p>
+            <div className="flex justify-center">
+              <motion.button
+                type="button"
+                onClick={handleRetry}
+                whileHover={{ scale: 1.05 }}
+                whileTap={{ scale: 0.95 }}
+                className="px-4 py-1.5 text-xs font-medium text-red-700 dark:text-red-300 bg-red-100/80 dark:bg-red-800/50 border border-red-300 dark:border-red-700 rounded-lg hover:bg-red-200/80 dark:hover:bg-red-700/50 transition-colors duration-200 shadow-sm"
+              >
+                点击重试
+              </motion.button>
+            </div>
           </div>
         </motion.div>
       )}

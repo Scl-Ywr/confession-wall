@@ -10,23 +10,7 @@
 | SUPABASE_JWT_SECRET | Supabase JWT 密钥 | `your-supabase-jwt-secret` | 高 | 用于验证 JWT 令牌 |
 | SUPABASE_REFRESH_TOKEN_EXPIRY | 刷新令牌过期时间 | `604800000` | 中 | 单位：毫秒，默认 7 天 |
 
-## 2. Redis 配置
-
-| 变量名 | 用途 | 示例值 | 安全级别 | 备注 |
-|-------|------|--------|----------|------|
-| REDIS_URL | Redis 连接 URL | `redis://default:password@redis.example.com:6379` | 高 | 完整的 Redis 连接字符串 |
-| REDIS_HOST | Redis 主机名 | `redis.example.com` | 高 | Redis 服务器地址 |
-| REDIS_PORT | Redis 端口 | `6379` | 中 | Redis 服务器端口 |
-| REDIS_USERNAME | Redis 用户名 | `default` | 高 | Redis 访问用户名 |
-| REDIS_PASSWORD | Redis 密码 | `your-redis-password` | 高 | Redis 访问密码 |
-| REDIS_DB | Redis 数据库索引 | `0` | 中 | 默认使用数据库 0 |
-| REDIS_CACHE_PREFIX | Redis 缓存键前缀 | `confession_wall:` | 低 | 用于区分不同应用的缓存 |
-| REDIS_CACHE_VERSION | Redis 缓存版本 | `v1` | 低 | 用于缓存版本管理 |
-| REDIS_CONNECTION_TIMEOUT | Redis 连接超时 | `5000` | 中 | 单位：毫秒 |
-| REDIS_RETRY_ATTEMPTS | Redis 重试次数 | `3` | 中 | 连接失败时的重试次数 |
-| REDIS_RETRY_DELAY | Redis 重试延迟 | `1000` | 中 | 单位：毫秒 |
-
-## 3. 应用程序配置
+## 2. 应用程序配置
 
 | 变量名 | 用途 | 示例值 | 安全级别 | 备注 |
 |-------|------|--------|----------|------|
@@ -65,7 +49,7 @@
 
 | 变量名 | 用途 | 示例值 | 安全级别 | 备注 |
 |-------|------|--------|----------|------|
-| CACHE_ENABLED | 启用缓存 | `true` | 低 | 是否启用 Redis 缓存 |
+| CACHE_ENABLED | 启用缓存 | `true` | 低 | 是否启用应用缓存 |
 | CACHE_EXPIRY_SHORT | 短期缓存过期时间 | `300000` | 低 | 单位：毫秒，默认 5 分钟 |
 | CACHE_EXPIRY_MEDIUM | 中期缓存过期时间 | `3600000` | 低 | 单位：毫秒，默认 1 小时 |
 | CACHE_EXPIRY_LONG | 长期缓存过期时间 | `604800000` | 低 | 单位：毫秒，默认 7 天 |
@@ -148,9 +132,6 @@ NEXT_PUBLIC_SUPABASE_URL=https://your-supabase-url.supabase.co
 NEXT_PUBLIC_SUPABASE_ANON_KEY=your-anon-key
 SUPABASE_SERVICE_ROLE_KEY=your-service-role-key
 
-# Redis 配置
-REDIS_URL=redis://localhost:6379
-
 # 应用程序配置
 NODE_ENV=development
 NEXT_PUBLIC_BASE_URL=http://localhost:3000
@@ -173,12 +154,7 @@ NEXT_PUBLIC_BASE_URL=http://localhost:3000
    - 检查变量是否应用到了正确的环境
    - 尝试重新部署项目
 
-2. **Redis 连接失败**：
-   - 检查 REDIS_URL 格式是否正确
-   - 确保 Redis 服务器允许外部连接
-   - 检查 Redis 密码是否正确
-
-3. **Supabase 认证失败**：
+2. **Supabase 认证失败**：
    - 检查 SUPABASE_SERVICE_ROLE_KEY 是否正确
    - 确保 JWT 密钥匹配
    - 检查权限设置

@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useMemo, useCallback } from 'react';
 import Image from 'next/image';
 import { useRouter } from 'next/navigation';
 import { motion } from 'framer-motion';
@@ -16,6 +16,7 @@ import toast from 'react-hot-toast';
 import MarkdownRenderer from './MarkdownRenderer';
 import { useQueryClient } from '@tanstack/react-query';
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
+
 interface ConfessionCardProps {
   confession: Confession;
   currentUserId?: string;
@@ -38,8 +39,9 @@ export default function ConfessionCard({
   const router = useRouter();
   const queryClient = useQueryClient();
 
-  const formatDate = (dateString: string) => {
-    const date = new Date(dateString);
+  // 使用 useMemo 优化日期格式化
+  const formattedDate = useMemo(() => {
+    const date = new Date(confession.created_at);
     return date.toLocaleString('zh-CN', {
       year: 'numeric',
       month: '2-digit',
@@ -47,16 +49,16 @@ export default function ConfessionCard({
       hour: '2-digit',
       minute: '2-digit',
     });
-  };
+  }, [confession.created_at]);
 
-  const handleEditClick = () => {
+  const handleEditClick = useCallback(() => {
     if (!isEditing) {
       setIsEditing(true);
       setEditContent(confession.content);
     }
-  };
+  }, [isEditing, confession.content]);
 
-  const handleSaveEdit = async () => {
+  const handleSaveEdit = useCallback(async () => {
     if (isSaving) return;
     
     setIsSaving(true);
@@ -101,12 +103,12 @@ export default function ConfessionCard({
     } finally {
       setIsSaving(false);
     }
-  };
+  }, [isSaving, confession.id, editContent, onEdit]);
 
-  const handleCancelEdit = () => {
+  const handleCancelEdit = useCallback(() => {
     setIsEditing(false);
     setEditContent('');
-  };
+  }, []);
 
   // Handle profile click
   const handleProfileClick = () => {
@@ -451,7 +453,7 @@ export default function ConfessionCard({
               {confession.is_anonymous ? '匿名用户' : confession.profile?.display_name || '未知用户'}
             </h3>
             <p className="mt-1 text-sm font-medium tracking-normal text-slate-500 dark:text-slate-400">
-              {formatDate(confession.created_at)}
+              {formattedDate}
             </p>
           </div>
         </div>

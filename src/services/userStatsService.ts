@@ -1,8 +1,8 @@
 // 用户统计服务，处理用户统计数据的业务逻辑
 import { supabase } from '@/lib/supabase/client';
-import { getOrSetCache, deleteCache, deleteCacheByPattern } from '@/lib/redis/cache-manager';
-import { CACHE_EXPIRY } from '@/lib/redis/cache.config';
-import { generateCacheKey } from '@/lib/redis/cache.config';
+import { getOrSetCache, deleteCache, deleteCacheByPattern } from '@/lib/cache/cache-manager';
+import { CACHE_EXPIRY } from '@/lib/cache/cache.config';
+import { generateCacheKey } from '@/lib/cache/cache.config';
 
 // 引入类型定义
 import {

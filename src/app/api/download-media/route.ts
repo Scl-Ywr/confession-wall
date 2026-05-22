@@ -3,7 +3,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createSupabaseAdminClient, createSupabaseServerClient } from '@/lib/supabase/server';
 import bcryptjs from 'bcryptjs';
 
-// Simple in-memory rate limiting store - for production use Redis or database
+// Simple in-memory rate limiting store - for production use a shared database-backed limiter
 interface RateLimitEntry {
   count: number;
   lastReset: number;

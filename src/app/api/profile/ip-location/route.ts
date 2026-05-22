@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createSupabaseServerClient } from '@/lib/supabase/server';
-import { getUserProfileCacheKey } from '@/lib/redis/cache';
+import { getUserProfileCacheKey } from '@/lib/cache/cache';
 import { removeCache } from '@/utils/cache';
 
 type IpLocationPayload = {

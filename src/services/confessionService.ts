@@ -2,9 +2,9 @@ import { supabase } from '@/lib/supabase/client';
 import { Profile, Hashtag, ConfessionCategory, ConfessionHashtag } from '@/types/confession';
 import { Confession, ConfessionFormData, Comment, CommentFormData, ConfessionImage } from '@/types/confession';
 import { profileService } from './profileService';
-import { cacheKeyManager } from '@/lib/redis/cache-key-manager';
-import { cacheManager } from '@/lib/redis/cache-manager';
-import { MODULE_EXPIRY } from '@/lib/redis/cache.config';
+import { cacheKeyManager } from '@/lib/cache/cache-key-manager';
+import { cacheManager } from '@/lib/cache/cache-manager';
+import { MODULE_EXPIRY } from '@/lib/cache/cache.config';
 
 type ConfessionListRow = {
   id: string;

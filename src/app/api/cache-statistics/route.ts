@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { getCacheStatistics } from '@/lib/redis/cache-manager';
+import { getCacheStatistics } from '@/lib/cache/cache-manager';
 
 /**
  * GET /api/cache-statistics

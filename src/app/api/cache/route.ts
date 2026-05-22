@@ -1,7 +1,6 @@
 import { NextResponse } from 'next/server';
-import { cacheManager } from '@/lib/redis/cache-manager';
-import { cacheInvalidationManager } from '@/lib/redis/cache-invalidation-manager';
-import { CacheModule, CacheResource } from '@/lib/redis/cache-key-naming';
+import { cacheManager } from '@/lib/cache/cache-manager';
+import { CacheModule } from '@/lib/cache/cache-key-naming';
 
 // API密钥验证
 const validateApiKey = (request: Request): boolean => {
@@ -45,16 +44,9 @@ export async function GET(request: Request) {
         }
       });
     } else if (type === 'modules') {
-      // 获取模块版本信息
-      const moduleVersions = cacheInvalidationManager.getAllModuleVersions();
-      const modules = Array.from(moduleVersions.entries()).map(([module, version]) => ({
-        module,
-        version
-      }));
-      
       return NextResponse.json({
         success: true,
-        data: { modules }
+        data: { modules: [] }
       });
     } else {
       // 获取缓存统计摘要
@@ -152,38 +144,34 @@ export async function POST(request: Request) {
     const { action, data } = body;
     
     if (action === 'invalidate') {
-      // 手动触发缓存失效
       const { key, module, resource, confessionId, userId } = data;
       
       if (key) {
-        await cacheInvalidationManager.invalidateCache(key);
+        await cacheManager.deleteCache(key);
         return NextResponse.json({
           success: true,
           message: `缓存键 ${key} 已失效`
         });
       } else if (module && resource) {
-        await cacheInvalidationManager.invalidateResourceCaches(
-          module as CacheModule,
-          resource as CacheResource
-        );
+        await cacheManager.deleteCacheByPattern(`${module}:${resource}:*`);
         return NextResponse.json({
           success: true,
           message: `模块 ${module} 的资源 ${resource} 已失效`
         });
       } else if (module) {
-        await cacheInvalidationManager.invalidateModuleCaches(module as CacheModule);
+        await cacheManager.deleteCacheByModule(module as CacheModule);
         return NextResponse.json({
           success: true,
           message: `模块 ${module} 已失效`
         });
       } else if (confessionId) {
-        await cacheInvalidationManager.invalidateConfessionCache(confessionId);
+        await cacheManager.deleteCacheByPattern(`confession:*:${confessionId}*`);
         return NextResponse.json({
           success: true,
           message: `告白 ${confessionId} 相关缓存已失效`
         });
       } else if (userId) {
-        await cacheInvalidationManager.invalidateUserCache(userId);
+        await cacheManager.deleteCacheByPattern(`user:*:${userId}*`);
         return NextResponse.json({
           success: true,
           message: `用户 ${userId} 相关缓存已失效`
@@ -195,8 +183,7 @@ export async function POST(request: Request) {
         );
       }
     } else if (action === 'clearAll') {
-      // 清除所有缓存
-      await cacheInvalidationManager.clearAllCache();
+      await cacheManager.clearCache();
       return NextResponse.json({
         success: true,
         message: '所有缓存已清除'

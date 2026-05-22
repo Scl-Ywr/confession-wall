@@ -1,7 +1,7 @@
 import { supabase } from '@/lib/supabase/client';
 import { Profile } from '@/types/confession';
 import { getCache, setCache, removeCache } from '@/utils/cache';
-import { getUserProfileCacheKey, EXPIRY } from '@/lib/redis/cache';
+import { getUserProfileCacheKey, EXPIRY } from '@/lib/cache/cache';
 
 export interface ProfileUpdateData {
   username?: string;

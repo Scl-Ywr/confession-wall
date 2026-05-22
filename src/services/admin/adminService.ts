@@ -1,8 +1,8 @@
 // 管理员服务，处理后台管理系统的业务逻辑
 import { supabase } from '@/lib/supabase/client';
-import { getOrSetCache, deleteCache, deleteCacheByPattern } from '@/lib/redis/cache-manager';
-import { CACHE_EXPIRY } from '@/lib/redis/cache.config';
-import { generateCacheKey } from '@/lib/redis/cache.config';
+import { getOrSetCache, deleteCache, deleteCacheByPattern } from '@/lib/cache/cache-manager';
+import { CACHE_EXPIRY } from '@/lib/cache/cache.config';
+import { generateCacheKey } from '@/lib/cache/cache.config';
 
 // 引入 ConfessionImage 类型
 import { ConfessionImage, Profile } from '@/types/confession';

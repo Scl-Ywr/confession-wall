@@ -57,7 +57,7 @@ const nextConfig: NextConfig = {
       },
     ],
   },
-  serverExternalPackages: ['ioredis', '@supabase/supabase-js'],
+  serverExternalPackages: ['@supabase/supabase-js'],
   productionBrowserSourceMaps: false,
   // 明确指定工作区根目录，解决多个锁文件导致的构建问题
   turbopack: {

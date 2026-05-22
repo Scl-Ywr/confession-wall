@@ -64,7 +64,8 @@ export default function CrossBrowserVideoPlayer({
   
   const [isPlaying, setIsPlaying] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
-  const [duration, setDuration] = useState(0);
+  const [duration, setDuration] = useState<number>(0);
+  const [hasValidDuration, setHasValidDuration] = useState(false);
   const [volume, setVolume] = useState(1);
   const [isMuted, setIsMuted] = useState(muted);
   const [isFullscreen, setIsFullscreen] = useState(false);
@@ -108,11 +109,13 @@ export default function CrossBrowserVideoPlayer({
   }, []);
 
   const formatTime = useCallback((seconds: number): string => {
-    if (isNaN(seconds) || !isFinite(seconds)) return '0:00';
+    if (!hasValidDuration || isNaN(seconds) || !isFinite(seconds) || seconds <= 0) {
+      return '--:--';
+    }
     const mins = Math.floor(seconds / 60);
     const secs = Math.floor(seconds % 60);
     return `${mins}:${secs.toString().padStart(2, '0')}`;
-  }, []);
+  }, [hasValidDuration]);
 
   const showControlsWithTimeout = useCallback(() => {
     setShowControls(true);
@@ -286,8 +289,16 @@ export default function CrossBrowserVideoPlayer({
 
   const handleLoadedMetadata = useCallback((event: React.SyntheticEvent<HTMLVideoElement>) => {
     if (videoRef.current) {
-      setDuration(videoRef.current.duration);
-      setIsLoading(false);
+      const newDuration = videoRef.current.duration;
+      // 验证 duration 是否有效
+      if (isFinite(newDuration) && newDuration > 0) {
+        setDuration(newDuration);
+        setHasValidDuration(true);
+        setIsLoading(false);
+        console.log('[Video] 视频元数据加载成功，时长:', newDuration);
+      } else {
+        console.warn('[Video] 视频元数据加载，但 duration 无效:', newDuration);
+      }
     }
     if (onLoadedMetadata) {
       onLoadedMetadata(event);
@@ -298,7 +309,14 @@ export default function CrossBrowserVideoPlayer({
     if (videoRef.current) {
       setCurrentTime(videoRef.current.currentTime);
       
-      if (videoRef.current.buffered.length > 0) {
+      // 确保 duration 被正确加载
+      if (!hasValidDuration && isFinite(videoRef.current.duration) && videoRef.current.duration > 0) {
+        setDuration(videoRef.current.duration);
+        setHasValidDuration(true);
+        console.log('[Video] 视频时长在 timeupdate 中加载:', videoRef.current.duration);
+      }
+      
+      if (videoRef.current.buffered.length > 0 && hasValidDuration) {
         const bufferedEnd = videoRef.current.buffered.end(videoRef.current.buffered.length - 1);
         setBuffered((bufferedEnd / videoRef.current.duration) * 100);
       }
@@ -306,7 +324,7 @@ export default function CrossBrowserVideoPlayer({
     if (onTimeUpdate) {
       onTimeUpdate(event);
     }
-  }, [onTimeUpdate]);
+  }, [onTimeUpdate, hasValidDuration]);
 
   const handlePlay = useCallback(() => {
     setIsPlaying(true);
@@ -648,42 +666,52 @@ export default function CrossBrowserVideoPlayer({
       {/* 简化的视频显示 - 直接使用视频元素的能力 */}
       <div className="relative w-full h-full overflow-hidden rounded-lg sm:rounded-xl">
         <video
-          ref={videoRef}
-          className="w-full h-full object-contain"
-          poster={finalPosterUrl}
-          preload={capabilities.isMobile ? "auto" : "metadata"}
-          autoPlay={autoPlay}
-          muted={muted}
-          loop={loop}
-          playsInline
-          webkit-playsinline="true"
-          x-webkit-airplay="allow"
-          controls={capabilities.isIOS && useNativeControls}
-          onLoadedMetadata={handleLoadedMetadata}
-          onTimeUpdate={handleTimeUpdate}
-          onPlay={handlePlay}
-          onPause={handlePause}
-          onEnded={handleEnded}
-          onSeeked={handleSeeked}
-          onVolumeChange={handleVolumeChange}
-          onError={handleError}
-          onClick={!useNativeControls ? togglePlay : undefined}
-          aria-label="视频内容"
-          style={{
-            WebkitTapHighlightColor: 'transparent',
-            backgroundColor: 'black',
-            // 保持视频原始比例，竖屏视频在卡片中自然缩小显示
-            objectFit: 'contain',
-            // 移除可能影响显示的样式
-            background: 'none',
-            border: 'none',
-            outline: 'none',
-            // 确保poster正确显示
-            backgroundSize: 'cover',
-            backgroundPosition: 'center',
-            backgroundRepeat: 'no-repeat'
-          }}
-        >
+              ref={videoRef}
+              className="w-full h-full object-contain"
+              poster={finalPosterUrl}
+              preload={capabilities.isMobile ? "auto" : "metadata"}
+              autoPlay={autoPlay}
+              muted={muted}
+              loop={loop}
+              playsInline
+              webkit-playsinline="true"
+              x-webkit-airplay="allow"
+              x5-playsinline="true"
+              controls={capabilities.isIOS && useNativeControls}
+              onLoadedMetadata={handleLoadedMetadata}
+              onLoadedData={() => {
+                // 额外的保障 - 当视频数据加载完成时再次检查 duration
+                if (videoRef.current && !hasValidDuration && isFinite(videoRef.current.duration) && videoRef.current.duration > 0) {
+                  setDuration(videoRef.current.duration);
+                  setHasValidDuration(true);
+                  setIsLoading(false);
+                  console.log('[Video] 视频数据加载完成，时长:', videoRef.current.duration);
+                }
+              }}
+              onTimeUpdate={handleTimeUpdate}
+              onPlay={handlePlay}
+              onPause={handlePause}
+              onEnded={handleEnded}
+              onSeeked={handleSeeked}
+              onVolumeChange={handleVolumeChange}
+              onError={handleError}
+              onClick={!useNativeControls ? togglePlay : undefined}
+              aria-label="视频内容"
+              style={{
+                WebkitTapHighlightColor: 'transparent',
+                backgroundColor: 'black',
+                // 保持视频原始比例，竖屏视频在卡片中自然缩小显示
+                objectFit: 'contain',
+                // 移除可能影响显示的样式
+                background: 'none',
+                border: 'none',
+                outline: 'none',
+                // 确保poster正确显示
+                backgroundSize: 'cover',
+                backgroundPosition: 'center',
+                backgroundRepeat: 'no-repeat'
+              }}
+            >
           <source src={videoUrl} type="video/mp4" />
           <source src={videoUrl.replace(/\.(mp4|mov|avi)$/i, '.webm')} type="video/webm" />
           您的浏览器不支持视频播放。
@@ -721,104 +749,112 @@ export default function CrossBrowserVideoPlayer({
                 {/* 时间显示 - 独立显示在进度条上方 */}
                 <div className="flex justify-center">
                   <div className="flex items-center gap-1 text-white text-xs sm:text-sm font-semibold bg-black/30 backdrop-blur-sm px-3 py-1 rounded-full">
-                    <span className="tabular-nums">{formatTime(currentTime)}</span>
+                    <span className={`tabular-nums ${!hasValidDuration ? 'text-white/50' : ''}`}>
+                      {hasValidDuration ? formatTime(currentTime) : '--:--'}
+                    </span>
                     <span className="text-white/50">/</span>
-                    <span className="text-white/70 tabular-nums">{formatTime(duration || 0)}</span>
+                    <span className={`tabular-nums ${!hasValidDuration ? 'text-white/50' : 'text-white/70'}`}>
+                      {hasValidDuration ? formatTime(duration) : '--:--'}
+                    </span>
                   </div>
                 </div>
 
                 {/* 进度条区域 - 优化版 */}
                 <div className="px-1">
-                  <div className="relative h-1 sm:h-1.5 bg-white/10 rounded-full overflow-visible group cursor-pointer">
+                  <div className={`relative h-1 sm:h-1.5 bg-white/10 rounded-full overflow-visible ${hasValidDuration ? 'cursor-pointer group' : 'cursor-not-allowed'}`}>
                     {/* 缓冲进度 */}
                     <div
                       className="absolute top-0 left-0 h-full bg-white/20 rounded-full transition-all duration-300"
-                      style={{ width: `${buffered}%` }}
+                      style={{ width: `${hasValidDuration ? buffered : 0}%` }}
                     />
 
                     {/* 播放进度 */}
                     <motion.div
                       className="absolute top-0 left-0 h-full bg-gradient-to-r from-orange-400 via-orange-500 to-orange-600 rounded-full shadow-lg shadow-orange-500/50"
-                      style={{ width: `${(currentTime / (duration || 1)) * 100}%` }}
+                      style={{ width: `${hasValidDuration ? (currentTime / duration) * 100 : 0}%` }}
                       initial={false}
                       transition={{ duration: 0.1 }}
                     />
 
-                    {/* 进度条滑块 */}
-                    <motion.div
-                      className="absolute top-1/2 -translate-y-1/2 w-3 h-3 sm:w-4 sm:h-4 bg-white rounded-full shadow-xl ring-2 ring-orange-500 ring-opacity-50 opacity-0 group-hover:opacity-100"
-                      style={{ left: `calc(${(currentTime / (duration || 1)) * 100}% - 6px)` }}
-                      animate={{
-                        scale: isDragging ? 1.4 : 1,
-                        opacity: isDragging ? 1 : undefined
-                      }}
-                      whileHover={{ scale: 1.3, opacity: 1 }}
-                      transition={{ duration: 0.2 }}
-                    />
+                    {/* 进度条滑块 - 只有在有有效 duration 时才显示 */}
+                    {hasValidDuration && (
+                      <motion.div
+                        className="absolute top-1/2 -translate-y-1/2 w-3 h-3 sm:w-4 sm:h-4 bg-white rounded-full shadow-xl ring-2 ring-orange-500 ring-opacity-50 opacity-0 group-hover:opacity-100"
+                        style={{ left: `calc(${(currentTime / duration) * 100}% - 6px)` }}
+                        animate={{
+                          scale: isDragging ? 1.4 : 1,
+                          opacity: isDragging ? 1 : undefined
+                        }}
+                        whileHover={{ scale: 1.3, opacity: 1 }}
+                        transition={{ duration: 0.2 }}
+                      />
+                    )}
 
-                    {/* 可交互区域 - 加大点击区域 */}
-                    <div
-                      ref={progressRef}
-                      className="absolute -top-3 -bottom-3 left-0 w-full cursor-pointer"
-                      onMouseDown={(e) => {
-                        e.stopPropagation();
-                        setIsDragging(true);
-                        handleProgressDrag(e);
-                      }}
-                      onMouseMove={(e) => {
-                        if (isDragging) {
+                    {/* 可交互区域 - 只有在有有效 duration 时才允许点击 */}
+                    {hasValidDuration && (
+                      <div
+                        ref={progressRef}
+                        className="absolute -top-3 -bottom-3 left-0 w-full cursor-pointer"
+                        onMouseDown={(e) => {
+                          e.stopPropagation();
+                          setIsDragging(true);
                           handleProgressDrag(e);
-                        }
-                      }}
-                      onMouseUp={() => {
-                        setIsDragging(false);
-                      }}
-                      onTouchStart={(e) => {
-                        e.stopPropagation();
-                        setIsDragging(true);
-                        handleProgressDrag(e);
-                      }}
-                      onTouchMove={(e) => {
-                        if (isDragging) {
-                          handleProgressDrag(e);
-                        }
-                      }}
-                      onTouchEnd={() => {
-                        setIsDragging(false);
-                      }}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        const rect = e.currentTarget.getBoundingClientRect();
-                        let clientX: number;
-
-                        const isTouchEvent = 'touches' in e;
-
-                        if (isTouchEvent) {
-                          const touchEvent = e as unknown as React.TouchEvent;
-                          if (touchEvent.touches.length > 0) {
-                            clientX = touchEvent.touches[0].clientX;
-                          } else {
-                            clientX = 0;
+                        }}
+                        onMouseMove={(e) => {
+                          if (isDragging) {
+                            handleProgressDrag(e);
                           }
-                        } else {
-                          const mouseEvent = e as React.MouseEvent;
-                          clientX = mouseEvent.clientX;
-                        }
+                        }}
+                        onMouseUp={() => {
+                          setIsDragging(false);
+                        }}
+                        onTouchStart={(e) => {
+                          e.stopPropagation();
+                          setIsDragging(true);
+                          handleProgressDrag(e);
+                        }}
+                        onTouchMove={(e) => {
+                          if (isDragging) {
+                            handleProgressDrag(e);
+                          }
+                        }}
+                        onTouchEnd={() => {
+                          setIsDragging(false);
+                        }}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          const rect = e.currentTarget.getBoundingClientRect();
+                          let clientX: number;
 
-                        const percentage = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width));
+                          const isTouchEvent = 'touches' in e;
 
-                        if (videoRef.current) {
-                          videoRef.current.currentTime = percentage * videoRef.current.duration;
-                          setCurrentTime(percentage * videoRef.current.duration);
-                        }
-                      }}
-                      role="slider"
-                      aria-label="视频进度"
-                      aria-valuemin={0}
-                      aria-valuemax={duration}
-                      aria-valuenow={currentTime}
-                      aria-valuetext={`${formatTime(currentTime)} / ${formatTime(duration)}`}
-                    />
+                          if (isTouchEvent) {
+                            const touchEvent = e as unknown as React.TouchEvent;
+                            if (touchEvent.touches.length > 0) {
+                              clientX = touchEvent.touches[0].clientX;
+                            } else {
+                              clientX = 0;
+                            }
+                          } else {
+                            const mouseEvent = e as React.MouseEvent;
+                            clientX = mouseEvent.clientX;
+                          }
+
+                          const percentage = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width));
+
+                          if (videoRef.current) {
+                            videoRef.current.currentTime = percentage * videoRef.current.duration;
+                            setCurrentTime(percentage * videoRef.current.duration);
+                          }
+                        }}
+                        role="slider"
+                        aria-label="视频进度"
+                        aria-valuemin={0}
+                        aria-valuemax={duration}
+                        aria-valuenow={currentTime}
+                        aria-valuetext={`${formatTime(currentTime)} / ${formatTime(duration)}`}
+                      />
+                    )}
                   </div>
                 </div>
 

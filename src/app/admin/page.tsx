@@ -258,7 +258,7 @@ export default async function AdminDashboard() {
                   { name: '缓存状态', status: '正常', color: 'green', icon: '📦' },
                   { name: '数据库连接', status: '正常', color: 'green', icon: '🗄️' },
                   { name: 'API服务', status: '正常', color: 'green', icon: '🌐' },
-                  { name: 'Redis连接', status: '正常', color: 'green', icon: '🔄' },
+                  { name: '应用缓存', status: '正常', color: 'green', icon: '🔄' },
                   { name: '服务器负载', status: '低', color: 'green', icon: '⚡' },
                   { name: '磁盘使用率', status: '65%', color: 'yellow', icon: '💾' }
                 ].map((item) => (

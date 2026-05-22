@@ -80,24 +80,6 @@ Your project's URL and Key are required to create a Supabase client!
 
 访问 http://localhost:3000，如果页面能正常加载，说明 Supabase 连接成功。
 
-## Redis 配置（可选）
-
-如果你的项目使用 Redis 缓存，需要配置以下变量：
-
-```bash
-REDIS_URL=redis://localhost:6379
-# 或者单独配置
-REDIS_HOST=localhost
-REDIS_PORT=6379
-REDIS_PASSWORD=
-```
-
-如果你不使用 Redis，可以将 `CACHE_ENABLED` 设置为 `false`：
-
-```bash
-CACHE_ENABLED=false
-```
-
 ## 部署到 Vercel
 
 在部署到 Vercel 时，你需要在 Vercel Dashboard 中设置环境变量：
@@ -108,7 +90,6 @@ CACHE_ENABLED=false
    - `NEXT_PUBLIC_SUPABASE_ANON_KEY`
    - `SUPABASE_SERVICE_ROLE_KEY` (加密)
    - `SUPABASE_JWT_SECRET` (加密)
-   - `REDIS_URL` (如果使用 Redis)
    - `SECRET_KEY` (加密)
 3. 根据需要添加其他可选变量
 4. 重新部署项目
